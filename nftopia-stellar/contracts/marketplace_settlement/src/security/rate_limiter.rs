@@ -27,8 +27,9 @@ pub struct RateLimiter;
 impl RateLimiter {
     pub fn get_config(env: &Env, function: &Symbol) -> Option<RateLimitConfig> {
         let key = RateLimitStorageKey::Config(function.clone());
-        if let Some(config) = env.storage().instance().get(&key) {
-            Some(config)
+        
+        if env.storage().instance().has(&key) {
+            env.storage().instance().get(&key)
         } else {
             // Return defaults if not configured
             let place_bid_sym = Symbol::new(env, "place_bid");
@@ -82,17 +83,16 @@ impl RateLimiter {
         let key = RateLimitStorageKey::State(caller.clone(), function.clone());
         let current_time = env.ledger().timestamp();
 
-        let mut state = env
-            .storage()
-            .persistent()
-            .get::<_, RateLimitState>(&key)
-            .unwrap_or(RateLimitState {
+        let has_key = env.storage().persistent().has(&key);
+        
+        let mut state = if has_key {
+            env.storage().persistent().get::<_, RateLimitState>(&key).unwrap()
+        } else {
+            RateLimitState {
                 window_start: current_time,
                 count: 0,
-            });
-
-        // Extend TTL on read
-        env.storage().persistent().extend_ttl(&key, 1000, 5000);
+            }
+        };
 
         if current_time >= state.window_start + config.window_seconds {
             // Reset window
@@ -104,7 +104,6 @@ impl RateLimiter {
         } else {
             // Within same window
             if state.count >= config.limit {
-                // Emit rate limit exceeded event
                 let event = crate::events::RateLimitExceededEvent {
                     caller: caller.clone(),
                     function: function.clone(),
