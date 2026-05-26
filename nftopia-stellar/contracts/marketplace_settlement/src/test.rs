@@ -1,14 +1,14 @@
 #![cfg(test)]
 
-use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
-    Address, Bytes, Env, Symbol,
-};
 use crate::{
     error::SettlementError,
     royalty_distributor::RoyaltyDistributor,
     settlement_core::{MarketplaceSettlement, MarketplaceSettlementClient},
     types::{Asset, AuctionType},
+};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, Bytes, Env, Symbol,
 };
 
 fn mk_asset(env: &Env) -> Asset {
@@ -509,13 +509,16 @@ fn test_rate_limiter_defaults_and_cooldown_active() {
         &mk_asset(&env),
         &86400u64,
     );
-    
+
     if let Ok(Err(invoke_error)) = res {
         let actual_error: soroban_sdk::Error = invoke_error.into();
         let expected_error: soroban_sdk::Error = SettlementError::CooldownActive.into();
         assert_eq!(actual_error, expected_error);
     } else {
-       panic!("Expected Err(Ok(SettlementError::CooldownActive)), got: {:?}", res);
+        panic!(
+            "Expected Err(Ok(SettlementError::CooldownActive)), got: {:?}",
+            res
+        );
     }
 }
 
@@ -538,14 +541,24 @@ fn test_rate_limiter_independent_users_and_functions() {
             &86400u64,
         );
     }
-    
-    let res = client.try_create_sale(&seller_1, &nft, &1u64, &1_000_000i128, &mk_asset(&env), &86400u64);
+
+    let res = client.try_create_sale(
+        &seller_1,
+        &nft,
+        &1u64,
+        &1_000_000i128,
+        &mk_asset(&env),
+        &86400u64,
+    );
     if let Ok(Err(invoke_error)) = res {
         let actual_error: soroban_sdk::Error = invoke_error.into();
         let expected_error: soroban_sdk::Error = SettlementError::CooldownActive.into();
         assert_eq!(actual_error, expected_error);
     } else {
-        panic!("Expected Err(Ok(SettlementError::CooldownActive)), got: {:?}", res);
+        panic!(
+            "Expected Err(Ok(SettlementError::CooldownActive)), got: {:?}",
+            res
+        );
     }
 
     // seller_2 should NOT be blocked
@@ -592,14 +605,24 @@ fn test_rate_limiter_window_reset() {
             &86400u64,
         );
     }
-    
-    let res = client.try_create_sale(&seller, &nft, &1u64, &1_000_000i128, &mk_asset(&env), &86400u64);
+
+    let res = client.try_create_sale(
+        &seller,
+        &nft,
+        &1u64,
+        &1_000_000i128,
+        &mk_asset(&env),
+        &86400u64,
+    );
     if let Ok(Err(invoke_error)) = res {
         let actual_error: soroban_sdk::Error = invoke_error.into();
         let expected_error: soroban_sdk::Error = SettlementError::CooldownActive.into();
         assert_eq!(actual_error, expected_error);
     } else {
-       panic!("Expected Err(Ok(SettlementError::CooldownActive)), got: {:?}", res);
+        panic!(
+            "Expected Err(Ok(SettlementError::CooldownActive)), got: {:?}",
+            res
+        );
     }
 
     // Move ledger time forward by 60 seconds
@@ -622,7 +645,7 @@ fn test_rate_limiter_window_reset() {
 fn test_rate_limiter_admin_update_config() {
     let (env, _cid, _client) = new_env();
     let admin = Address::generate(&env);
-    
+
     // Setup known admin (using second client initialized with admin)
     let cid2 = env.register(MarketplaceSettlement, ());
     let c2 = MarketplaceSettlementClient::new(&env, &cid2);
@@ -658,18 +681,21 @@ fn test_rate_limiter_admin_update_config() {
     assert_eq!(cfg.limit, 2u32);
     assert_eq!(cfg.window_seconds, 30u64);
 
-   // place 2 bids successfully
+    // place 2 bids successfully
     c2.place_bid(&id, &bidder, &110_000i128, &None);
     c2.place_bid(&id, &bidder, &120_000i128, &None);
 
     // 3rd bid should fail under new configuration
     let res = c2.try_place_bid(&id, &bidder, &130_000i128, &None);
-   
+
     if let Ok(Err(invoke_error)) = res {
         let actual_error: soroban_sdk::Error = invoke_error.into();
         let expected_error: soroban_sdk::Error = SettlementError::CooldownActive.into();
         assert_eq!(actual_error, expected_error);
     } else {
-      panic!("Expected Err(Ok(SettlementError::CooldownActive)), got: {:?}", res);
+        panic!(
+            "Expected Err(Ok(SettlementError::CooldownActive)), got: {:?}",
+            res
+        );
     }
 }

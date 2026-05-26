@@ -571,7 +571,12 @@ impl MarketplaceSettlement {
             return Err(SettlementError::Unauthorized);
         }
 
-        crate::security::rate_limiter::RateLimiter::set_config(&env, &function, limit, window_seconds);
+        crate::security::rate_limiter::RateLimiter::set_config(
+            &env,
+            &function,
+            limit,
+            window_seconds,
+        );
         Ok(())
     }
 

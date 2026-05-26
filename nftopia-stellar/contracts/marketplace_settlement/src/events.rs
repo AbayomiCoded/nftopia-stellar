@@ -1,5 +1,5 @@
 use crate::types::*;
-use soroban_sdk::{contracttype, symbol_short, Address, Bytes, Env, Vec,Symbol};
+use soroban_sdk::{contracttype, symbol_short, Address, Bytes, Env, Symbol, Vec};
 
 // Sale Events
 #[contracttype]

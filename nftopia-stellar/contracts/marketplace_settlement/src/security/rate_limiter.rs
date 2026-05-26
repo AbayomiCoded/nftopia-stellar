@@ -27,7 +27,7 @@ pub struct RateLimiter;
 impl RateLimiter {
     pub fn get_config(env: &Env, function: &Symbol) -> Option<RateLimitConfig> {
         let key = RateLimitStorageKey::Config(function.clone());
-        
+
         if env.storage().instance().has(&key) {
             env.storage().instance().get(&key)
         } else {
@@ -84,9 +84,12 @@ impl RateLimiter {
         let current_time = env.ledger().timestamp();
 
         let has_key = env.storage().persistent().has(&key);
-        
+
         let mut state = if has_key {
-            env.storage().persistent().get::<_, RateLimitState>(&key).unwrap()
+            env.storage()
+                .persistent()
+                .get::<_, RateLimitState>(&key)
+                .unwrap()
         } else {
             RateLimitState {
                 window_start: current_time,
