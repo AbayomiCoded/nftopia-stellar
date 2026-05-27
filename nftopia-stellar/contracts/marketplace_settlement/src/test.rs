@@ -32,10 +32,18 @@ impl MockNft {
             .set(&soroban_sdk::Symbol::new(&env, "owner"), &owner);
     }
     pub fn owner_of(env: Env, _id: u64) -> Address {
-        env.storage()
+        if env
+            .storage()
             .instance()
-            .get(&soroban_sdk::Symbol::new(&env, "owner"))
-            .unwrap_or_else(|| Address::generate(&env))
+            .has(&soroban_sdk::Symbol::new(&env, "owner"))
+        {
+            env.storage()
+                .instance()
+                .get(&soroban_sdk::Symbol::new(&env, "owner"))
+                .unwrap()
+        } else {
+            Address::generate(&env)
+        }
     }
     pub fn transfer(_env: Env, _from: Address, _to: Address, _token_id: u64) {}
 }
@@ -291,7 +299,7 @@ fn test_get_nonexistent_auction_fails() {
 #[test]
 fn test_update_fee_config_by_admin() {
     use crate::types::FeeConfig;
-    let (env, _cid, _client) = new_env();
+    let (env, _cid, _client, _admin) = new_env();
     let admin = Address::generate(&env);
     let cfg = FeeConfig {
         platform_fee_bps: 300,
@@ -517,32 +525,20 @@ fn test_cleanup_expired_commitments() {
 
 #[test]
 fn test_rate_limiter_defaults_and_cooldown_active() {
-    let (env, cid, client) = new_env();
+    let (env, cid, client, admin) = new_env();
+    let asset = mk_asset(&env);
     let seller = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
-    reg(&env, &cid, &nft, &creator);
+    reg(&env, &cid, &nft, &creator, &admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
 
     for _ in 0..10 {
-        let _id = client.create_sale(
-            &seller,
-            &nft,
-            &1u64,
-            &1_000_000i128,
-            &mk_asset(&env),
-            &86400u64,
-        );
+        let _id = client.create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     }
 
     // The 11th call must fail with CooldownActive
-    let res = client.try_create_sale(
-        &seller,
-        &nft,
-        &1u64,
-        &1_000_000i128,
-        &mk_asset(&env),
-        &86400u64,
-    );
+    let res = client.try_create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
 
     if let Err(Ok(invoke_error)) = res {
         let actual_error: SettlementError = invoke_error.into();
@@ -554,32 +550,20 @@ fn test_rate_limiter_defaults_and_cooldown_active() {
 
 #[test]
 fn test_rate_limiter_independent_users_and_functions() {
-    let (env, cid, client) = new_env();
+    let (env, cid, client, admin) = new_env();
+    let asset = mk_asset(&env);
     let seller_1 = Address::generate(&env);
     let seller_2 = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
-    reg(&env, &cid, &nft, &creator);
+    reg(&env, &cid, &nft, &creator, &admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller_1);
 
     for _ in 0..10 {
-        let _id = client.create_sale(
-            &seller_1,
-            &nft,
-            &1u64,
-            &1_000_000i128,
-            &mk_asset(&env),
-            &86400u64,
-        );
+        let _id = client.create_sale(&seller_1, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     }
 
-    let res = client.try_create_sale(
-        &seller_1,
-        &nft,
-        &1u64,
-        &1_000_000i128,
-        &mk_asset(&env),
-        &86400u64,
-    );
+    let res = client.try_create_sale(&seller_1, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
 
     if let Err(Ok(invoke_error)) = res {
         let actual_error: SettlementError = invoke_error.into();
@@ -589,14 +573,8 @@ fn test_rate_limiter_independent_users_and_functions() {
     }
 
     // seller_2 should NOT be blocked
-    let id_2 = client.create_sale(
-        &seller_2,
-        &nft,
-        &1u64,
-        &1_000_000i128,
-        &mk_asset(&env),
-        &86400u64,
-    );
+    MockNftClient::new(&env, &nft).set_owner(&seller_2);
+    let id_2 = client.create_sale(&seller_2, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     assert!(id_2 > 0);
 
     // seller_1 can still create_auction
@@ -609,38 +587,26 @@ fn test_rate_limiter_independent_users_and_functions() {
         &3600u64,
         &1_000i128,
         &AuctionType::English,
-        &mk_asset(&env),
+        &asset,
     );
     assert!(auc_id > 0);
 }
 
 #[test]
 fn test_rate_limiter_window_reset() {
-    let (env, cid, client) = new_env();
+    let (env, cid, client, admin) = new_env();
+    let asset = mk_asset(&env);
     let seller = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
-    reg(&env, &cid, &nft, &creator);
+    reg(&env, &cid, &nft, &creator, &admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
 
     for _ in 0..10 {
-        let _id = client.create_sale(
-            &seller,
-            &nft,
-            &1u64,
-            &1_000_000i128,
-            &mk_asset(&env),
-            &86400u64,
-        );
+        let _id = client.create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     }
 
-    let res = client.try_create_sale(
-        &seller,
-        &nft,
-        &1u64,
-        &1_000_000i128,
-        &mk_asset(&env),
-        &86400u64,
-    );
+    let res = client.try_create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
 
     if let Err(Ok(invoke_error)) = res {
         let actual_error: SettlementError = invoke_error.into();
@@ -654,21 +620,15 @@ fn test_rate_limiter_window_reset() {
     env.ledger().set_timestamp(new_timestamp);
 
     // Now it should succeed again!
-    let id = client.create_sale(
-        &seller,
-        &nft,
-        &1u64,
-        &1_000_000i128,
-        &mk_asset(&env),
-        &86400u64,
-    );
+    let id = client.create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     assert!(id > 0);
 }
 
 #[test]
 fn test_rate_limiter_admin_update_config() {
-    let (env, _cid, _client) = new_env();
+    let (env, _cid, _client, _admin) = new_env();
     let admin = Address::generate(&env);
+    let asset = mk_asset(&env);
 
     // Setup known admin (using second client initialized with admin)
     let cid2 = env.register(MarketplaceSettlement, ());
@@ -679,7 +639,7 @@ fn test_rate_limiter_admin_update_config() {
     let seller = Address::generate(&env);
     let nft = Address::generate(&env);
     let creator = Address::generate(&env);
-    reg(&env, &cid2, &nft, &creator);
+    reg(&env, &cid2, &nft, &creator, &admin, &asset);
 
     let id = c2.create_auction(
         &seller,
@@ -690,7 +650,7 @@ fn test_rate_limiter_admin_update_config() {
         &3600u64,
         &1_000i128,
         &AuctionType::English,
-        &mk_asset(&env),
+        &asset,
     );
 
     // Default rate limit for place_bid is 5 calls / 60s
