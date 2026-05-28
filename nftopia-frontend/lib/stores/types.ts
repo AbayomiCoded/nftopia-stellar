@@ -1,8 +1,10 @@
 // Auth Store Types
 export interface User {
-  sub: string;
+  id?: string;
+  sub?: string;
+  address?: string;
   walletAddress: string;
-  isArtist?: boolean;
+  walletProvider?: string;
   username?: string;
   email?: string;
   profileImage?: string;
@@ -44,11 +46,12 @@ export type AuthStore = {
   requestNonce: (walletAddress: string) => Promise<string>;
   verifySignature: (
     walletAddress: string,
-    signature: [string, string], // Changed from string to [string, string]
+    signature: string,
     nonce: string,
-    walletType: 'argentx' | 'braavos',
+    walletProvider: 'freighter' | 'albedo' | 'walletconnect',
     locale: string
   ) => Promise<void>;
+  emailLogin: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<string>;
 };

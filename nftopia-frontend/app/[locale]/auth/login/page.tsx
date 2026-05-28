@@ -33,6 +33,7 @@ export default function LoginPage() {
     loading: emailLoading,
     error: emailError,
     clearError: clearEmailError,
+    emailLogin,
   } = useAuth();
 
   // Stellar wallet state
@@ -101,7 +102,12 @@ export default function LoginPage() {
       return;
     }
     clearAllErrors();
-    setLocalError("Email login: wire to useAuth().loginWithEmail()");
+    try {
+      await emailLogin(email, password);
+      window.location.href = `/${locale}/creator-dashboard`;
+    } catch {
+      // error already set in store
+    }
   };
 
   const displayError = localError || walletError || authError || emailError;

@@ -4,12 +4,14 @@ import { useState } from "react";
 import { ChevronDown, User, LogOut, Settings } from "lucide-react";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useToast } from "@/lib/stores";
+import { useTranslation } from "@/hooks/useTranslation";
 import Link from "next/link";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSeparator } from "@/components/ui/dropdown";
 
 export function UserDropdown() {
   const { user, logout, isAuthenticated } = useAuth();
   const { showSuccess, showError } = useToast();
+  const { locale } = useTranslation();
   const [logoutLoading, setLogoutLoading] = useState(false);
 
   if (!isAuthenticated || !user) return null;
@@ -67,9 +69,8 @@ export function UserDropdown() {
         </div>
 
         <div className="py-1">
-          {/* Link items use role="menuitem" directly */}
           <Link
-            href="/creator-dashboard"
+            href={`/${locale}/creator-dashboard`}
             role="menuitem"
             className="flex items-center gap-3 px-4 py-2 text-sm text-white hover:bg-purple-600/20 transition-colors focus-visible:outline-none focus-visible:bg-purple-600/20"
           >
@@ -78,7 +79,7 @@ export function UserDropdown() {
           </Link>
 
           <Link
-            href="/creator-dashboard/settings"
+            href={`/${locale}/creator-dashboard/settings`}
             role="menuitem"
             className="flex items-center gap-3 px-4 py-2 text-sm text-white hover:bg-purple-600/20 transition-colors focus-visible:outline-none focus-visible:bg-purple-600/20"
           >

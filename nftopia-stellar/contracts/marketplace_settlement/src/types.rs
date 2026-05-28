@@ -71,6 +71,7 @@ pub struct Bid {
     pub placed_at: u64,
     pub is_committed: bool, // For commit-reveal schemes
     pub commitment_hash: Option<Bytes>,
+    pub refunded: bool,
 }
 
 // Royalty distribution structure
