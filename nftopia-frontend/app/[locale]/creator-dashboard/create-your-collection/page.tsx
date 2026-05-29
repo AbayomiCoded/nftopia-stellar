@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { API_CONFIG } from "@/lib/config";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/lib/stores";
@@ -17,6 +17,7 @@ import { getCookie } from "@/lib/CSRFTOKEN";
 import { FileDropZone } from "@/lib";
 import type { FileWithMeta } from "@/lib/interfaces";
 import { useTranslation } from "@/hooks/useTranslation";
+import { getValidationFieldMessage } from "@/utils/fetchUtils";
 
 interface CreateCollectionForm {
   name: string;
@@ -44,12 +45,8 @@ export default function CreateYourCollection() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<FileWithMeta[]>([]);
-
-  console.log(form);
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -69,13 +66,18 @@ export default function CreateYourCollection() {
     } else if (form.description.trim().length > 500) {
       newErrors.description = t("createCollection.errors.descriptionMaxLength");
     }
+
+    if (selectedFiles.length === 0) {
+      newErrors.bannerImage = "A collection banner image is required";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleInputChange = (
     field: keyof CreateCollectionForm,
-    value: string
+    value: string,
   ) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -85,72 +87,78 @@ export default function CreateYourCollection() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!validateForm()) return;
-
-    if (isUploadingImage) {
-      setErrors({ general: t("createCollection.errors.waitForUpload") });
-      return;
-    }
 
     setErrors({});
     setIsLoading(true);
+    setIsUploadingImage(true);
 
     try {
       const csrfToken = await getCookie();
-      console.log(csrfToken);
-      const res = await uploadToFirebase(selectedFiles[0].file)
-        .then((firebaseUrl: string) => {
-          return fetch(`${API_CONFIG.baseUrl}/collections/create`, {
-            method: "POST",
-            credentials: "include",
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRF-Token": csrfToken,
-            },
-            body: JSON.stringify({ ...form, bannerImage: firebaseUrl }),
-          });
-        })
-        .finally(() => {
-          setIsUploadingImage(true);
-        });
+      const firebaseUrl = await uploadToFirebase(selectedFiles[0].file);
+      setIsUploadingImage(false);
 
-      if (!res.ok) throw new Error(t("createCollection.errors.failedToCreate"));
+      const res = await fetch(`${API_CONFIG.baseUrl}/collections/create`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify({ ...form, bannerImage: firebaseUrl }),
+      });
+
+      if (!res.ok) {
+        const errPayload = await res.json().catch(() => ({}));
+
+        // Extract granular contextual validations straight from server API response payload
+        const serverNameErr = getValidationFieldMessage(errPayload, "name");
+        const serverDescErr = getValidationFieldMessage(
+          errPayload,
+          "description",
+        );
+
+        if (serverNameErr || serverDescErr) {
+          setErrors({
+            name: serverNameErr,
+            description: serverDescErr,
+            general:
+              errPayload.message || t("createCollection.errors.failedToCreate"),
+          });
+          throw new Error(
+            errPayload.message || t("createCollection.errors.failedToCreate"),
+          );
+        }
+        throw new Error(
+          errPayload.message || t("createCollection.errors.failedToCreate"),
+        );
+      }
 
       setSuccess(true);
       showSuccess(t("createCollection.success"));
-
-      setForm({
-        name: "",
-        description: "",
-        bannerImage: null,
-      });
-      setImagePreview(null);
-      setUploadedImageUrl(null);
       setSelectedFiles([]);
 
       setTimeout(() => {
         router.push("/creator-dashboard/collections");
       }, 2000);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating collection:", error);
       const errorMessage =
-        error instanceof Error
-          ? error.message
-          : t("createCollection.errors.failedToCreate");
-      setErrors({ general: errorMessage });
+        error.message || t("createCollection.errors.failedToCreate");
+      setErrors((prev) => ({ ...prev, general: errorMessage }));
       showError(errorMessage);
     } finally {
       setIsLoading(false);
+      setIsUploadingImage(false);
     }
   };
 
   if (success) {
     return (
-      <div className="min-h-[100vh] bg-nftopia-background flex items-center justify-center ">
+      <div className="min-h-[60vh] flex items-center justify-center">
         <Card className="w-full max-w-md bg-nftopia-card border border-nftopia-border backdrop-blur-sm">
           <CardContent className="p-8 text-center">
-            <CheckCircle2 className="w-16 h-16 text-green-400 mx-auto mb-4" />
+            <CheckCircle2 className="w-16 h-16 text-green-400 mx-auto mb-4 animate-bounce" />
             <h2 className="text-2xl font-bold text-nftopia-text mb-2">
               {t("createCollection.collectionCreated")}
             </h2>
@@ -164,7 +172,7 @@ export default function CreateYourCollection() {
   }
 
   return (
-    <div className="min-h-[100vh] mt-10 bg-nftopia-background py-12 px-4">
+    <div className="min-h-[100vh] bg-nftopia-background py-6 px-4">
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-nftopia-text mb-4">
@@ -206,12 +214,14 @@ export default function CreateYourCollection() {
                   className={cn(
                     "bg-nftopia-background border-nftopia-border text-nftopia-text placeholder-nftopia-subtext",
                     "focus:border-nftopia-primary focus:ring-nftopia-primary/20",
-                    errors.name && "border-red-500/70 focus:border-red-400"
+                    errors.name && "border-red-500/70 focus:border-red-400",
                   )}
                   maxLength={50}
                 />
                 {errors.name && (
-                  <p className="text-red-300 text-sm">{errors.name}</p>
+                  <p className="text-red-400 text-xs font-medium mt-1">
+                    {errors.name}
+                  </p>
                 )}
                 <p className="text-nftopia-subtext text-xs">
                   {form.name.length}/50 {t("createCollection.characters")}
@@ -220,7 +230,10 @@ export default function CreateYourCollection() {
 
               {/* Description */}
               <div className="space-y-2">
-                <Label htmlFor="description" className="text-nftopia-text font-medium">
+                <Label
+                  htmlFor="description"
+                  className="text-nftopia-text font-medium"
+                >
                   {t("createCollection.description")} *
                 </Label>
                 <Textarea
@@ -234,12 +247,14 @@ export default function CreateYourCollection() {
                     "bg-nftopia-background border-nftopia-border text-nftopia-text placeholder-nftopia-subtext",
                     "focus:border-nftopia-primary focus:ring-nftopia-primary/20 min-h-[120px]",
                     errors.description &&
-                      "border-red-500/70 focus:border-red-400"
+                      "border-red-500/70 focus:border-red-400",
                   )}
                   maxLength={500}
                 />
                 {errors.description && (
-                  <p className="text-red-300 text-sm">{errors.description}</p>
+                  <p className="text-red-400 text-xs font-medium mt-1">
+                    {errors.description}
+                  </p>
                 )}
                 <p className="text-nftopia-subtext text-xs">
                   {form.description.length}/500{" "}
@@ -249,23 +264,32 @@ export default function CreateYourCollection() {
 
               <div className="mb-6">
                 <label className="block text-sm text-nftopia-text font-medium mb-2">
-                  {t("createCollection.uploadBannerImage")}
+                  {t("createCollection.uploadBannerImage")} *
                 </label>
                 <FileDropZone
                   onFilesSelected={setSelectedFiles}
                   accept={["image/*"]}
                   maxSizeMB={10}
                 />
+                {errors.bannerImage && (
+                  <p className="text-red-400 text-xs font-medium mt-1.5">
+                    {errors.bannerImage}
+                  </p>
+                )}
               </div>
+
               <button
-                onClick={handleSubmit}
+                type="submit"
                 disabled={
-                  !form.name && !form.description && selectedFiles.length === 0
+                  isLoading ||
+                  isUploadingImage ||
+                  !form.name.trim() ||
+                  !form.description.trim()
                 }
-                className="w-full py-3 px-4 rounded-lg bg-nftopia-primary text-nftopia-text font-bold hover:bg-nftopia-hover transition duration-200 disabled:opacity-50"
+                className="w-full py-3 px-4 rounded-lg bg-nftopia-primary text-nftopia-text font-bold hover:bg-nftopia-hover transition duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isLoading
-                  ? t("createCollection.creating")
+                  ? "Processing Workspace Setup..."
                   : t("createCollection.createCollection")}
               </button>
             </form>

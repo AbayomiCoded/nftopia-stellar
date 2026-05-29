@@ -7,13 +7,15 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ThemeLogo } from "@/components/ThemeLogo";
 import { usePathname } from "next/navigation";
-import { 
-  LayoutDashboard, 
-  Plus, 
-  Image as ImageIcon, 
-  FolderOpen, 
-  DollarSign, 
-  Settings 
+import { useCollectionStore } from "@/lib/stores/collection-store";
+import { ApiErrorFallback } from "@/components/api/ApiErrorFallback";
+import {
+  LayoutDashboard,
+  Plus,
+  Image as ImageIcon,
+  FolderOpen,
+  DollarSign,
+  Settings,
 } from "lucide-react";
 
 export default function CreatorDashboardLayout({
@@ -25,12 +27,33 @@ export default function CreatorDashboardLayout({
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Hook into state slice tracking layers for structural side effects
+  const storeError = useCollectionStore((state) => state.error);
+  const clearStoreError = useCollectionStore((state) => state.clearError);
+  const fetchCollections = useCollectionStore(
+    (state) => state.fetchCollections,
+  );
+  const fetchNFTs = useCollectionStore((state) => state.fetchNFTs);
+
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
 
   const closeSidebar = () => {
     setIsSidebarOpen(false);
+  };
+
+  // Contextual automated action trigger dependent on active routing path
+  const handleGlobalRetry = async () => {
+    clearStoreError();
+    if (pathname.includes("/collections")) {
+      await fetchCollections();
+    } else if (pathname.includes("/my-nfts")) {
+      await fetchNFTs();
+    } else {
+      // General fallthrough fallback reload invocation
+      window.location.reload();
+    }
   };
 
   return (
@@ -94,7 +117,8 @@ export default function CreatorDashboardLayout({
                 <Link
                   href={`/${locale}/creator-dashboard/create-your-collection`}
                   className={`flex items-center space-x-3 py-2 px-3 rounded-lg transition-all duration-200 ${
-                    pathname === `/${locale}/creator-dashboard/create-your-collection`
+                    pathname ===
+                    `/${locale}/creator-dashboard/create-your-collection`
                       ? "bg-primary text-primary-foreground font-semibold"
                       : "text-card-foreground hover:text-primary hover:bg-muted"
                   }`}
@@ -178,9 +202,20 @@ export default function CreatorDashboardLayout({
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 p-4 lg:p-8 w-full lg:ml-0 bg-background">
-        {children}
+      {/* Main Content Pane Wrapper */}
+      <main className="flex-1 p-4 lg:p-8 w-full lg:ml-0 bg-background overflow-y-auto">
+        {/* State monitoring branch condition interceptor */}
+        {storeError ? (
+          <div className="max-w-4xl mx-auto py-10">
+            <ApiErrorFallback
+              error={storeError}
+              onRetry={handleGlobalRetry}
+              onClear={clearStoreError}
+            />
+          </div>
+        ) : (
+          children
+        )}
       </main>
     </div>
   );

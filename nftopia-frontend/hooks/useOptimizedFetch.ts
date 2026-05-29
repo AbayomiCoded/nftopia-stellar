@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { fetchWithAuth } from "@/lib/api/fetchWithAuth";
+import { AppApiError, normalizeApiError } from "@/utils/fetchUtils";
 
-// Move cache and dedupeMap to module scope for cross-hook deduplication
 const staticCache = new Map<string, any>();
 const dedupeMap = new Map<string, Promise<any>>();
 
 /**
- * useOptimizedFetch hook
- * @template T
- * @param url The API endpoint
- * @param options Fetch options and config
- * @returns { data, error, loading, refetch, cancel }
+ * Extended hook for fetching data with support for automatic
+ * response caching, deduplication, retry validation, and normalized errors.
  */
 export function useOptimizedFetch<T = unknown>(
   url: string,
@@ -21,38 +19,38 @@ export function useOptimizedFetch<T = unknown>(
     retryDelay?: number;
     enabled?: boolean;
     dependencies?: any[];
-  }
+  },
 ) {
   const abortController = useRef<AbortController | null>(null);
 
   const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<any>(null);
+  const [error, setError] = useState<AppApiError | null>(null);
   const [loading, setLoading] = useState(false);
 
   const cacheKey = options?.cacheKey || url;
   const dedupe = options?.dedupe ?? true;
-  const retry = options?.retry ?? 2;
+  const maxRetries = options?.retry ?? 2;
   const retryDelay = options?.retryDelay ?? 500;
   const enabled = options?.enabled ?? true;
   const deps = options?.dependencies || [];
 
   const fetchData = useCallback(
-    async (attempt = 0): Promise<T | null> => {
+    async (): Promise<T | null> => {
       if (!enabled) return null;
       setLoading(true);
       setError(null);
+
       abortController.current?.abort();
       abortController.current = new AbortController();
       const signal = abortController.current.signal;
 
-      // Cache hit
       if (staticCache.has(cacheKey)) {
-        setData(staticCache.get(cacheKey)!);
+        const cachedData = staticCache.get(cacheKey)!;
+        setData(cachedData);
         setLoading(false);
-        return staticCache.get(cacheKey)!;
+        return cachedData;
       }
 
-      // Deduplication
       if (dedupe && dedupeMap.has(cacheKey)) {
         try {
           const result = await dedupeMap.get(cacheKey)!;
@@ -60,39 +58,44 @@ export function useOptimizedFetch<T = unknown>(
           setLoading(false);
           return result;
         } catch (err) {
-          setError(err);
+          const normalized = await normalizeApiError(err);
+          setError(normalized);
           setLoading(false);
           return null;
         }
       }
 
-      // Retry logic
       const doFetch = async (): Promise<T> => {
-        const res = await fetch(url, { ...options?.fetchOptions, signal });
-        if (!res.ok) {
-          const error = new Error(`HTTP ${res.status}`);
-          setError(error);
-          setData(null);
-          throw error;
-        }
+        const res = await fetchWithAuth(url, {
+          ...options?.fetchOptions,
+          signal,
+        });
         const json = (await res.json()) as T;
         staticCache.set(cacheKey, json);
         return json;
       };
 
       const fetchPromise = (async (): Promise<T> => {
-        let lastError;
-        for (let i = 0; i <= retry; i++) {
+        let lastError: any;
+        for (let i = 0; i <= maxRetries; i++) {
           try {
             return await doFetch();
           } catch (err: any) {
-            if (signal.aborted) throw new Error("Request cancelled");
-            lastError = err;
-            if (i < retry) {
-              await new Promise((r) =>
-                setTimeout(r, retryDelay * Math.pow(2, i))
-              );
+            if (signal.aborted) {
+              throw new Error("Request cancelled");
             }
+
+            const normalized = await normalizeApiError(err);
+            lastError = normalized;
+
+            // Stop retrying if the error is non-retryable (e.g., 401, 403, 422)
+            if (i === maxRetries || !normalized.retryable) {
+              throw normalized;
+            }
+
+            await new Promise((r) =>
+              setTimeout(r, retryDelay * Math.pow(2, i)),
+            );
           }
         }
         throw lastError;
@@ -103,10 +106,13 @@ export function useOptimizedFetch<T = unknown>(
       try {
         const result = await fetchPromise;
         setData(result);
+        setError(null);
         setLoading(false);
         return result;
       } catch (err) {
-        setError(err);
+        if (signal.aborted) return null;
+        const normalized = await normalizeApiError(err);
+        setError(normalized);
         setData(null);
         setLoading(false);
         return null;
@@ -114,7 +120,8 @@ export function useOptimizedFetch<T = unknown>(
         if (dedupe) dedupeMap.delete(cacheKey);
       }
     },
-    [url, cacheKey, dedupe, retry, retryDelay, enabled, ...deps]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [url, cacheKey, dedupe, maxRetries, retryDelay, enabled, ...deps],
   );
 
   // Initial fetch and dependency tracking
