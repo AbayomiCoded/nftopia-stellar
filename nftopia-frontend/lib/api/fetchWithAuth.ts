@@ -3,9 +3,13 @@ import { parseResponseError, normalizeApiError } from "@/utils/fetchUtils";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
+// Shared singleton promise to batch concurrent duplicate token refresh calls cleanly
+let refreshPromise: Promise<any> | null = null;
+
 /**
  * Fetch layer with built-in client timeout processing,
- * automated JWT management, and unified error payload interceptors.
+ * concurrency-safe automated JWT management, and unified error payload interceptors.
+ * Usage: await fetchWithAuth(url, options)
  */
 export async function fetchWithAuth(
   input: RequestInfo,
@@ -31,7 +35,7 @@ export async function fetchWithAuth(
     DEFAULT_TIMEOUT_MS,
   );
 
-  // Link external signals if passed via configuration parameters
+  // Link external signals if passed down via configuration parameters
   if (init?.signal) {
     init.signal.addEventListener("abort", () => clientController.abort());
   }
@@ -48,8 +52,20 @@ export async function fetchWithAuth(
     // Trap token expiration windows natively
     if (response.status === 401 && refreshToken && retry) {
       try {
-        const { refreshToken: performRefresh } = useAuthStore.getState();
-        await performRefresh();
+        // Concurrency-safe atomic token refresh block
+        if (!refreshPromise) {
+          refreshPromise = (async () => {
+            try {
+              const { refreshToken: performRefresh } = useAuthStore.getState();
+              return await performRefresh();
+            } finally {
+              refreshPromise = null;
+            }
+          })();
+        }
+
+        // Await single active network execution block
+        await refreshPromise;
 
         const newAccessToken =
           typeof window !== "undefined"
@@ -58,6 +74,7 @@ export async function fetchWithAuth(
         if (newAccessToken) {
           headers.set("Authorization", `Bearer ${newAccessToken}`);
 
+          // Construct unique cancellation controllers specifically for the retry execution frame
           const retryController = new AbortController();
           const retryTimeoutId = setTimeout(
             () => retryController.abort(),
@@ -76,15 +93,16 @@ export async function fetchWithAuth(
           });
 
           clearTimeout(retryTimeoutId);
+
           if (!retryResponse.ok) {
             throw await parseResponseError(retryResponse);
           }
           return retryResponse;
         }
       } catch (err) {
+        // Refresh failed completely; clear the session
         const { logout } = useAuthStore.getState();
         await logout();
-        // Prevent generic catches; map cleanly to standardized unauthenticated models
         throw await parseResponseError(response);
       }
     }

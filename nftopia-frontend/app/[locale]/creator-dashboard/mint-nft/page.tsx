@@ -11,7 +11,28 @@ import { Collection } from "@/lib/interfaces";
 import { API_CONFIG } from "@/lib/config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTranslation } from "@/hooks/useTranslation";
+import { useLocalizedRoute } from "@/lib/routing";
 import { getValidationFieldMessage } from "@/utils/fetchUtils";
+
+/** shape matching backend CreateNftDto blended with pricing updates */
+interface CreateNftDto {
+  tokenId: string;
+  contractAddress: string;
+  name: string;
+  description?: string;
+  imageUrl: string;
+  ownerId: string;
+  creatorId: string;
+  collectionId?: string;
+  price: string;
+  currency: string;
+  metadata: {
+    name: string;
+    description: string;
+    image: string;
+    attributes: any[];
+  };
+}
 
 interface ValidationErrors {
   title?: string;
@@ -19,17 +40,20 @@ interface ValidationErrors {
   price?: string;
   collection?: string;
   files?: string;
+  contractAddress?: string;
 }
 
 export default function MintNFTPage() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { user, isAuthenticated } = useAuthStore();
+  const { user, isAuthenticated, accessToken } = useAuthStore();
+  const localizedRoute = useLocalizedRoute();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [currency, setCurrency] = useState("STK");
+  const [contractAddress, setContractAddress] = useState("");
   const [files, setFiles] = useState<FileWithMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [globalError, setGlobalError] = useState("");
@@ -37,14 +61,14 @@ export default function MintNFTPage() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
 
-  // Redirect if not authenticated
+  // Redirect if not authenticated using localized routing contract
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push("/auth/login");
+      router.push(localizedRoute("/auth/login"));
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, localizedRoute]);
 
-  // Fetch user's collections when user is available
+  // Fetch user's collections safely with dual path parsing constraints
   useEffect(() => {
     if (user?.sub) {
       fetch(`${API_CONFIG.baseUrl}/collections/user/${user.sub}`)
@@ -53,12 +77,21 @@ export default function MintNFTPage() {
           return res.json();
         })
         .then((data) => {
+          let parsedCollections: Collection[] = [];
           if (data?.data?.collections?.length > 0) {
-            setCollections(data.data.collections);
-            setSelectedCollectionId(data.data.collections[0]?.id);
+            parsedCollections = data.data.collections;
           } else if (data?.data?.data?.collections?.length > 0) {
-            setCollections(data.data.data.collections);
-            setSelectedCollectionId(data.data.data.collections[0]?.id);
+            parsedCollections = data.data.data.collections;
+          }
+
+          if (parsedCollections.length > 0) {
+            setCollections(parsedCollections);
+            const firstColl = parsedCollections[0];
+            setSelectedCollectionId(firstColl?.id ?? "");
+            
+            // Pre-fill contract address from first collection if available
+            const firstContract = (firstColl as any)?.contractAddress ?? "";
+            if (firstContract) setContractAddress(firstContract);
           }
         })
         .catch((err) => console.error("Error fetching collections:", err));
@@ -88,6 +121,13 @@ export default function MintNFTPage() {
       }));
       return;
     }
+    if (!contractAddress.trim()) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        contractAddress: t("mintNFT.errors.contractAddressRequired") ?? "Contract address is required.",
+      }));
+      return;
+    }
 
     setLoading(true);
 
@@ -95,12 +135,20 @@ export default function MintNFTPage() {
       const csrfToken = await getCookie();
       const firebaseUrl = await uploadToFirebase(files[0].file);
 
-      const mintData = {
+      // Generate a deterministic tokenId matching main parameters
+      const tokenId = `${user.sub}-${Date.now()}`;
+
+      const payload: CreateNftDto = {
+        tokenId,
+        contractAddress: contractAddress.trim(),
+        name: title,
+        description: description || undefined,
         imageUrl: firebaseUrl,
+        ownerId: user.sub,
+        creatorId: user.sub,
+        ...(selectedCollectionId ? { collectionId: selectedCollectionId } : {}),
         price,
         currency,
-        title,
-        description,
         metadata: {
           name: title,
           description,
@@ -109,18 +157,18 @@ export default function MintNFTPage() {
         },
       };
 
-      const res = await fetch(
-        `${API_CONFIG.baseUrl}/nfts/mint/${user.sub}/${selectedCollectionId}`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-Token": csrfToken,
-          },
-          body: JSON.stringify(mintData),
+      const token = accessToken ?? (typeof window !== "undefined" ? localStorage.getItem("access_token") : null);
+
+      const res = await fetch(`${API_CONFIG.baseUrl}/nfts`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-      );
+        body: JSON.stringify(payload),
+      });
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
@@ -137,15 +185,18 @@ export default function MintNFTPage() {
             price: priceErr,
           });
         }
-        throw new Error(errorData.message || t("mintNFT.errors.mintingFailed"));
+        
+        const msg = Array.isArray(errorData.message)
+          ? errorData.message.join(", ")
+          : errorData.message || t("mintNFT.errors.mintingFailed");
+        throw new Error(msg);
       }
 
-      router.push("/creator-dashboard/my-nfts");
+      router.push(localizedRoute("/collections"));
     } catch (err: any) {
       console.error("Mint error context:", err);
       setGlobalError(err.message || t("mintNFT.errors.errorMinting"));
-    }
-    compression: {
+    } finally {
       setLoading(false);
     }
   };
@@ -153,12 +204,12 @@ export default function MintNFTPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center px-4 py-6">
+    <div className="min-h-[100svh] mt-32 flex items-center justify-center px-4 py-6">
       <form
         onSubmit={handleSubmit}
         className="bg-nftopia-card p-8 rounded-2xl shadow-lg w-full max-w-md border border-nftopia-border space-y-4"
       >
-        <h1 className="text-3xl font-bold text-center text-nftopia-text">
+        <h1 className="text-3xl font-bold text-center text-nftopia-text mb-2">
           {t("mintNFT.title")}
         </h1>
 
@@ -176,7 +227,14 @@ export default function MintNFTPage() {
             </label>
             <select
               value={selectedCollectionId}
-              onChange={(e) => setSelectedCollectionId(e.target.value)}
+              onChange={(e) => {
+                const targetId = e.target.value;
+                setSelectedCollectionId(targetId);
+                const col = collections.find((c) => c.id === targetId);
+                if ((col as any)?.contractAddress) {
+                  setContractAddress((col as any).contractAddress);
+                }
+              }}
               className="w-full px-4 py-2 rounded bg-nftopia-background text-nftopia-text border border-nftopia-border focus:outline-none focus:ring-1 focus:ring-nftopia-primary text-sm"
               required
             >
@@ -281,6 +339,29 @@ export default function MintNFTPage() {
               <option value="USDC">USDC</option>
             </select>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm text-nftopia-subtext mb-1">
+            Contract Address *
+          </label>
+          <input
+            type="text"
+            value={contractAddress}
+            onChange={(e) => setContractAddress(e.target.value)}
+            placeholder="G... (56-char Stellar address)"
+            className={`w-full px-4 py-2 rounded bg-nftopia-background text-nftopia-text border text-sm focus:outline-none focus:ring-1 ${
+              fieldErrors.contractAddress
+                ? "border-red-500 focus:ring-red-500"
+                : "border-nftopia-border focus:ring-nftopia-primary"
+            }`}
+            required
+          />
+          {fieldErrors.contractAddress && (
+            <p className="text-xs text-red-400 mt-1 font-medium">
+              {fieldErrors.contractAddress}
+            </p>
+          )}
         </div>
 
         <div>

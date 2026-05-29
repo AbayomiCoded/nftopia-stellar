@@ -7,12 +7,13 @@ import { getCookie } from "../CSRFTOKEN";
 import { fetchWithAuth } from "@/lib/api/fetchWithAuth";
 import { AppApiError, normalizeApiError } from "@/utils/fetchUtils";
 import { NextRouter } from "next/router";
+import { buildLocalizedRoute } from "../routing";
 
 const initialState = {
   user: null,
   loading: true,
   isAuthenticated: false,
-  error: null as AppApiError | null, // Upgraded state type schema
+  error: null as AppApiError | null, // Upgraded state type schema from your branch
   accessToken: null,
   refreshTokenValue: null,
 };
@@ -39,6 +40,11 @@ export const useAuthStore = create<any>()(
               body: JSON.stringify({ email, password, username }),
             },
           );
+
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.message || "Registration failed");
+          }
 
           const result = await res.json();
           const { access_token, refresh_token, user } = result.data.data;
@@ -73,6 +79,11 @@ export const useAuthStore = create<any>()(
             },
             body: JSON.stringify({ email, password }),
           });
+
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.message || "Login failed");
+          }
 
           const result = await res.json();
           const { access_token, refresh_token, user } = result.data.data;
@@ -113,8 +124,14 @@ export const useAuthStore = create<any>()(
               body: JSON.stringify({ walletAddress, walletProvider }),
             },
           );
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(
+              errorData.message || "Failed to get wallet challenge",
+            );
+          }
           const result = await res.json();
-          return result.data.data;
+          return result.data.data; // { sessionId, walletAddress, nonce, message, expiresAt }
         } catch (error) {
           const normalized = await normalizeApiError(error);
           set({ error: normalized, loading: false });
@@ -148,6 +165,12 @@ export const useAuthStore = create<any>()(
               }),
             },
           );
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(
+              errorData.message || "Wallet signature verification failed",
+            );
+          }
           const result = await res.json();
           const { access_token, refresh_token, user } = result.data.data;
           localStorage.setItem("auth-user", JSON.stringify({ data: user }));
@@ -242,8 +265,12 @@ export const useAuthStore = create<any>()(
               }),
             },
           );
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.message || "Failed to link wallet");
+          }
           const result = await res.json();
-          return result.data.data;
+          return result.data.data; // { success: boolean, wallet: UserWallet }
         } catch (error) {
           const normalized = await normalizeApiError(error);
           set({ error: normalized, loading: false });
@@ -267,8 +294,12 @@ export const useAuthStore = create<any>()(
               body: JSON.stringify({ walletAddress }),
             },
           );
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.message || "Failed to unlink wallet");
+          }
           const result = await res.json();
-          return result.data.data;
+          return result.data.data; // { success: boolean }
         } catch (error) {
           const normalized = await normalizeApiError(error);
           set({ error: normalized, loading: false });
@@ -291,8 +322,12 @@ export const useAuthStore = create<any>()(
               },
             },
           );
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.message || "Failed to list wallets");
+          }
           const result = await res.json();
-          return result.data.data;
+          return result.data.data; // UserWallet[]
         } catch (error) {
           const normalized = await normalizeApiError(error);
           set({ error: normalized, loading: false });
@@ -354,6 +389,10 @@ export const useAuthStore = create<any>()(
             },
           );
 
+          if (!res.ok) {
+            throw new Error("Failed to request nonce");
+          }
+
           const result = await res.json();
           return result.data.data.nonce;
         } catch (error) {
@@ -393,6 +432,11 @@ export const useAuthStore = create<any>()(
             },
           );
 
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.message || "Verification failed");
+          }
+
           const result = await res.json();
           let user = result.data.data;
           localStorage.setItem("auth-user", JSON.stringify({ data: user }));
@@ -429,8 +473,8 @@ export const useAuthStore = create<any>()(
                 "X-CSRF-Token": csrfToken,
               },
             },
-            false,
-          ); // Pass false to prevent infinite loops during logout failure processing
+            false, // Prevent recursive loops on forced logouts
+          );
 
           set((state: any) => {
             state.user = null;
@@ -441,7 +485,14 @@ export const useAuthStore = create<any>()(
           });
 
           if (typeof window !== "undefined") {
-            window.location.href = "/auth/login";
+            const getCookieValue = (name: string) => {
+              const value = `; ${document.cookie}`;
+              const parts = value.split(`; ${name}=`);
+              if (parts.length === 2) return parts.pop()?.split(";").shift();
+              return null;
+            };
+            const locale = getCookieValue("NEXT_LOCALE") || "en";
+            window.location.href = buildLocalizedRoute(locale, "/auth/login");
           }
         } catch (error) {
           const normalized = await normalizeApiError(error);
@@ -457,13 +508,19 @@ export const useAuthStore = create<any>()(
             localStorage.removeItem("auth-user");
             localStorage.removeItem("access_token");
             localStorage.removeItem("refresh_token");
-            window.location.href = "/auth/login";
+            const getCookieValue = (name: string) => {
+              const value = `; ${document.cookie}`;
+              const parts = value.split(`; ${name}=`);
+              if (parts.length === 2) return parts.pop()?.split(";").shift();
+              return null;
+            };
+            const locale = getCookieValue("NEXT_LOCALE") || "en";
+            window.location.href = buildLocalizedRoute(locale, "/auth/login");
           }
           throw normalized;
         }
       },
     })),
-    { name: "auth-store" },
   ),
 );
 
