@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import { OptimizedFetchTestComponent } from "./OptimizedFetchTestComponent";
 import { clearAllCaches } from "../utils/fetchUtils";
 import React from "react";
@@ -51,9 +51,16 @@ describe("useOptimizedFetch (React 18 compatible)", () => {
     (fetch as jest.Mock).mockResolvedValueOnce({
       ok: false,
       status: 500,
-      json: async () => ({}),
+      json: async () => ({ message: "Internal Server Error" }),
     });
+
     render(<OptimizedFetchTestComponent url="test-url-error" />);
+
+    // Flush microtasks explicitly so hook processes the network error state transition
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
     await waitFor(() => {
       expect(screen.getByTestId("error").textContent).toBe("error");
       expect(screen.getByTestId("data").textContent).toBe("no-data");
