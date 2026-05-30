@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,15 +9,27 @@ import {
   Wallet,
 } from "lucide-react";
 import { connectFreighter } from "@/lib/stellar/wallet/freighter";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { useAuthContext } from "@/lib/context/AuthContext";
-import { LinkedWallet } from "@/lib/services/profile";
+import {
+  LinkedWallet,
+  fetchLinkedWallets,
+  linkWalletWithChallenge,
+  unlinkWallet,
+} from "@/lib/services/profile";
 
 export default function SettingsPage() {
-  // Tie context smoothly to the active context engine with safe fallbacks
-  const context = useAuthContext() || {};
-  const { wallets = [], linkWallet, unlinkWallet, isLoading = false } = context;
+  // Sync state cleanly with the global user stores from main branch
+  const authUser = useAuthStore((state) => state.user);
+  const setAuthUser = useAuthStore((state) => state.setUser);
+  const getCurrentUser = useAuthStore((state) => state.getCurrentUser);
 
-  // Feedback and loading orchestration states
+  // Fallback engine check for structural environment context layers
+  const context = useAuthContext() || {};
+
+  // Local state orchestration tracking matching upstream branch expectation
+  const [wallets, setWallets] = useState<LinkedWallet[]>([]);
+  const [loading, setLoading] = useState(true);
   const [linking, setLinking] = useState(false);
   const [unlinkingAddress, setUnlinkingAddress] = useState<string | null>(null);
   const [message, setMessage] = useState<{
@@ -25,18 +37,62 @@ export default function SettingsPage() {
     text: string;
   } | null>(null);
 
+  // Reactivity lifecycles for account synchronizers
+  useEffect(() => {
+    if (!authUser) {
+      const storedUser = getCurrentUser();
+      if (storedUser) setAuthUser(storedUser);
+    }
+  }, [authUser, getCurrentUser, setAuthUser]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadWallets() {
+      setLoading(true);
+      setMessage(null);
+
+      try {
+        const nextWallets = await fetchLinkedWallets();
+        if (active) setWallets(nextWallets);
+      } catch (error) {
+        if (active) {
+          setMessage({
+            type: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Failed to load linked wallets.",
+          });
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadWallets();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleLinkFreighter = async () => {
     setMessage(null);
     setLinking(true);
 
     try {
-      if (typeof linkWallet !== "function") {
-        throw new Error(
-          "Wallet link management service is currently unavailable.",
-        );
-      }
       const walletAddress = await connectFreighter();
-      await linkWallet(walletAddress, "freighter");
+
+      // Execute the direct cryptographic challenge workflow required upstream
+      if (typeof context.linkWallet === "function") {
+        await context.linkWallet(walletAddress, "freighter");
+      } else {
+        await linkWalletWithChallenge(walletAddress, "freighter");
+      }
+
+      // Re-fetch datasets smoothly to preserve component tracking loop logic
+      const freshWallets = await fetchLinkedWallets();
+      setWallets(freshWallets);
       setMessage({ type: "success", text: "Wallet linked successfully!" });
     } catch (error: any) {
       setMessage({
@@ -53,12 +109,14 @@ export default function SettingsPage() {
     setUnlinkingAddress(walletAddress);
 
     try {
-      if (typeof unlinkWallet !== "function") {
-        throw new Error(
-          "Wallet unlink management service is currently unavailable.",
-        );
+      if (typeof context.unlinkWallet === "function") {
+        await context.unlinkWallet(walletAddress);
+      } else {
+        await unlinkWallet(walletAddress);
       }
-      await unlinkWallet(walletAddress);
+
+      const freshWallets = await fetchLinkedWallets();
+      setWallets(freshWallets);
       setMessage({ type: "success", text: "Wallet unlinked successfully!" });
     } catch (error: any) {
       setMessage({
@@ -84,7 +142,7 @@ export default function SettingsPage() {
           </h2>
         </div>
 
-        {isLoading ? (
+        {loading || context.isLoading ? (
           <p className="text-sm text-muted-foreground animate-pulse">
             Loading connected profiles...
           </p>
@@ -94,7 +152,7 @@ export default function SettingsPage() {
           </p>
         ) : (
           <ul className="mb-5 space-y-3">
-            {wallets.map((wallet: LinkedWallet) => (
+            {wallets.map((wallet) => (
               <li
                 key={wallet.walletAddress}
                 className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/40 p-3"
@@ -119,6 +177,7 @@ export default function SettingsPage() {
                 </div>
 
                 <button
+                  type="button"
                   className="flex items-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-sm text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
                   onClick={() => handleUnlink(wallet.walletAddress)}
                   disabled={
@@ -136,6 +195,7 @@ export default function SettingsPage() {
         )}
 
         <button
+          type="button"
           className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
           onClick={handleLinkFreighter}
           disabled={linking}

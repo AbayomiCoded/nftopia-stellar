@@ -24,7 +24,9 @@ import {
 } from "lucide-react";
 import { OptimizedImage } from "@/components/image";
 import Link from "next/link";
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
+// Telemetry
+import { authInstrumentation } from "@/lib/telemetry/auth-instrumentation";
 
 type AuthMode = "wallet" | "email";
 
@@ -41,7 +43,9 @@ export default function LoginPage() {
   // Dynamic fallback handling for emailLogin function versions
   const authState = useAuth();
   const emailLogin =
-    (authState as any).loginWithEmail || (authState as any).emailLogin || authState.clearError;
+    (authState as any).loginWithEmail ||
+    (authState as any).emailLogin ||
+    authState.clearError;
 
   // Stellar wallet state hooks
   const {
@@ -62,10 +66,13 @@ export default function LoginPage() {
     clearError: clearAuthError,
   } = useStellarAuth();
 
-  // UI Local layout states
+  // UI
   const [mode, setMode] = useState<AuthMode>("wallet");
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [challengeRequested, setChallengeRequested] = useState(false);
+  // Telemetry states
+  const attemptIdRef = useRef<string | null>(null);
+  const startMsRef = useRef<number>(0);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -90,15 +97,50 @@ export default function LoginPage() {
   const handleWalletAuth = async () => {
     if (!address || !provider) {
       setLocalError("Please connect your wallet first");
+
+      // Telemetry: validation failure
+      const attempt_id = authInstrumentation.submitLogin({
+        auth_method: "wallet",
+        surface: "login_page",
+      });
+      authInstrumentation.loginFailed({
+        auth_method: "wallet",
+        attempt_id,
+        startMs: Date.now(),
+        error: "wallet not connected",
+        failure_stage: "validation",
+        validation_error_count: 1,
+      });
       return;
     }
     clearAllErrors();
+
+    // Telemetry: submit
+    attemptIdRef.current = authInstrumentation.submitLogin({
+      auth_method: "wallet",
+      surface: "login_page",
+    });
+    startMsRef.current = Date.now();
+
     try {
       await authenticateWithWallet(address, provider, () => {
-        // Redirect logic handled natively inside global store transitions
+        // Telemetry: success (handled in hook/store ideally, but fallback here)
+        authInstrumentation.loginSuccess({
+          auth_method: "wallet",
+          attempt_id: attemptIdRef.current!,
+          startMs: startMsRef.current,
+          had_wallet_connected: true,
+        });
       });
-    } catch {
-      // Handled contextually by stellar store state properties
+    } catch (err) {
+      // Telemetry: failure
+      authInstrumentation.loginFailed({
+        auth_method: "wallet",
+        attempt_id: attemptIdRef.current!,
+        startMs: startMsRef.current,
+        error: err,
+        failure_stage: "response",
+      });
     }
   };
 
@@ -106,15 +148,52 @@ export default function LoginPage() {
   const handleEmailLogin = async () => {
     if (!email || !password) {
       setLocalError("Please enter both your email and password");
+
+      // Telemetry: validation failure
+      const attempt_id = authInstrumentation.submitLogin({
+        auth_method: "email",
+        surface: "login_page",
+      });
+      authInstrumentation.loginFailed({
+        auth_method: "email",
+        attempt_id,
+        startMs: Date.now(),
+        error: "missing required fields",
+        failure_stage: "validation",
+        validation_error_count: 2,
+      });
       return;
     }
     clearAllErrors();
+
+    // Telemetry: submit
+    attemptIdRef.current = authInstrumentation.submitLogin({
+      auth_method: "email",
+      surface: "login_page",
+    });
+    startMsRef.current = Date.now();
+
     try {
       if (typeof emailLogin === "function") {
         await emailLogin(email, password);
+
+        // Assuming success path resolves smoothly if handled inside store wrappers,
+        // otherwise if your project tracks it directly:
+        authInstrumentation.loginSuccess({
+          auth_method: "email",
+          attempt_id: attemptIdRef.current!,
+          startMs: startMsRef.current,
+          had_wallet_connected: false,
+        });
       }
-    } catch {
-      // Managed gracefully by underlying hook interceptors
+    } catch (err) {
+      authInstrumentation.loginFailed({
+        auth_method: "email",
+        attempt_id: attemptIdRef.current!,
+        startMs: startMsRef.current,
+        error: err || "not implemented",
+        failure_stage: "request",
+      });
     }
   };
 
@@ -141,7 +220,6 @@ export default function LoginPage() {
       <div className="relative z-10 pb-16 px-4">
         <div className="max-w-md mx-auto">
           <div className="border border-purple-500/20 rounded-xl p-8 bg-glass backdrop-blur-md shadow-lg">
-            
             <div className="flex justify-center mb-8">
               <OptimizedImage
                 src="/nftopia-04.svg"

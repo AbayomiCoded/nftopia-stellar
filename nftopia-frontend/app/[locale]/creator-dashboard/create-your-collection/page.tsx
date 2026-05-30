@@ -157,7 +157,7 @@ export default function CreateYourCollection() {
 
   if (success) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="min-h-[100vh] bg-nftopia-background flex items-center justify-center ">
         <Card className="w-full max-w-md bg-nftopia-card border border-nftopia-border backdrop-blur-sm">
           <CardContent className="p-8 text-center">
             <CheckCircle2 className="w-16 h-16 text-green-400 mx-auto mb-4 animate-bounce" />
@@ -174,7 +174,7 @@ export default function CreateYourCollection() {
   }
 
   return (
-    <div className="min-h-[100vh] bg-nftopia-background py-6 px-4">
+    <div className="min-h-[100vh] mt-10 bg-nftopia-background py-12 px-4">
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-nftopia-text mb-4">
