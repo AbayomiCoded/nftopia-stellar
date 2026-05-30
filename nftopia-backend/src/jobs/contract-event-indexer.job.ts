@@ -98,17 +98,19 @@ export class ContractEventIndexerJob {
     let duplicateCount = 0;
     let failedCount = 0;
 
+    const str = (v: unknown): string => (v == null ? '' : `${v as string}`);
+
     await this.dataSource.transaction(async (manager) => {
       for (const raw of events) {
         try {
-          const contractId = String(raw['contractId'] ?? raw['contract_id'] ?? '');
-          const txHash = String(raw['txHash'] ?? raw['tx_hash'] ?? '');
-          const topic = raw['topic'] != null ? String(raw['topic']) : undefined;
+          const contractId = str(raw['contractId'] ?? raw['contract_id']);
+          const txHash = str(raw['txHash'] ?? raw['tx_hash']);
+          const topic = raw['topic'] != null ? str(raw['topic']) : undefined;
           const eventType =
             raw['eventType'] != null
-              ? String(raw['eventType'])
+              ? str(raw['eventType'])
               : raw['type'] != null
-                ? String(raw['type'])
+                ? str(raw['type'])
                 : undefined;
 
           const entity = manager.create(ContractEvent, {
@@ -138,7 +140,7 @@ export class ContractEventIndexerJob {
         } catch (err) {
           failedCount++;
           this.logger.warn(
-            `Failed to persist event txHash=${String(raw['txHash'])} index=${String(raw['eventIndex'])}: ${String(err)}`,
+            `Failed to persist event txHash=${str(raw['txHash'])} index=${str(raw['eventIndex'])}: ${String(err)}`,
           );
           throw err;
         }
