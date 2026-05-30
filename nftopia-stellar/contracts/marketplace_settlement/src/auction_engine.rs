@@ -176,6 +176,7 @@ impl AuctionEngine {
                 placed_at: timestamp,
                 is_committed,
                 commitment_hash: commitment_hash.clone(),
+                refunded: false,
             },
             &recent_bids,
         )?;

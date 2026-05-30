@@ -101,41 +101,46 @@ export class ContractEventIndexerJob {
     await this.dataSource.transaction(async (manager) => {
       for (const raw of events) {
         try {
+          const contractId = String(raw['contractId'] ?? raw['contract_id'] ?? '');
+          const txHash = String(raw['txHash'] ?? raw['tx_hash'] ?? '');
+          const topic = raw['topic'] != null ? String(raw['topic']) : undefined;
+          const eventType =
+            raw['eventType'] != null
+              ? String(raw['eventType'])
+              : raw['type'] != null
+                ? String(raw['type'])
+                : undefined;
+
           const entity = manager.create(ContractEvent, {
-            contractId: String(raw['contractId'] ?? raw['contract_id'] ?? ''),
+            contractId,
             ledger: Number(raw['ledger'] ?? 0),
-            txHash: String(raw['txHash'] ?? raw['tx_hash'] ?? ''),
+            txHash,
             eventIndex: Number(raw['eventIndex'] ?? raw['event_index'] ?? 0),
-            topic: raw['topic'] != null ? String(raw['topic']) : undefined,
-            eventType:
-              raw['eventType'] != null
-                ? String(raw['eventType'])
-                : raw['type'] != null
-                  ? String(raw['type'])
-                  : undefined,
+            topic,
+            eventType,
             payload: raw,
           });
 
-          await manager
+          const result = await manager
             .createQueryBuilder()
             .insert()
             .into(ContractEvent)
-            .values(entity as any)
-            .orIgnore() // idempotent: skip duplicates on (txHash, eventIndex)
-            .execute()
-            .then((result) => {
-              if (result.raw?.length === 0 || result.identifiers?.length === 0) {
-                duplicateCount++;
-              } else {
-                persistedCount++;
-              }
-            });
+            .values(entity as any) // eslint-disable-line @typescript-eslint/no-unsafe-argument
+            .orIgnore()
+            .execute();
+
+          const identifiers = result.identifiers as unknown[];
+          if (identifiers.length === 0) {
+            duplicateCount++;
+          } else {
+            persistedCount++;
+          }
         } catch (err) {
           failedCount++;
           this.logger.warn(
-            `Failed to persist event txHash=${raw['txHash']} index=${raw['eventIndex']}: ${err}`,
+            `Failed to persist event txHash=${String(raw['txHash'])} index=${String(raw['eventIndex'])}: ${String(err)}`,
           );
-          throw err; // re-throw to roll back the transaction
+          throw err;
         }
       }
     });
