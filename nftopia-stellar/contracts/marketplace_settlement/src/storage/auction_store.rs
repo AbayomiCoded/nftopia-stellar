@@ -129,6 +129,41 @@ impl AuctionStore {
         all_bids.get(auction_id).unwrap_or(Vec::new(env))
     }
 
+    /// Mark a bid as refunded (checks-effects-interactions guard)
+    pub fn mark_bid_refunded(
+        env: &Env,
+        auction_id: u64,
+        bidder: &Address,
+    ) -> Result<(), SettlementError> {
+        let mut all_bids: Map<u64, Vec<Bid>> = env
+            .storage()
+            .instance()
+            .get(&AUCTION_BIDS)
+            .unwrap_or(Map::new(env));
+
+        let mut auction_bids = all_bids.get(auction_id).unwrap_or(Vec::new(env));
+        let mut found = false;
+        for i in 0..auction_bids.len() {
+            if let Some(mut bid) = auction_bids.get(i) {
+                if bid.bidder == *bidder {
+                    if bid.refunded {
+                        return Err(SettlementError::InvalidState);
+                    }
+                    bid.refunded = true;
+                    auction_bids.set(i, bid);
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if !found {
+            return Err(SettlementError::NotFound);
+        }
+        all_bids.set(auction_id, auction_bids);
+        env.storage().instance().set(&AUCTION_BIDS, &all_bids);
+        Ok(())
+    }
+
     /// Update a bid in an auction (for committed bids)
     pub fn update_bid(
         env: &Env,

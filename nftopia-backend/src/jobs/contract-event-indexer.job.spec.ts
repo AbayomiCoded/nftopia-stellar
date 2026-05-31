@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import {
   ContractEventIndexerJob,
   LAST_CONTRACT_EVENT_LEDGER_KEY,
 } from './contract-event-indexer.job';
 import { SystemSettings } from './system-settings.entity';
+import { ContractEvent } from './entities/contract-event.entity';
 import { MarketplaceSettlementClient } from '../modules/stellar/marketplace-settlement.client';
 
 describe('ContractEventIndexerJob', () => {
@@ -31,6 +32,14 @@ describe('ContractEventIndexerJob', () => {
         {
           provide: getRepositoryToken(SystemSettings),
           useValue: settingsRepo,
+        },
+        {
+          provide: getRepositoryToken(ContractEvent),
+          useValue: { create: jest.fn() },
+        },
+        {
+          provide: DataSource,
+          useValue: { transaction: jest.fn() },
         },
         {
           provide: MarketplaceSettlementClient,

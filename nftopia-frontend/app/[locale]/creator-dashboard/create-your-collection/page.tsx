@@ -17,60 +17,67 @@ import { getCookie } from "@/lib/CSRFTOKEN";
 import { FileDropZone } from "@/lib";
 import type { FileWithMeta } from "@/lib/interfaces";
 import { useTranslation } from "@/hooks/useTranslation";
+import { useAuth } from "@/lib/stores/auth-store";
 import { getValidationFieldMessage } from "@/utils/fetchUtils";
 import { useLocalizedRoute } from "@/lib/routing";
 
 interface CreateCollectionForm {
+  contractAddress: string;
   name: string;
+  symbol: string;
   description: string;
-  bannerImage: File | null;
 }
 
 interface FormErrors {
+  contractAddress?: string;
   name?: string;
+  symbol?: string;
   description?: string;
-  bannerImage?: string;
+  imageUrl?: string;
   general?: string;
 }
 
 export default function CreateYourCollection() {
   const { t } = useTranslation();
+  const { locale } = useTranslation();
   const router = useRouter();
   const { showSuccess, showError } = useToast();
+  const { user } = useAuth();
   const localizedRoute = useLocalizedRoute();
 
   const [form, setForm] = useState<CreateCollectionForm>({
+    contractAddress: "",
     name: "",
+    symbol: "",
     description: "",
-    bannerImage: null,
   });
   const [errors, setErrors] = useState<FormErrors>({});
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<FileWithMeta[]>([]);
+  const [bannerFiles, setBannerFiles] = useState<FileWithMeta[]>([]);
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
 
+    if (!form.contractAddress.trim() || form.contractAddress.trim().length !== 56) {
+      newErrors.contractAddress = "Contract address must be a valid 56-character Stellar address";
+    }
+
     if (!form.name.trim()) {
       newErrors.name = t("createCollection.errors.nameRequired");
-    } else if (form.name.trim().length < 3) {
-      newErrors.name = t("createCollection.errors.nameMinLength");
-    } else if (form.name.trim().length > 50) {
+    } else if (form.name.trim().length > 255) {
       newErrors.name = t("createCollection.errors.nameMaxLength");
     }
 
-    if (!form.description.trim()) {
-      newErrors.description = t("createCollection.errors.descriptionRequired");
-    } else if (form.description.trim().length < 10) {
-      newErrors.description = t("createCollection.errors.descriptionMinLength");
-    } else if (form.description.trim().length > 500) {
-      newErrors.description = t("createCollection.errors.descriptionMaxLength");
+    if (!form.symbol.trim()) {
+      newErrors.symbol = "Symbol is required";
+    } else if (form.symbol.trim().length > 50) {
+      newErrors.symbol = "Symbol must be 50 characters or less";
     }
 
     if (selectedFiles.length === 0) {
-      newErrors.bannerImage = "A collection banner image is required";
+      newErrors.imageUrl = "Collection image is required";
     }
 
     setErrors(newErrors);
@@ -82,7 +89,7 @@ export default function CreateYourCollection() {
     value: string,
   ) => {
     setForm((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) {
+    if (errors[field as keyof FormErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
   };
@@ -93,71 +100,72 @@ export default function CreateYourCollection() {
 
     setErrors({});
     setIsLoading(true);
-    setIsUploadingImage(true);
 
     try {
       const csrfToken = await getCookie();
-      const firebaseUrl = await uploadToFirebase(selectedFiles[0].file);
-      setIsUploadingImage(false);
 
-      const res = await fetch(`${API_CONFIG.baseUrl}/collections/create`, {
+      // Upload required image
+      const imageUrl = await uploadToFirebase(selectedFiles[0].file);
+
+      // Upload optional banner image
+      let bannerImageUrl: string | undefined;
+      if (bannerFiles.length > 0) {
+        bannerImageUrl = await uploadToFirebase(bannerFiles[0].file);
+      }
+
+      const payload: Record<string, unknown> = {
+        contractAddress: form.contractAddress.trim(),
+        name: form.name.trim(),
+        symbol: form.symbol.trim(),
+        imageUrl,
+        ...(form.description.trim() && { description: form.description.trim() }),
+        ...(bannerImageUrl && { bannerImageUrl }),
+        ...(user?.id && { creatorId: user.id }),
+      };
+
+      const res = await fetch(`${API_CONFIG.baseUrl}/collections`, {
         method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "X-CSRF-Token": csrfToken,
         },
-        body: JSON.stringify({ ...form, bannerImage: firebaseUrl }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
-        const errPayload = await res.json().catch(() => ({}));
-
-        // Extract granular contextual validations straight from server API response payload
-        const serverNameErr = getValidationFieldMessage(errPayload, "name");
-        const serverDescErr = getValidationFieldMessage(
-          errPayload,
-          "description",
-        );
-
+        const err = await res.json().catch(() => ({}));
+        const serverNameErr = getValidationFieldMessage(err, "name");
+        const serverDescErr = getValidationFieldMessage(err, "description");
         if (serverNameErr || serverDescErr) {
           setErrors({
             name: serverNameErr,
             description: serverDescErr,
-            general:
-              errPayload.message || t("createCollection.errors.failedToCreate"),
+            general: err.message || t("createCollection.errors.failedToCreate"),
           });
-          throw new Error(
-            errPayload.message || t("createCollection.errors.failedToCreate"),
-          );
         }
-        throw new Error(
-          errPayload.message || t("createCollection.errors.failedToCreate"),
-        );
+        throw new Error(err.message || t("createCollection.errors.failedToCreate"));
       }
 
       setSuccess(true);
       showSuccess(t("createCollection.success"));
-      setSelectedFiles([]);
 
       setTimeout(() => {
         router.push(localizedRoute("/creator-dashboard/collections"));
       }, 2000);
     } catch (error: any) {
       console.error("Error creating collection:", error);
-      const errorMessage =
-        error.message || t("createCollection.errors.failedToCreate");
+      const errorMessage = error.message || t("createCollection.errors.failedToCreate");
       setErrors((prev) => ({ ...prev, general: errorMessage }));
       showError(errorMessage);
     } finally {
       setIsLoading(false);
-      setIsUploadingImage(false);
     }
   };
 
   if (success) {
     return (
-      <div className="min-h-[100vh] bg-nftopia-background flex items-center justify-center ">
+      <div className="min-h-[100vh] bg-nftopia-background flex items-center justify-center">
         <Card className="w-full max-w-md bg-nftopia-card border border-nftopia-border backdrop-blur-sm">
           <CardContent className="p-8 text-center">
             <CheckCircle2 className="w-16 h-16 text-green-400 mx-auto mb-4 animate-bounce" />
@@ -188,9 +196,7 @@ export default function CreateYourCollection() {
         {errors.general && (
           <Alert className="mb-6 border-red-500/50 bg-red-500/10">
             <AlertCircle className="h-4 w-4 text-red-400" />
-            <AlertDescription className="text-red-200">
-              {errors.general}
-            </AlertDescription>
+            <AlertDescription className="text-red-200">{errors.general}</AlertDescription>
           </Alert>
         )}
 
@@ -202,6 +208,28 @@ export default function CreateYourCollection() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Contract Address */}
+              <div className="space-y-2">
+                <Label htmlFor="contractAddress" className="text-nftopia-text font-medium">
+                  Contract Address *
+                </Label>
+                <Input
+                  id="contractAddress"
+                  type="text"
+                  placeholder="GABC...XYZ (56 characters)"
+                  value={form.contractAddress}
+                  onChange={(e) => handleInputChange("contractAddress", e.target.value)}
+                  className={cn(
+                    "bg-nftopia-background border-nftopia-border text-nftopia-text placeholder-nftopia-subtext",
+                    errors.contractAddress && "border-red-500/70"
+                  )}
+                  maxLength={56}
+                />
+                {errors.contractAddress && (
+                  <p className="text-red-300 text-sm">{errors.contractAddress}</p>
+                )}
+              </div>
+
               {/* Collection Name */}
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-nftopia-text font-medium">
@@ -215,42 +243,44 @@ export default function CreateYourCollection() {
                   onChange={(e) => handleInputChange("name", e.target.value)}
                   className={cn(
                     "bg-nftopia-background border-nftopia-border text-nftopia-text placeholder-nftopia-subtext",
-                    "focus:border-nftopia-primary focus:ring-nftopia-primary/20",
-                    errors.name && "border-red-500/70 focus:border-red-400",
+                    errors.name && "border-red-500/70"
+                  )}
+                  maxLength={255}
+                />
+                {errors.name && <p className="text-red-300 text-sm">{errors.name}</p>}
+              </div>
+
+              {/* Symbol */}
+              <div className="space-y-2">
+                <Label htmlFor="symbol" className="text-nftopia-text font-medium">
+                  Symbol *
+                </Label>
+                <Input
+                  id="symbol"
+                  type="text"
+                  placeholder="e.g. MYC"
+                  value={form.symbol}
+                  onChange={(e) => handleInputChange("symbol", e.target.value.toUpperCase())}
+                  className={cn(
+                    "bg-nftopia-background border-nftopia-border text-nftopia-text placeholder-nftopia-subtext",
+                    errors.symbol && "border-red-500/70"
                   )}
                   maxLength={50}
                 />
-                {errors.name && (
-                  <p className="text-red-400 text-xs font-medium mt-1">
-                    {errors.name}
-                  </p>
-                )}
-                <p className="text-nftopia-subtext text-xs">
-                  {form.name.length}/50 {t("createCollection.characters")}
-                </p>
+                {errors.symbol && <p className="text-red-300 text-sm">{errors.symbol}</p>}
               </div>
 
               {/* Description */}
               <div className="space-y-2">
-                <Label
-                  htmlFor="description"
-                  className="text-nftopia-text font-medium"
-                >
-                  {t("createCollection.description")} *
+                <Label htmlFor="description" className="text-nftopia-text font-medium">
+                  {t("createCollection.description")}
                 </Label>
                 <Textarea
                   id="description"
                   placeholder={t("createCollection.descriptionPlaceholder")}
                   value={form.description}
-                  onChange={(e) =>
-                    handleInputChange("description", e.target.value)
-                  }
-                  className={cn(
-                    "bg-nftopia-background border-nftopia-border text-nftopia-text placeholder-nftopia-subtext",
-                    "focus:border-nftopia-primary focus:ring-nftopia-primary/20 min-h-[120px]",
-                    errors.description &&
-                      "border-red-500/70 focus:border-red-400",
-                  )}
+                  onChange={(e) => handleInputChange("description", e.target.value)}
+                  className="bg-nftopia-background border-nftopia-border text-nftopia-text placeholder-nftopia-subtext min-h-[120px]"
                   maxLength={500}
                 />
                 {errors.description && (
@@ -259,53 +289,50 @@ export default function CreateYourCollection() {
                   </p>
                 )}
                 <p className="text-nftopia-subtext text-xs">
-                  {form.description.length}/500{" "}
-                  {t("createCollection.characters")}
+                  {form.description.length}/500 {t("createCollection.characters")}
                 </p>
               </div>
 
-              <div className="mb-6">
-                <label className="block text-sm text-nftopia-text font-medium mb-2">
-                  {t("createCollection.uploadBannerImage")} *
+              {/* Collection Image (required) */}
+              <div className="space-y-2">
+                <label className="block text-sm text-nftopia-text font-medium">
+                  Collection Image *
                 </label>
                 <FileDropZone
                   onFilesSelected={setSelectedFiles}
                   accept={["image/*"]}
                   maxSizeMB={10}
                 />
-                {errors.bannerImage && (
-                  <p className="text-red-400 text-xs font-medium mt-1.5">
-                    {errors.bannerImage}
-                  </p>
-                )}
+                {errors.imageUrl && <p className="text-red-300 text-sm">{errors.imageUrl}</p>}
               </div>
 
-              <button
+              {/* Banner Image (optional) */}
+              <div className="space-y-2">
+                <label className="block text-sm text-nftopia-text font-medium">
+                  {t("createCollection.uploadBannerImage")} (optional)
+                </label>
+                <FileDropZone
+                  onFilesSelected={setBannerFiles}
+                  accept={["image/*"]}
+                  maxSizeMB={10}
+                />
+              </div>
+
+              <Button
                 type="submit"
-                disabled={
-                  isLoading ||
-                  isUploadingImage ||
-                  !form.name.trim() ||
-                  !form.description.trim()
-                }
-                className="w-full py-3 px-4 rounded-lg bg-nftopia-primary text-nftopia-text font-bold hover:bg-nftopia-hover transition duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                disabled={isLoading}
+                className="w-full py-3 px-4 rounded-lg bg-nftopia-primary text-nftopia-text font-bold hover:bg-nftopia-hover transition duration-200 disabled:opacity-50"
               >
-                {isLoading
-                  ? "Processing Workspace Setup..."
-                  : t("createCollection.createCollection")}
-              </button>
+                {isLoading ? t("createCollection.creating") : t("createCollection.createCollection")}
+              </Button>
             </form>
           </CardContent>
         </div>
 
-        {/* Help Text */}
         <div className="mt-8 text-center">
           <p className="text-nftopia-subtext text-sm">
             {t("createCollection.needHelp")}{" "}
-            <a
-              href="#"
-              className="text-nftopia-primary hover:text-nftopia-hover underline transition-colors"
-            >
+            <a href="#" className="text-nftopia-primary hover:text-nftopia-hover underline transition-colors">
               {t("createCollection.collectionGuide")}
             </a>
           </p>

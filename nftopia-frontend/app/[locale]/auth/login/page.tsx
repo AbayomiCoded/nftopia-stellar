@@ -38,14 +38,8 @@ export default function LoginPage() {
     loading: emailLoading,
     error: emailStoreError,
     clearError: clearEmailError,
+    emailLogin,
   } = useAuth();
-
-  // Dynamic fallback handling for emailLogin function versions
-  const authState = useAuth();
-  const emailLogin =
-    (authState as any).loginWithEmail ||
-    (authState as any).emailLogin ||
-    authState.clearError;
 
   // Stellar wallet state hooks
   const {
@@ -174,18 +168,14 @@ export default function LoginPage() {
     startMsRef.current = Date.now();
 
     try {
-      if (typeof emailLogin === "function") {
-        await emailLogin(email, password);
-
-        // Assuming success path resolves smoothly if handled inside store wrappers,
-        // otherwise if your project tracks it directly:
-        authInstrumentation.loginSuccess({
-          auth_method: "email",
-          attempt_id: attemptIdRef.current!,
-          startMs: startMsRef.current,
-          had_wallet_connected: false,
-        });
-      }
+      await emailLogin(email, password);
+      authInstrumentation.loginSuccess({
+        auth_method: "email",
+        attempt_id: attemptIdRef.current!,
+        startMs: startMsRef.current,
+        had_wallet_connected: false,
+      });
+      window.location.href = `/${locale}/creator-dashboard`;
     } catch (err) {
       authInstrumentation.loginFailed({
         auth_method: "email",

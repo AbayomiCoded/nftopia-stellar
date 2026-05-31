@@ -20,6 +20,7 @@ import {
 import { useState, useEffect, useRef, useCallback } from "react";
 import { WalletConnector } from "@/components/wallet/WalletConnector";
 import { UserDropdown } from "./user-dropdown";
+import { AccountEntryMenu } from "./account-entry-menu";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageSwitcher, MobileLanguageSwitcher } from "./LanguageSwitcher";
@@ -176,11 +177,16 @@ export function Navbar() {
               <LanguageSwitcher />
             </div>
 
-            {/* Desktop: UserDropdown if logged in, WalletConnector if not */}
+            {/* Desktop: UserDropdown if logged in, WalletConnector + AccountEntryMenu if not */}
             {!loading && (
               isAuthenticated
                 ? <UserDropdown />
-                : <WalletConnector />
+                : (
+                  <div className="flex items-center gap-2">
+                    <WalletConnector />
+                    <AccountEntryMenu />
+                  </div>
+                )
             )}
 
             {/* Mobile hamburger */}

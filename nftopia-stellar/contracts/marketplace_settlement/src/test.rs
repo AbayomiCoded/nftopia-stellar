@@ -49,8 +49,9 @@ impl MockNft {
 }
 
 fn mk_asset(env: &Env) -> Asset {
+    let contract = env.register(MockToken, ());
     Asset {
-        contract: Address::generate(env),
+        contract,
         symbol: Symbol::new(env, "XLM"),
     }
 }

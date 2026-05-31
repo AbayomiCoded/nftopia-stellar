@@ -5,6 +5,7 @@ import { ChevronDown, User, LogOut, Settings } from "lucide-react";
 import { OptimizedImage } from './image';
 import { useAuth } from "@/lib/stores/auth-store";
 import { useToast } from "@/lib/stores";
+import { useTranslation } from "@/hooks/useTranslation";
 import Link from "next/link";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSeparator } from "@/components/ui/dropdown";
 import { useLocalizedRoute } from "@/lib/routing";
@@ -12,6 +13,7 @@ import { useLocalizedRoute } from "@/lib/routing";
 export function UserDropdown() {
   const { user, logout, isAuthenticated } = useAuth();
   const { showSuccess, showError } = useToast();
+  const { locale } = useTranslation();
   const [logoutLoading, setLogoutLoading] = useState(false);
   const localizedRoute = useLocalizedRoute();
 
@@ -92,7 +94,6 @@ export function UserDropdown() {
         </div>
 
         <div className="py-1">
-          {/* Link items use role="menuitem" directly */}
           <Link
             href={localizedRoute("/creator-dashboard")}
             role="menuitem"

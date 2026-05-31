@@ -193,6 +193,36 @@ pub struct DisputeResolvedEvent {
     pub timestamp: u64,
 }
 
+// Bid Escrow / Refund Events
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BidEscrowedEvent {
+    pub auction_id: u64,
+    pub bidder: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BidRefundedEvent {
+    pub auction_id: u64,
+    pub bidder: Address,
+    pub amount: i128,
+    pub reason: Bytes, // "outbid" | "reserve_not_met" | "cancelled" | "withdraw"
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuctionCancelledWithRefundsEvent {
+    pub auction_id: u64,
+    pub cancelled_by: Address,
+    pub refunded_bidder: Option<Address>,
+    pub refunded_amount: i128,
+    pub timestamp: u64,
+}
+
 // Security Events
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -417,4 +447,22 @@ pub fn emit_unauthorized_access(env: &Env, event: UnauthorizedAccessAttemptEvent
 pub fn emit_rejected_contract(env: &Env, event: RejectedContractTargetEvent) {
     env.events()
         .publish(("MarketplaceSettlement", symbol_short!("rej_cont")), event);
+}
+
+#[allow(deprecated)]
+pub fn emit_bid_escrowed(env: &Env, event: BidEscrowedEvent) {
+    env.events()
+        .publish(("MarketplaceSettlement", symbol_short!("bid_escr")), event);
+}
+
+#[allow(deprecated)]
+pub fn emit_bid_refunded(env: &Env, event: BidRefundedEvent) {
+    env.events()
+        .publish(("MarketplaceSettlement", symbol_short!("bid_rfnd")), event);
+}
+
+#[allow(deprecated)]
+pub fn emit_auction_cancelled_with_refunds(env: &Env, event: AuctionCancelledWithRefundsEvent) {
+    env.events()
+        .publish(("MarketplaceSettlement", symbol_short!("auc_cref")), event);
 }

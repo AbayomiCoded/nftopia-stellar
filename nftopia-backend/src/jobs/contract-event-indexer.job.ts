@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { MarketplaceSettlementClient } from '../modules/stellar/marketplace-settlement.client';
 import { SystemSettings } from './system-settings.entity';
+import { ContractEvent } from './entities/contract-event.entity';
 
 /** SystemSettings key used to persist the contract-event cursor. */
 export const LAST_CONTRACT_EVENT_LEDGER_KEY =
@@ -17,6 +18,9 @@ export class ContractEventIndexerJob {
     private readonly settlementClient: MarketplaceSettlementClient,
     @InjectRepository(SystemSettings)
     private readonly settingsRepo: Repository<SystemSettings>,
+    @InjectRepository(ContractEvent)
+    private readonly eventRepo: Repository<ContractEvent>,
+    private readonly dataSource: DataSource,
   ) {}
 
   // Runs every minute
@@ -41,7 +45,6 @@ export class ContractEventIndexerJob {
       return;
     }
 
-    // TODO(#249): Replace this stub with real event persistence logic.
     try {
       await this.persistEvents(events);
     } catch (err) {
@@ -52,8 +55,6 @@ export class ContractEventIndexerJob {
       return;
     }
 
-    // Monotonic guard: only advance the cursor if the new ledger is
-    // strictly greater than the currently stored value.
     await this.advanceCursor(latestLedger);
 
     this.logger.log(
@@ -64,10 +65,6 @@ export class ContractEventIndexerJob {
 
   // Cursor helpers
 
-  /**
-   * Read the persisted cursor from the database.
-   * Returns 0 when no cursor has been stored yet (first run).
-   */
   async loadCursor(): Promise<number> {
     const setting = await this.settingsRepo.findOne({
       where: { key: LAST_CONTRACT_EVENT_LEDGER_KEY },
@@ -75,11 +72,6 @@ export class ContractEventIndexerJob {
     return setting ? parseInt(setting.value, 10) : 0;
   }
 
-  /**
-   * Persist a new cursor value if and only if it is strictly greater than the
-   * currently stored value. This monotonic guard prevents an out-of-order or
-   * replayed value from rolling the cursor backwards.
-   */
   async advanceCursor(newLedger: number): Promise<void> {
     const current = await this.loadCursor();
     if (newLedger <= current) {
@@ -95,21 +87,68 @@ export class ContractEventIndexerJob {
     this.logger.debug(`Cursor advanced: ${current} -> ${newLedger}`);
   }
 
-  // Event persistence stub
+  // Event persistence
 
-  /**
-   * Persist fetched contract events to the database.
-   *
-   * TODO(#249): Replace this stub with real persistence logic (e.g. insert
-   * into a contract_events table, update NFT state, emit domain events, etc.)
-   */
-  private persistEvents(events: Record<string, unknown>[]): Promise<void> {
-    if (events.length === 0) {
-      return Promise.resolve();
-    }
-    this.logger.debug(
-      `persistEvents stub: ${events.length} event(s) would be persisted here.`,
+  private async persistEvents(
+    events: Record<string, unknown>[],
+  ): Promise<void> {
+    if (events.length === 0) return;
+
+    let persistedCount = 0;
+    let duplicateCount = 0;
+    let failedCount = 0;
+
+    const str = (v: unknown): string => (v == null ? '' : `${v as string}`);
+
+    await this.dataSource.transaction(async (manager) => {
+      for (const raw of events) {
+        try {
+          const contractId = str(raw['contractId'] ?? raw['contract_id']);
+          const txHash = str(raw['txHash'] ?? raw['tx_hash']);
+          const topic = raw['topic'] != null ? str(raw['topic']) : undefined;
+          const eventType =
+            raw['eventType'] != null
+              ? str(raw['eventType'])
+              : raw['type'] != null
+                ? str(raw['type'])
+                : undefined;
+
+          const entity = manager.create(ContractEvent, {
+            contractId,
+            ledger: Number(raw['ledger'] ?? 0),
+            txHash,
+            eventIndex: Number(raw['eventIndex'] ?? raw['event_index'] ?? 0),
+            topic,
+            eventType,
+            payload: raw,
+          });
+
+          const result = await manager
+            .createQueryBuilder()
+            .insert()
+            .into(ContractEvent)
+            .values(entity as any) // eslint-disable-line @typescript-eslint/no-unsafe-argument
+            .orIgnore()
+            .execute();
+
+          const identifiers = result.identifiers as unknown[];
+          if (identifiers.length === 0) {
+            duplicateCount++;
+          } else {
+            persistedCount++;
+          }
+        } catch (err) {
+          failedCount++;
+          this.logger.warn(
+            `Failed to persist event txHash=${str(raw['txHash'])} index=${str(raw['eventIndex'])}: ${String(err)}`,
+          );
+          throw err;
+        }
+      }
+    });
+
+    this.logger.log(
+      `persistEvents: persisted=${persistedCount} duplicates=${duplicateCount} failed=${failedCount}`,
     );
-    return Promise.resolve();
   }
 }

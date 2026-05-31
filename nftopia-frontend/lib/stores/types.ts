@@ -52,11 +52,12 @@ export type AuthStore = {
   requestNonce: (walletAddress: string) => Promise<string>;
   verifySignature: (
     walletAddress: string,
-    signature: [string, string], // Changed from string to [string, string]
+    signature: string,
     nonce: string,
-    walletType: 'argentx' | 'braavos',
+    walletProvider: 'freighter' | 'albedo' | 'walletconnect',
     locale: string
   ) => Promise<void>;
+  emailLogin: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<string>;
   getCurrentUser: () => User | null;

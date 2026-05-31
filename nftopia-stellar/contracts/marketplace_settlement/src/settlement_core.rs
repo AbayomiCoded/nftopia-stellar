@@ -296,6 +296,30 @@ impl MarketplaceSettlement {
         })
     }
 
+    /// Cancel an auction with refund (when bids exist)
+    pub fn cancel_auction_with_refund(
+        env: Env,
+        auction_id: u64,
+        canceller: Address,
+    ) -> Result<(), SettlementError> {
+        canceller.require_auth();
+        ReentrancyGuard::execute(&env, &canceller, "cancel_auction_with_refund", || {
+            AuctionEngine::cancel_auction_with_refund(&env, auction_id, &canceller)
+        })
+    }
+
+    /// Withdraw a losing bid after auction reaches terminal state
+    pub fn withdraw_losing_bid(
+        env: Env,
+        auction_id: u64,
+        bidder: Address,
+    ) -> Result<(), SettlementError> {
+        bidder.require_auth();
+        ReentrancyGuard::execute(&env, &bidder, "withdraw_losing_bid", || {
+            AuctionEngine::withdraw_losing_bid(&env, auction_id, &bidder)
+        })
+    }
+
     /// Create a trade
     pub fn create_trade(
         env: Env,

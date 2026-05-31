@@ -52,13 +52,17 @@ export const useAuthStore = create<AuthStore>()(
           },
           verifySignature: async (
             _walletAddress: string,
-            _signature: [string, string],
+            _signature: string,
             _nonce: string,
-            _walletType: "argentx" | "braavos"
+            _walletProvider: 'freighter' | 'albedo' | 'walletconnect',
+            _locale: string
           ) => {
             throw new Error("Not implemented");
           },
           logout: async () => {
+            throw new Error("Not implemented");
+          },
+          emailLogin: async (_email: string, _password: string) => {
             throw new Error("Not implemented");
           },
           refreshToken: async () => {

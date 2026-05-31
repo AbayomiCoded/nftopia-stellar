@@ -70,7 +70,7 @@ export const useAuthStore = create<any>()(
         set({ loading: true, error: null });
         try {
           const csrfToken = await getCookie();
-          const res = await fetchWithAuth(`${API_CONFIG.baseUrl}/auth/login`, {
+          const res = await fetchWithAuth(`${API_CONFIG.baseUrl}/auth/email/login`, {
             method: "POST",
             credentials: "include",
             headers: {
@@ -406,9 +406,9 @@ export const useAuthStore = create<any>()(
 
       verifySignature: async (
         walletAddress: string,
-        signature: [string, string],
+        signature: string,
         nonce: string,
-        walletType: "argentx" | "braavos",
+        walletProvider: 'freighter' | 'albedo' | 'walletconnect',
         locale: string,
       ) => {
         set({ loading: true });
@@ -427,7 +427,7 @@ export const useAuthStore = create<any>()(
                 walletAddress,
                 signature,
                 nonce,
-                walletType,
+                walletProvider,
               }),
             },
           );
@@ -568,6 +568,7 @@ export const useAuth = () => {
     error,
     requestNonce,
     verifySignature,
+    emailLogin,
     logout,
     clearError,
   } = useAuthStore();
@@ -579,6 +580,7 @@ export const useAuth = () => {
     error,
     requestNonce,
     verifySignature,
+    emailLogin,
     logout,
     clearError,
   };
