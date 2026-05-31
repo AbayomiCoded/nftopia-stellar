@@ -13,7 +13,8 @@ function getDeviceTypeFromUA(): DeviceType {
   return "unknown";
 }
 
-export function resolveDeviceType(): DeviceType {
+export function resolveDeviceType(isSSR?: boolean): DeviceType {
+  if (isSSR || typeof window === "undefined") return "unknown";
   if (cachedDeviceType) return cachedDeviceType;
   cachedDeviceType = getDeviceTypeFromUA();
   return cachedDeviceType;

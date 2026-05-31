@@ -11,7 +11,8 @@ function getTimestamp(): string {
 
 export function enrichTelemetryPayload<T extends Record<string, unknown>>(
   payload: T,
-  overrides?: Partial<TelemetrySharedContext>
+  overrides?: Partial<TelemetrySharedContext>,
+  isSSR?: boolean
 ): EnrichedTelemetryEvent<T> {
   let route = "unknown";
   let locale = "en";
@@ -23,10 +24,10 @@ export function enrichTelemetryPayload<T extends Record<string, unknown>>(
   let user_id: string | undefined = undefined;
 
   try {
-    route = resolveRoute();
+    route = resolveRoute(undefined, isSSR);
     locale = resolveLocale(route);
     session_id = resolveSessionId();
-    device_type = resolveDeviceType();
+    device_type = resolveDeviceType(isSSR);
     app_surface = resolveAppSurface(route);
     // Optionally, referrer_route, anonymous_id, user_id can be resolved here if needed
   } catch {}
