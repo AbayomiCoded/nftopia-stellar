@@ -1,4 +1,3 @@
-
 jest.setTimeout(10000);
 
 import { TelemetryQueue, QueuedTelemetryEvent } from '../reliability/queue';
@@ -22,14 +21,14 @@ describe('Telemetry Reliability Layer', () => {
       });
     }
     expect(queue.size()).toBe(3);
-    expect(queue.peek()?.id).toBe('1'); // Oldest dropped
+    expect(queue.peek()?.id).toBe('1'); 
   });
 
   it('computes exponential backoff with jitter', () => {
     const config = DEFAULT_RELIABILITY_CONFIG;
     const delays = Array.from({ length: 5 }, (_, i) => computeNextRetryDelayMs(i + 1, config));
-    expect(delays[0]).toBeGreaterThanOrEqual(400); // 500ms - 20%
-    expect(delays[0]).toBeLessThanOrEqual(600);    // 500ms + 20%
+    expect(delays[0]).toBeGreaterThanOrEqual(400); 
+    expect(delays[0]).toBeLessThanOrEqual(600);    
     expect(delays[4]).toBeLessThanOrEqual(config.retry.maxDelayMs);
   });
 
@@ -44,27 +43,31 @@ describe('Telemetry Reliability Layer', () => {
   it('samples out events below rate', () => {
     const rules = [{ eventName: 'foo', rate: 0 }];
     expect(shouldSampleEvent('foo', rules)).toBe(false);
-    expect(shouldSampleEvent('bar', rules)).toBe(true); // default 1.0
+    expect(shouldSampleEvent('bar', rules)).toBe(true); 
   });
 
   it('debounces events and only dispatches latest', done => {
-    jest.setTimeout(10000); // Increase timeout for debounce test
     const rule = { eventName: 'debounced', windowMs: 200 };
     const debouncer = new TelemetryDebouncer([rule]);
     let dispatched = 0;
+
     const failTimeout = setTimeout(() => {
-      // Fail if callback not called in time
       done(new Error('Debounce callback not called'));
     }, 1000);
-    debouncer.debounce('debounced', { value: 1 }, rule, (event) => {
+
+    const handleDispatch = (event: any) => {
+      clearTimeout(failTimeout);
       console.log('Debounce callback fired', event);
-      expect(event.value).toBe(2);
+      expect(event.value).toBe(2); 
       dispatched++;
-      expect(dispatched).toBe(1);
+      expect(dispatched).toBe(1); 
       done();
-    });
+    };
+
+    debouncer.debounce('debounced', { value: 1 }, rule, handleDispatch);
+
     setTimeout(() => {
-      debouncer.debounce('debounced', { value: 2 }, rule, () => {});
-    }, 10); // Ensure second debounce is within window
+      debouncer.debounce('debounced', { value: 2 }, rule, handleDispatch);
+    }, 10); 
   });
 });
