@@ -246,7 +246,12 @@
     "inputPlaceholder": "Connect your wallet to display address"
   },
   "creatorDashboard": {
+    "title": "Creator Dashboard",
+    "subtitle": "Manage your NFTs and track your earnings",
     "totalNFTs": "Total NFTs",
+    "totalCollections": "Collections",
+    "totalEarnings": "Total Earnings",
+    "totalTransactions": "Total Sales",
     "sales7d": "Sales (7d)",
     "royalties": "Royalties",
     "followers": "Followers",
@@ -255,7 +260,9 @@
     "quickActions": "Quick Actions",
     "mintNewNFT": "Mint New NFT",
     "singleOrBatch": "Single or batch upload",
-    "goToMint": "Go to Mint"
+    "goToMint": "Go to Mint",
+    "createCollection": "Create Collection",
+    "collectionDescription": "Configure smart contract properties and deployment options for collections."
   },
   "mintNFT": {
     "title": "Mint NFT",

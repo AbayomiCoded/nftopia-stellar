@@ -246,7 +246,12 @@
       "inputPlaceholder": "Conecta tu billetera para mostrar la dirección"
     },
     "creatorDashboard": {
+      "title": "Panel del creador",
+      "subtitle": "Gestiona tus NFTs y realiza un seguimiento de tus ganancias",
       "totalNFTs": "NFTs totales",
+      "totalCollections": "Colecciones",
+      "totalEarnings": "Ganancias totales",
+      "totalTransactions": "Ventas totales",
       "sales7d": "Ventas (7d)",
       "royalties": "Regalías",
       "followers": "Seguidores",
@@ -255,7 +260,9 @@
       "quickActions": "Acciones rápidas",
       "mintNewNFT": "Acuñar nuevo NFT",
       "singleOrBatch": "Subida única o por lotes",
-      "goToMint": "Ir a acuñar"
+      "goToMint": "Ir a acuñar",
+      "createCollection": "Crear colección",
+      "collectionDescription": "Configure las propiedades del contrato inteligente y las opciones de implementación de las colecciones."
     },
     "mintNFT": {
       "title": "Acuñar NFT",
