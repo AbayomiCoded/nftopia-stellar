@@ -356,8 +356,8 @@ export class MarketplaceSettlementClient {
       (response as unknown as { latestLedger?: number }).latestLedger ??
       fromLedger;
 
-    const events = (response.events ?? []).map((e) =>
-      e as unknown as Record<string, unknown>,
+    const events = (response.events ?? []).map(
+      (e) => e as unknown as Record<string, unknown>,
     );
 
     this.logger.log(

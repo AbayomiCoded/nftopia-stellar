@@ -11,7 +11,7 @@ import { AuctionService } from '../../modules/auction/auction.service';
 import {
   GraphqlAuction,
   GraphqlBid,
-  AuctionStatus,
+  AuctionStatus, // eslint-disable-line @typescript-eslint/no-unused-vars
 } from '../types/auction.types';
 import type { Auction } from '../../modules/auction/entities/auction.entity';
 import type { Bid } from '../../modules/auction/entities/bid.entity';
@@ -140,7 +140,7 @@ export class AuctionResolver {
       reservePrice: this.toDecimalString(auction.reservePrice),
       startTime: auction.startTime,
       endTime: auction.endTime,
-      status: auction.status as AuctionStatus,
+      status: auction.status,
       winnerId: auction.winnerId ?? null,
       bids: undefined,
     };

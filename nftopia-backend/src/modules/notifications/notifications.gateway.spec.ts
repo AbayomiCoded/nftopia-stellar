@@ -47,7 +47,7 @@ const makeServer = (): jest.Mocked<Server> =>
       opts: {},
       on: jest.fn(),
     },
-  } as unknown as jest.Mocked<Server>);
+  }) as unknown as jest.Mocked<Server>;
 
 const VALID_PAYLOAD = { sub: 'user-42', username: 'alice', email: 'a@b.com' };
 const VALID_TOKEN = 'valid.jwt.token';
@@ -98,7 +98,9 @@ describe('NotificationsGateway', () => {
       const spy = jest.spyOn(Logger.prototype, 'log');
       gateway.afterInit();
       expect(spy).toHaveBeenCalledWith(
-        expect.stringContaining('NotificationsGateway initialised on /notifications with max message size: 65536 bytes'),
+        expect.stringContaining(
+          'NotificationsGateway initialised on /notifications with max message size: 65536 bytes',
+        ),
       );
     });
 
@@ -125,7 +127,8 @@ describe('NotificationsGateway', () => {
         ],
       }).compile();
 
-      const customGateway = module.get<NotificationsGateway>(NotificationsGateway);
+      const customGateway =
+        module.get<NotificationsGateway>(NotificationsGateway);
       Object.assign(customGateway, { server: mockServer });
 
       customGateway.afterInit();

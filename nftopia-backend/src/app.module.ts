@@ -100,7 +100,9 @@ import { TransactionModule } from './modules/transaction/transaction.module';
               logging: config.get('NODE_ENV') === 'development',
               extra: {
                 max: parseInt(
-                  config.get('DB_POOL_SIZE') || process.env.DB_POOL_SIZE || '20',
+                  config.get('DB_POOL_SIZE') ||
+                    process.env.DB_POOL_SIZE ||
+                    '20',
                   10,
                 ),
                 idleTimeoutMillis: parseInt(

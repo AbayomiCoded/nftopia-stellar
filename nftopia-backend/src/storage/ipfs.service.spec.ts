@@ -1,11 +1,7 @@
-import {
-  InternalServerErrorException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { IpfsService } from './ipfs.service';
-import { getStorageConfig } from './storage.config';
 import type { UploadedFile } from './storage.types';
 
 const createFile = (overrides: Partial<UploadedFile> = {}): UploadedFile => {
@@ -21,11 +17,10 @@ const createFile = (overrides: Partial<UploadedFile> = {}): UploadedFile => {
 };
 
 describe('IpfsService', () => {
-  let service: IpfsService;
   let configValues: Record<string, string>;
   let configService: { get: jest.Mock };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     configValues = {
       IPFS_PROVIDER: 'pinata',
       IPFS_GATEWAY_URL: 'https://ipfs.example/ipfs',
@@ -38,18 +33,6 @@ describe('IpfsService', () => {
     configService = {
       get: jest.fn((key: string) => configValues[key]),
     };
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        IpfsService,
-        {
-          provide: ConfigService,
-          useValue: configService,
-        },
-      ],
-    }).compile();
-
-    service = module.get<IpfsService>(IpfsService);
   });
 
   describe('upload', () => {
@@ -64,31 +47,35 @@ describe('IpfsService', () => {
         ],
       }).compile();
 
-      const serviceWithUnsupportedProvider = module.get<IpfsService>(IpfsService);
+      const serviceWithUnsupportedProvider =
+        module.get<IpfsService>(IpfsService);
 
       // Mock getStorageConfig to return unsupported provider
-      jest.spyOn(require('./storage.config'), 'getStorageConfig').mockReturnValue({
-        ipfs: {
-          provider: 'unsupported' as any,
-          maxFileSizeBytes: 50 * 1024 * 1024,
-          gatewayUrl: 'https://ipfs.example/ipfs',
-          retryAttempts: 1,
-          retryBackoffMs: 0,
-          pinataJwt: 'test-jwt',
-          web3StorageToken: 'test-token',
-          nftStorageToken: 'test-token',
-        },
-        arweave: {
-          maxFileSizeBytes: 50 * 1024 * 1024,
-          gatewayUrl: 'https://arweave.example',
-          host: 'arweave.net',
-          port: 443,
-          protocol: 'https',
-          retryAttempts: 1,
-          retryBackoffMs: 0,
-        },
-        fallbackEnabled: true,
-      });
+      /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment */
+      jest
+        .spyOn(require('./storage.config'), 'getStorageConfig')
+        .mockReturnValue({
+          ipfs: {
+            provider: 'unsupported' as any,
+            maxFileSizeBytes: 50 * 1024 * 1024,
+            gatewayUrl: 'https://ipfs.example/ipfs',
+            retryAttempts: 1,
+            retryBackoffMs: 0,
+            pinataJwt: 'test-jwt',
+            web3StorageToken: 'test-token',
+            nftStorageToken: 'test-token',
+          },
+          arweave: {
+            maxFileSizeBytes: 50 * 1024 * 1024,
+            gatewayUrl: 'https://arweave.example',
+            host: 'arweave.net',
+            port: 443,
+            protocol: 'https',
+            retryAttempts: 1,
+            retryBackoffMs: 0,
+          },
+          fallbackEnabled: true,
+        });
 
       await expect(
         serviceWithUnsupportedProvider.upload(createFile()),
@@ -108,31 +95,35 @@ describe('IpfsService', () => {
         ],
       }).compile();
 
-      const serviceWithUnsupportedProvider = module.get<IpfsService>(IpfsService);
+      const serviceWithUnsupportedProvider =
+        module.get<IpfsService>(IpfsService);
 
       // Mock getStorageConfig to return unsupported provider
-      jest.spyOn(require('./storage.config'), 'getStorageConfig').mockReturnValue({
-        ipfs: {
-          provider: 'unsupported' as any,
-          maxFileSizeBytes: 50 * 1024 * 1024,
-          gatewayUrl: 'https://ipfs.example/ipfs',
-          retryAttempts: 1,
-          retryBackoffMs: 0,
-          pinataJwt: 'test-jwt',
-          web3StorageToken: 'test-token',
-          nftStorageToken: 'test-token',
-        },
-        arweave: {
-          maxFileSizeBytes: 50 * 1024 * 1024,
-          gatewayUrl: 'https://arweave.example',
-          host: 'arweave.net',
-          port: 443,
-          protocol: 'https',
-          retryAttempts: 1,
-          retryBackoffMs: 0,
-        },
-        fallbackEnabled: true,
-      });
+      /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call */
+      jest
+        .spyOn(require('./storage.config'), 'getStorageConfig')
+        .mockReturnValue({
+          ipfs: {
+            provider: 'unsupported' as any,
+            maxFileSizeBytes: 50 * 1024 * 1024,
+            gatewayUrl: 'https://ipfs.example/ipfs',
+            retryAttempts: 1,
+            retryBackoffMs: 0,
+            pinataJwt: 'test-jwt',
+            web3StorageToken: 'test-token',
+            nftStorageToken: 'test-token',
+          },
+          arweave: {
+            maxFileSizeBytes: 50 * 1024 * 1024,
+            gatewayUrl: 'https://arweave.example',
+            host: 'arweave.net',
+            port: 443,
+            protocol: 'https',
+            retryAttempts: 1,
+            retryBackoffMs: 0,
+          },
+          fallbackEnabled: true,
+        });
 
       try {
         await serviceWithUnsupportedProvider.upload(createFile());
@@ -168,6 +159,7 @@ describe('IpfsService', () => {
       const serviceWithoutJwt = module.get<IpfsService>(IpfsService);
 
       await expect(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         (serviceWithoutJwt as any).uploadWithPinata(createFile()),
       ).rejects.toBeInstanceOf(InternalServerErrorException);
     });
@@ -188,6 +180,7 @@ describe('IpfsService', () => {
       const serviceWithoutJwt = module.get<IpfsService>(IpfsService);
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         await (serviceWithoutJwt as any).uploadWithPinata(createFile());
         fail('Should have thrown InternalServerErrorException');
       } catch (error) {
@@ -220,6 +213,7 @@ describe('IpfsService', () => {
       const serviceWithoutToken = module.get<IpfsService>(IpfsService);
 
       await expect(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         (serviceWithoutToken as any).uploadWithStorageApi(
           createFile(),
           'web3storage',
@@ -244,6 +238,7 @@ describe('IpfsService', () => {
       const serviceWithoutToken = module.get<IpfsService>(IpfsService);
 
       await expect(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         (serviceWithoutToken as any).uploadWithStorageApi(
           createFile(),
           'nftstorage',
@@ -268,6 +263,7 @@ describe('IpfsService', () => {
       const serviceWithoutToken = module.get<IpfsService>(IpfsService);
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         await (serviceWithoutToken as any).uploadWithStorageApi(
           createFile(),
           'web3storage',

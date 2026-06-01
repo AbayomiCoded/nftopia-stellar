@@ -453,7 +453,7 @@ describe('TransactionService', () => {
       page: number;
       limit: number;
       total: number;
-    } = await service.getTransactionsForUser('user-1', {} as never);
+    } = await service.getTransactionsForUser('user-1', {});
 
     expect(result.total).toBe(0);
     expect(transactionRepo.createQueryBuilder).not.toHaveBeenCalled();

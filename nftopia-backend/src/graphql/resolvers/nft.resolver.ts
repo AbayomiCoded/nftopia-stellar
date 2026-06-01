@@ -32,7 +32,7 @@ import type { Listing } from '../../modules/listing/entities/listing.entity';
 import { GraphqlOrder } from '../types/order.types';
 import type { OrderInterface } from '../../modules/order/interfaces/order.interface';
 import { GraphqlUserType } from '../types/user.types';
-import { GraphqlAuction, AuctionStatus } from '../types/auction.types';
+import { GraphqlAuction, AuctionStatus } from '../types/auction.types'; // eslint-disable-line @typescript-eslint/no-unused-vars
 import type { User } from '../../users/user.entity';
 import type { Auction } from '../../modules/auction/entities/auction.entity';
 
@@ -432,7 +432,7 @@ export class NftResolver {
       reservePrice: this.toDecimalString(auction.reservePrice),
       startTime: auction.startTime,
       endTime: auction.endTime,
-      status: auction.status as AuctionStatus,
+      status: auction.status,
       winnerId: auction.winnerId ?? null,
       bids: undefined,
     };

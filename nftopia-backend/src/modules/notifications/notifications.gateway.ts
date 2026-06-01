@@ -80,7 +80,7 @@ export class NotificationsGateway
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
- ) {}
+  ) {}
 
   /** Expose the underlying io.Server for the service to emit against. */
   getServer(): Server {
@@ -89,27 +89,38 @@ export class NotificationsGateway
 
   afterInit(): void {
     const config = getNotificationsConfig(this.configService);
-    this.server.engine.opts.maxHttpBufferSize = config.websocket.maxMessageSizeBytes;
+    this.server.engine.opts.maxHttpBufferSize =
+      config.websocket.maxMessageSizeBytes;
     this.logger.log(
       `NotificationsGateway initialised on /notifications with max message size: ${config.websocket.maxMessageSizeBytes} bytes`,
     );
 
     // Add error handling for oversized messages
-    this.server.on('connection_error', (error) => {
-      if (error.description === 'payload too large' || error.code === 413) {
-        this.logger.warn(
-          `WebSocket connection rejected: message size exceeds limit of ${config.websocket.maxMessageSizeBytes} bytes`,
-        );
-      }
-    });
 
-    this.server.engine.on('connection_error', (error) => {
-      if (error.code === 'ERR_HTTP_HEADERS_SENT' || error.message?.includes('payload')) {
-        this.logger.warn(
-          `WebSocket engine error: ${error.message}. This may indicate an oversized message.`,
-        );
-      }
-    });
+    this.server.on(
+      'connection_error',
+      (error: { description?: string; code?: number }) => {
+        if (error.description === 'payload too large' || error.code === 413) {
+          this.logger.warn(
+            `WebSocket connection rejected: message size exceeds limit of ${config.websocket.maxMessageSizeBytes} bytes`,
+          );
+        }
+      },
+    );
+
+    this.server.engine.on(
+      'connection_error',
+      (error: { code?: string; message?: string }) => {
+        if (
+          error.code === 'ERR_HTTP_HEADERS_SENT' ||
+          error.message?.includes('payload')
+        ) {
+          this.logger.warn(
+            `WebSocket engine error: ${error.message}. This may indicate an oversized message.`,
+          );
+        }
+      },
+    );
   }
 
   handleConnection(client: Socket): void {

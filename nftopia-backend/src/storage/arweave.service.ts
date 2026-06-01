@@ -46,12 +46,21 @@ export class ArweaveService {
       return {
         id: transaction.id,
         uri: toArweaveUri(transaction.id),
-        gatewayUrl: toArweaveGatewayUrl(transaction.id, arweaveConfig.gatewayUrl),
+        gatewayUrl: toArweaveGatewayUrl(
+          transaction.id,
+          arweaveConfig.gatewayUrl,
+        ),
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`Arweave upload failed: ${errorMessage}`, error instanceof Error ? error.stack : undefined);
-      throw new ServiceUnavailableException('Failed to upload to Arweave. Please try again later.');
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(
+        `Arweave upload failed: ${errorMessage}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new ServiceUnavailableException(
+        'Failed to upload to Arweave. Please try again later.',
+      );
     }
   }
 
@@ -91,7 +100,7 @@ export class ArweaveService {
 
     try {
       this.walletJwk = JSON.parse(walletJson) as JWKInterface;
-    } catch (error) {
+    } catch {
       this.logger.error('Invalid Arweave wallet JSON payload');
       throw new BadRequestException('Invalid Arweave wallet configuration');
     }

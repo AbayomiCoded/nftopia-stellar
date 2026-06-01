@@ -204,7 +204,7 @@ describe('ListingService', () => {
   it('rejects non-positive price', async () => {
     await expect(
       service.create(
-        { nftContractId: 'C1', nftTokenId: '1', price: 0 } as CreateListingDto,
+        { nftContractId: 'C1', nftTokenId: '1', price: 0 },
         'seller-1',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -215,7 +215,7 @@ describe('ListingService', () => {
 
     await expect(
       service.create(
-        { nftContractId: 'C1', nftTokenId: '1', price: 10 } as CreateListingDto,
+        { nftContractId: 'C1', nftTokenId: '1', price: 10 },
         'seller-1',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -227,7 +227,7 @@ describe('ListingService', () => {
 
     await expect(
       service.create(
-        { nftContractId: 'C1', nftTokenId: '1', price: 10 } as CreateListingDto,
+        { nftContractId: 'C1', nftTokenId: '1', price: 10 },
         'seller-1',
       ),
     ).rejects.toBeInstanceOf(NotFoundException);

@@ -18,9 +18,7 @@ import { MarketplaceSettlementClient } from '../stellar/marketplace-settlement.c
 const mockAuctionRepo = {
   findOne: jest.fn(),
   find: jest.fn(),
-  create: jest
-    .fn()
-    .mockImplementation((dto: Partial<Auction>) => dto as unknown as Auction),
+  create: jest.fn().mockImplementation((dto: Partial<Auction>) => dto),
   save: jest.fn().mockImplementation((a: Auction) => Promise.resolve(a)),
   createQueryBuilder: jest.fn(() => ({
     where: jest.fn().mockReturnThis(),
@@ -34,9 +32,7 @@ const mockAuctionRepo = {
 const mockBidRepo = {
   find: jest.fn(),
   findOne: jest.fn(),
-  create: jest
-    .fn()
-    .mockImplementation((dto: Partial<Bid>) => dto as unknown as Bid),
+  create: jest.fn().mockImplementation((dto: Partial<Bid>) => dto),
   save: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -387,7 +383,7 @@ describe('AuctionService', () => {
       mockBidRepo.findOne.mockResolvedValueOnce({
         bidderId: 'b1',
         amount: 5,
-      } as unknown as Bid);
+      });
 
       const result = await service.settleAuction('a1');
       expect(result.settled).toBe(false);
@@ -407,12 +403,12 @@ describe('AuctionService', () => {
         bidderId: 'b1',
         amount: 20,
         bidder: { address: 'addr1' },
-      } as unknown as Bid);
+      });
       mockNftRepo.findOne.mockResolvedValueOnce({
         contractId: 'C',
         tokenId: 'T',
         owner: 'old',
-      } as unknown as StellarNft);
+      });
 
       const result = await service.settleAuction('a1');
       expect(result.settled).toBe(true);
@@ -453,12 +449,12 @@ describe('AuctionService', () => {
         bidderId: 'b1',
         amount: 20,
         bidder: { address: 'addr1' },
-      } as unknown as Bid);
+      });
       mockNftRepo.findOne.mockResolvedValueOnce({
         contractId: 'C',
         tokenId: 'T',
         owner: 'old',
-      } as unknown as StellarNft);
+      });
 
       const result = await service.settleAuction('a1', 's1');
       expect(result.settled).toBe(true);

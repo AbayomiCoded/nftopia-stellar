@@ -108,7 +108,7 @@ export class OrderService {
     if (!Object.values(OrderStatus).includes(status as OrderStatus)) {
       throw new BadRequestException('Invalid status');
     }
-    order.status = status as OrderStatus;
+    order.status = status;
     const saved = await this.orderRepository.save(order);
     return this.toOrderInterface(saved);
   }
@@ -137,7 +137,10 @@ export class OrderService {
     };
   }
 
-  async getSalesAnalytics(periodStart: Date, periodEnd: Date): Promise<{
+  async getSalesAnalytics(
+    periodStart: Date,
+    periodEnd: Date,
+  ): Promise<{
     volume: string;
     count: number;
     averagePrice: string;

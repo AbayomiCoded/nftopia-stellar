@@ -31,7 +31,7 @@ import {
 import {
   AuctionConnection,
   GraphqlAuction,
-  AuctionStatus,
+  AuctionStatus, // eslint-disable-line @typescript-eslint/no-unused-vars
 } from '../types/auction.types';
 import { GraphqlOrder, OrderConnection } from '../types/order.types';
 import type { Nft } from '../../modules/nft/entities/nft.entity';
@@ -374,7 +374,7 @@ export class UserResolver {
       reservePrice: this.toDecimalString(auction.reservePrice),
       startTime: auction.startTime,
       endTime: auction.endTime,
-      status: auction.status as AuctionStatus,
+      status: auction.status,
       winnerId: auction.winnerId ?? null,
       bids: undefined,
     };

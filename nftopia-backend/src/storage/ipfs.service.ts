@@ -120,9 +120,7 @@ export class IpfsService {
         : ipfsConfig.nftStorageToken;
 
     if (!token) {
-      this.logger.error(
-        `${provider} token is not configured`,
-      );
+      this.logger.error(`${provider} token is not configured`);
       throw new InternalServerErrorException(
         'IPFS service is not configured correctly. Please contact support.',
       );
@@ -156,9 +154,7 @@ export class IpfsService {
     const cid = this.extractCid(payload);
 
     if (!cid) {
-      this.logger.error(
-        `${provider} upload response did not include a CID`,
-      );
+      this.logger.error(`${provider} upload response did not include a CID`);
       throw new ServiceUnavailableException(
         'IPFS service returned an invalid response. Please try again later.',
       );

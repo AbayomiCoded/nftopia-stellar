@@ -67,7 +67,9 @@ describe('OrderService', () => {
         }),
       };
 
-      orderRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder as any);
+      orderRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder as any,
+      );
 
       const result = await service.getSalesAnalytics(periodStart, periodEnd);
 
@@ -78,9 +80,12 @@ describe('OrderService', () => {
       });
 
       expect(orderRepository.createQueryBuilder).toHaveBeenCalledWith('order');
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('order.type = :type', {
-        type: OrderType.SALE,
-      });
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'order.type = :type',
+        {
+          type: OrderType.SALE,
+        },
+      );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         'order.status = :status',
         { status: OrderStatus.COMPLETED },
@@ -103,7 +108,9 @@ describe('OrderService', () => {
         getRawOne: jest.fn().mockResolvedValue(null),
       };
 
-      orderRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder as any);
+      orderRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder as any,
+      );
 
       const result = await service.getSalesAnalytics(periodStart, periodEnd);
 
@@ -130,7 +137,9 @@ describe('OrderService', () => {
         }),
       };
 
-      orderRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder as any);
+      orderRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder as any,
+      );
 
       const result = await service.getSalesAnalytics(periodStart, periodEnd);
 
@@ -157,15 +166,23 @@ describe('OrderService', () => {
         }),
       };
 
-      orderRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder as any);
+      orderRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder as any,
+      );
 
       await service.getSalesAnalytics(periodStart, periodEnd);
 
       const whereCalls = mockQueryBuilder.where.mock.calls;
       const andWhereCalls = mockQueryBuilder.andWhere.mock.calls;
 
-      expect(whereCalls[0]).toEqual(['order.type = :type', { type: OrderType.SALE }]);
-      expect(andWhereCalls[0]).toEqual(['order.status = :status', { status: OrderStatus.COMPLETED }]);
+      expect(whereCalls[0]).toEqual([
+        'order.type = :type',
+        { type: OrderType.SALE },
+      ]);
+      expect(andWhereCalls[0]).toEqual([
+        'order.status = :status',
+        { status: OrderStatus.COMPLETED },
+      ]);
     });
   });
 });

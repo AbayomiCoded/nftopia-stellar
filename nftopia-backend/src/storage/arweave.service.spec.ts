@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import Arweave from 'arweave';
 import { ArweaveService } from './arweave.service';
 import type { UploadedFile } from './storage.types';
 
@@ -68,7 +67,9 @@ describe('ArweaveService', () => {
 
       // Mock Arweave client to throw error
       jest.spyOn(service as any, 'getArweaveClient').mockReturnValue({
-        createTransaction: jest.fn().mockRejectedValue(new Error('Network error')),
+        createTransaction: jest
+          .fn()
+          .mockRejectedValue(new Error('Network error')),
       });
 
       await expect(service.upload(file)).rejects.toBeInstanceOf(
@@ -86,7 +87,9 @@ describe('ArweaveService', () => {
       const file = createFile();
 
       jest.spyOn(service as any, 'getArweaveClient').mockReturnValue({
-        createTransaction: jest.fn().mockRejectedValue(new Error('Network error')),
+        createTransaction: jest
+          .fn()
+          .mockRejectedValue(new Error('Network error')),
       });
 
       try {
@@ -122,6 +125,7 @@ describe('ArweaveService', () => {
       const serviceWithoutWallet = module.get<ArweaveService>(ArweaveService);
 
       await expect(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         (serviceWithoutWallet as any).getWalletJwk(),
       ).rejects.toBeInstanceOf(InternalServerErrorException);
     });
@@ -143,6 +147,7 @@ describe('ArweaveService', () => {
       const serviceWithoutWallet = module.get<ArweaveService>(ArweaveService);
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         await (serviceWithoutWallet as any).getWalletJwk();
         fail('Should have thrown InternalServerErrorException');
       } catch (error) {
@@ -172,11 +177,11 @@ describe('ArweaveService', () => {
         ],
       }).compile();
 
-      const serviceWithInvalidWallet = module.get<ArweaveService>(
-        ArweaveService,
-      );
+      const serviceWithInvalidWallet =
+        module.get<ArweaveService>(ArweaveService);
 
       await expect(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         (serviceWithInvalidWallet as any).getWalletJwk(),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -194,11 +199,11 @@ describe('ArweaveService', () => {
         ],
       }).compile();
 
-      const serviceWithInvalidWallet = module.get<ArweaveService>(
-        ArweaveService,
-      );
+      const serviceWithInvalidWallet =
+        module.get<ArweaveService>(ArweaveService);
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         await (serviceWithInvalidWallet as any).getWalletJwk();
         fail('Should have thrown BadRequestException');
       } catch (error) {
@@ -206,9 +211,7 @@ describe('ArweaveService', () => {
         expect((error as BadRequestException).message).toBe(
           'Invalid Arweave wallet configuration',
         );
-        expect((error as BadRequestException).message).not.toContain(
-          'JSON',
-        );
+        expect((error as BadRequestException).message).not.toContain('JSON');
       }
     });
 
@@ -229,10 +232,9 @@ describe('ArweaveService', () => {
         ],
       }).compile();
 
-      const serviceWithValidWallet = module.get<ArweaveService>(
-        ArweaveService,
-      );
+      const serviceWithValidWallet = module.get<ArweaveService>(ArweaveService);
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
       const wallet = await (serviceWithValidWallet as any).getWalletJwk();
       expect(wallet).toEqual({
         kty: 'RSA',
