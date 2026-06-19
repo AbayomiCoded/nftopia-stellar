@@ -5,9 +5,7 @@ export const USER_FIELDS_FRAGMENT = gql`
     id
     walletAddress
     username
-    profileImage
-    createdAt
-    updatedAt
+    avatar
   }
 `;
 
@@ -16,10 +14,9 @@ export const COLLECTION_FIELDS_FRAGMENT = gql`
     id
     name
     description
-    imageUrl
+    image
     creatorId
     createdAt
-    updatedAt
   }
 `;
 
@@ -29,11 +26,10 @@ export const NFT_FIELDS_FRAGMENT = gql`
     tokenId
     name
     description
-    imageUrl
+    image
     ownerId
     collectionId
-    createdAt
-    updatedAt
+    mintedAt
   }
 `;
 
@@ -46,7 +42,7 @@ export const LISTING_FIELDS_FRAGMENT = gql`
     currency
     status
     createdAt
-    updatedAt
+    expiresAt
   }
 `;
 
@@ -55,12 +51,13 @@ export const AUCTION_FIELDS_FRAGMENT = gql`
     id
     nftId
     sellerId
+    startPrice
+    currentPrice
     reservePrice
-    highestBid
+    startTime
     endTime
     status
-    createdAt
-    updatedAt
+    winnerId
   }
 `;
 
