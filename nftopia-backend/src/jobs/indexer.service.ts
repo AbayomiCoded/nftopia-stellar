@@ -5,7 +5,10 @@ import { Horizon } from 'stellar-sdk';
 import { SystemSettings } from './system-settings.entity';
 import { StellarNft } from '../nft/entities/stellar-nft.entity';
 import { ContractEventDlq } from './entities/contract-event-dlq.entity';
-import { NftTransferEvent, NftTransferEventType } from './entities/nft-transfer-event.entity';
+import {
+  NftTransferEvent,
+  NftTransferEventType,
+} from './entities/nft-transfer-event.entity';
 
 const LAST_LEDGER_KEY = 'last_ingested_ledger';
 const HORIZON_URL =
@@ -256,7 +259,9 @@ export class IndexerService implements OnModuleInit {
 
     const nft = await this.nftRepo.findOne({ where: { contractId, tokenId } });
     if (!nft) {
-      this.logger.warn(`NFT ${contractId}:${tokenId} not found for transfer event`);
+      this.logger.warn(
+        `NFT ${contractId}:${tokenId} not found for transfer event`,
+      );
       return;
     }
 
@@ -275,7 +280,9 @@ export class IndexerService implements OnModuleInit {
     });
 
     await this.transferEventRepo.save(transferEvent);
-    this.logger.log(`Transfer event saved for transfer ${contractId}:${tokenId}`);
+    this.logger.log(
+      `Transfer event saved for transfer ${contractId}:${tokenId}`,
+    );
 
     // Update NFT owner
     nft.owner = tx.source_account;

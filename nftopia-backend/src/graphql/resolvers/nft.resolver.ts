@@ -23,7 +23,12 @@ import {
   PaginationInput,
   UpdateNFTMetadataInput,
 } from '../inputs/nft.inputs';
-import { GraphqlNft, NFTConnection, GraphqlTransferEvent, TransferEventConnection } from '../types/nft.types';
+import {
+  GraphqlNft,
+  NFTConnection,
+  GraphqlTransferEvent,
+  TransferEventConnection,
+} from '../types/nft.types';
 import { NftService } from '../../modules/nft/nft.service';
 import type { Nft } from '../../modules/nft/entities/nft.entity';
 import { GraphqlCollection } from '../types/collection.types';
@@ -324,11 +329,13 @@ export class NftResolver {
   })
   async nftTransferHistory(
     @Args('nftId', { type: () => ID }) nftId: string,
-    @Args('page', { type: () => Int, nullable: true, defaultValue: 1 }) page: number,
-    @Args('limit', { type: () => Int, nullable: true, defaultValue: 10 }) limit: number,
+    @Args('page', { type: () => Int, nullable: true, defaultValue: 1 })
+    page: number,
+    @Args('limit', { type: () => Int, nullable: true, defaultValue: 10 })
+    limit: number,
   ): Promise<TransferEventConnection> {
     const result = await this.nftService.getTransferHistory(nftId, page, limit);
-    
+
     const edges = result.data.map((event) => ({
       node: this.toGraphqlTransferEvent(event),
       cursor: this.encodeTransferEventCursor(event),
@@ -339,7 +346,7 @@ export class NftResolver {
       pageInfo: {
         hasNextPage: result.hasNextPage,
         startCursor: edges[0]?.cursor,
-        endCursor: edges.at(-1)?.cursor,        
+        endCursor: edges.at(-1)?.cursor,
       },
       totalCount: result.total,
     };
@@ -355,12 +362,19 @@ export class NftResolver {
   })
   async nftTransferHistoryCursor(
     @Args('nftId', { type: () => ID }) nftId: string,
-    @Args('first', { type: () => Int, nullable: true, defaultValue: 10 }) first: number,
+    @Args('first', { type: () => Int, nullable: true, defaultValue: 10 })
+    first: number,
     @Args('after', { type: () => String, nullable: true }) after?: string,
   ): Promise<TransferEventConnection> {
-    const cursorAfter = after ? this.decodeTransferEventCursor(after) : undefined;
-    const result = await this.nftService.getTransferHistoryCursor(nftId, first, cursorAfter);
-    
+    const cursorAfter = after
+      ? this.decodeTransferEventCursor(after)
+      : undefined;
+    const result = await this.nftService.getTransferHistoryCursor(
+      nftId,
+      first,
+      cursorAfter,
+    );
+
     const edges = result.data.map((event) => ({
       node: this.toGraphqlTransferEvent(event),
       cursor: this.encodeTransferEventCursor(event),
@@ -371,7 +385,7 @@ export class NftResolver {
       pageInfo: {
         hasNextPage: result.hasNextPage,
         startCursor: edges[0]?.cursor,
-        endCursor: edges.at(-1)?.cursor,  
+        endCursor: edges.at(-1)?.cursor,
       },
       totalCount: result.total,
     };
@@ -404,13 +418,19 @@ export class NftResolver {
   })
   async transferHistory(
     @Parent() nft: GraphqlNft,
-    @Args('page', { type: () => Int, nullable: true, defaultValue: 1 }) page: number,
-    @Args('limit', { type: () => Int, nullable: true, defaultValue: 10 }) limit: number,
+    @Args('page', { type: () => Int, nullable: true, defaultValue: 1 })
+    page: number,
+    @Args('limit', { type: () => Int, nullable: true, defaultValue: 10 })
+    limit: number,
   ): Promise<TransferEventConnection | null> {
     // This would need a DataLoader for optimal performance
     // For now, we'll use the nftService directly
     try {
-      const result = await this.nftService.getTransferHistory(nft.id, page, limit);
+      const result = await this.nftService.getTransferHistory(
+        nft.id,
+        page,
+        limit,
+      );
       const edges = result.data.map((event) => ({
         node: this.toGraphqlTransferEvent(event),
         cursor: this.encodeTransferEventCursor(event),
@@ -425,7 +445,7 @@ export class NftResolver {
         },
         totalCount: result.total,
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -604,16 +624,22 @@ export class NftResolver {
   /**
    * Converts a NftTransferEvent entity to GraphQL TransferEvent type
    */
-  private toGraphqlTransferEvent(event: NftTransferEvent): GraphqlTransferEvent {
-    const fromAddressTruncated = event.fromAddress === '0x0000000000000000000000000000000000000000' 
-      ? 'Zero Address' 
-      : this.truncateAddress(event.fromAddress);
+  private toGraphqlTransferEvent(
+    event: NftTransferEvent,
+  ): GraphqlTransferEvent {
+    const fromAddressTruncated =
+      event.fromAddress === '0x0000000000000000000000000000000000000000'
+        ? 'Zero Address'
+        : this.truncateAddress(event.fromAddress);
     const toAddressTruncated = this.truncateAddress(event.toAddress);
-    
-    const horizonUrl = process.env.HORIZON_URL ?? 'https://horizon-testnet.stellar.org';
+
+    const horizonUrl =
+      process.env.HORIZON_URL ?? 'https://horizon-testnet.stellar.org';
     const isTestnet = horizonUrl.includes('testnet');
-    const baseUrl = isTestnet ? 'https://testnet.stellar.org' : 'https://stellar.org';
-    
+    const baseUrl = isTestnet
+      ? 'https://testnet.stellar.org'
+      : 'https://stellar.org';
+
     return {
       id: event.id,
       fromAddress: event.fromAddress,
@@ -634,7 +660,8 @@ export class NftResolver {
    */
   private truncateAddress(address: string): string {
     if (!address) return 'Unknown';
-    if (address === '0x0000000000000000000000000000000000000000') return 'Zero Address';
+    if (address === '0x0000000000000000000000000000000000000000')
+      return 'Zero Address';
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   }
 
@@ -654,16 +681,19 @@ export class NftResolver {
   /**
    * Decodes a transfer event cursor for pagination
    */
-  private decodeTransferEventCursor(cursor: string): { timestamp: number; id: string } {
+  private decodeTransferEventCursor(cursor: string): {
+    timestamp: number;
+    id: string;
+  } {
     try {
       const payload = JSON.parse(
         Buffer.from(cursor, 'base64url').toString('utf8'),
       ) as { timestamp: number; id: string };
-      
+
       if (!payload.timestamp || !payload.id) {
         throw new Error('Cursor is missing fields');
       }
-      
+
       return payload;
     } catch {
       throw new BadRequestException('Invalid pagination cursor');

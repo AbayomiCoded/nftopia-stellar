@@ -44,7 +44,13 @@ export class NftTransferEvent {
   })
   eventType: NftTransferEventType;
 
-  @Column({ name: 'price', type: 'decimal', precision: 20, scale: 7, nullable: true })
+  @Column({
+    name: 'price',
+    type: 'decimal',
+    precision: 20,
+    scale: 7,
+    nullable: true,
+  })
   price?: string | null;
 
   @Column({ name: 'currency', type: 'varchar', length: 12, default: 'XLM' })

@@ -6,6 +6,7 @@ import { OrderService } from './order.service';
 import { Order } from './entities/order.entity';
 import { MarketplaceSettlementClient } from '../stellar/marketplace-settlement.client';
 import { OrderType, OrderStatus } from './dto/create-order.dto';
+import { SelectQueryBuilder } from 'typeorm';
 
 describe('OrderService', () => {
   let service: OrderService;
@@ -68,7 +69,7 @@ describe('OrderService', () => {
       };
 
       orderRepository.createQueryBuilder.mockReturnValue(
-        mockQueryBuilder as any,
+        mockQueryBuilder as unknown as SelectQueryBuilder<Order>,
       );
 
       const result = await service.getSalesAnalytics(periodStart, periodEnd);
@@ -109,7 +110,7 @@ describe('OrderService', () => {
       };
 
       orderRepository.createQueryBuilder.mockReturnValue(
-        mockQueryBuilder as any,
+        mockQueryBuilder as unknown as SelectQueryBuilder<Order>,
       );
 
       const result = await service.getSalesAnalytics(periodStart, periodEnd);
@@ -138,7 +139,7 @@ describe('OrderService', () => {
       };
 
       orderRepository.createQueryBuilder.mockReturnValue(
-        mockQueryBuilder as any,
+        mockQueryBuilder as unknown as SelectQueryBuilder<Order>,
       );
 
       const result = await service.getSalesAnalytics(periodStart, periodEnd);
@@ -167,7 +168,7 @@ describe('OrderService', () => {
       };
 
       orderRepository.createQueryBuilder.mockReturnValue(
-        mockQueryBuilder as any,
+        mockQueryBuilder as unknown as SelectQueryBuilder<Order>,
       );
 
       await service.getSalesAnalytics(periodStart, periodEnd);

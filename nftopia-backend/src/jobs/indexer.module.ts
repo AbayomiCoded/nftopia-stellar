@@ -18,7 +18,7 @@ import { NftTransferEvent } from './entities/nft-transfer-event.entity';
       StellarNft,
       ContractEvent,
       ContractEventDlq,
-      NftTransferEvent, 
+      NftTransferEvent,
     ]),
     StellarModule,
   ],

@@ -337,22 +337,28 @@ export class NftService {
     nftId: string,
     page: number = 1,
     limit: number = 10,
-  ): Promise<{ data: NftTransferEvent[]; total: number; hasNextPage: boolean }> {
+  ): Promise<{
+    data: NftTransferEvent[];
+    total: number;
+    hasNextPage: boolean;
+  }> {
     const skip = (page - 1) * limit;
-    
+
     // First, get the NFT to get contract and token info
     const nft = await this.findById(nftId);
-    
+
     // Query transfer events for this NFT
     const [data, total] = await this.transferEventRepo
       .createQueryBuilder('event')
-      .where('event.nftContractId = :contractId', { contractId: nft.contractAddress })
+      .where('event.nftContractId = :contractId', {
+        contractId: nft.contractAddress,
+      })
       .andWhere('event.tokenId = :tokenId', { tokenId: nft.tokenId })
       .orderBy('event.timestamp', 'DESC')
       .skip(skip)
       .take(limit)
       .getManyAndCount();
-    
+
     return {
       data,
       total,
@@ -368,15 +374,21 @@ export class NftService {
     nftId: string,
     first: number = 10,
     after?: { timestamp: number; id: string },
-  ): Promise<{ data: NftTransferEvent[]; total: number; hasNextPage: boolean }> {
+  ): Promise<{
+    data: NftTransferEvent[];
+    total: number;
+    hasNextPage: boolean;
+  }> {
     // First, get the NFT to get contract and token info
     const nft = await this.findById(nftId);
-    
+
     const qb = this.transferEventRepo
       .createQueryBuilder('event')
-      .where('event.nftContractId = :contractId', { contractId: nft.contractAddress })
+      .where('event.nftContractId = :contractId', {
+        contractId: nft.contractAddress,
+      })
       .andWhere('event.tokenId = :tokenId', { tokenId: nft.tokenId });
-    
+
     if (after) {
       qb.andWhere(
         '(event.timestamp < :cursorTimestamp OR (event.timestamp = :cursorTimestamp AND event.id < :cursorId))',
@@ -386,24 +398,26 @@ export class NftService {
         },
       );
     }
-    
+
     // Get one extra to determine if there's a next page
     const data = await qb
       .orderBy('event.timestamp', 'DESC')
       .addOrderBy('event.id', 'DESC')
       .take(first + 1)
       .getMany();
-    
+
     const hasNextPage = data.length > first;
     const resultData = data.slice(0, first);
-    
+
     // Get total count
     const total = await this.transferEventRepo
       .createQueryBuilder('event')
-      .where('event.nftContractId = :contractId', { contractId: nft.contractAddress })
+      .where('event.nftContractId = :contractId', {
+        contractId: nft.contractAddress,
+      })
       .andWhere('event.tokenId = :tokenId', { tokenId: nft.tokenId })
       .getCount();
-    
+
     return {
       data: resultData,
       total,
@@ -425,10 +439,12 @@ export class NftService {
    */
   async getFirstTransferEvent(nftId: string): Promise<NftTransferEvent | null> {
     const nft = await this.findById(nftId);
-    
+
     return this.transferEventRepo
       .createQueryBuilder('event')
-      .where('event.nftContractId = :contractId', { contractId: nft.contractAddress })
+      .where('event.nftContractId = :contractId', {
+        contractId: nft.contractAddress,
+      })
       .andWhere('event.tokenId = :tokenId', { tokenId: nft.tokenId })
       .andWhere('event.eventType = :eventType', { eventType: 'mint' })
       .orderBy('event.timestamp', 'ASC')
@@ -441,10 +457,12 @@ export class NftService {
    */
   async getLastTransferEvent(nftId: string): Promise<NftTransferEvent | null> {
     const nft = await this.findById(nftId);
-    
+
     return this.transferEventRepo
       .createQueryBuilder('event')
-      .where('event.nftContractId = :contractId', { contractId: nft.contractAddress })
+      .where('event.nftContractId = :contractId', {
+        contractId: nft.contractAddress,
+      })
       .andWhere('event.tokenId = :tokenId', { tokenId: nft.tokenId })
       .orderBy('event.timestamp', 'DESC')
       .limit(1)
