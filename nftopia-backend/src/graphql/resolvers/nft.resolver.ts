@@ -2,6 +2,7 @@ import {
   Args,
   Context,
   ID,
+  Int,
   Mutation,
   Parent,
   Query,
@@ -337,9 +338,8 @@ export class NftResolver {
       edges,
       pageInfo: {
         hasNextPage: result.hasNextPage,
-        hasPreviousPage: page > 1,
-        startCursor: edges[0]?.cursor || null,
-        endCursor: edges.at(-1)?.cursor || null,
+        startCursor: edges[0]?.cursor,
+        endCursor: edges.at(-1)?.cursor,        
       },
       totalCount: result.total,
     };
@@ -370,9 +370,8 @@ export class NftResolver {
       edges,
       pageInfo: {
         hasNextPage: result.hasNextPage,
-        hasPreviousPage: false,
-        startCursor: edges[0]?.cursor || null,
-        endCursor: edges.at(-1)?.cursor || null,
+        startCursor: edges[0]?.cursor,
+        endCursor: edges.at(-1)?.cursor,  
       },
       totalCount: result.total,
     };
@@ -421,9 +420,8 @@ export class NftResolver {
         edges,
         pageInfo: {
           hasNextPage: result.hasNextPage,
-          hasPreviousPage: page > 1,
-          startCursor: edges[0]?.cursor || null,
-          endCursor: edges.at(-1)?.cursor || null,
+          startCursor: edges[0]?.cursor,
+          endCursor: edges.at(-1)?.cursor,
         },
         totalCount: result.total,
       };
