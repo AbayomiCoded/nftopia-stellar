@@ -30,7 +30,11 @@ impl MarketplaceSettlement {
     /// `fee_config` must be provided with deployment-appropriate values; there
     /// are no hardcoded defaults. This function can be called exactly once —
     /// any subsequent call returns `FeeAlreadyInitialized`.
-    pub fn initialize(env: Env, admin: Address, fee_config: FeeConfig) -> Result<(), SettlementError> {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        fee_config: FeeConfig,
+    ) -> Result<(), SettlementError> {
         let admin_config = AdminConfig {
             admin: admin.clone(),
             emergency_withdrawal_enabled: true,

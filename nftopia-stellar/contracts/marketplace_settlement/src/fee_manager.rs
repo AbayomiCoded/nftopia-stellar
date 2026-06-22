@@ -163,9 +163,7 @@ impl FeeManager {
         Self::validate_fee_config(config)?;
 
         env.storage().instance().set(&FEE_CONFIG, config);
-        env.storage()
-            .instance()
-            .set(&FEE_CONFIG_INITIALIZED, &true);
+        env.storage().instance().set(&FEE_CONFIG_INITIALIZED, &true);
 
         emit_fee_config_initialized(
             env,
@@ -376,7 +374,6 @@ impl FeeManager {
         }
     }
 }
-
 
 /// Fee statistics structure
 #[derive(Clone, Debug, Eq, PartialEq)]
