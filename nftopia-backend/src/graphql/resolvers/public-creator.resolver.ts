@@ -397,7 +397,7 @@ export class PublicCreatorResolver {
       name: collection.name,
       symbol: collection.symbol,
       description: collection.description ?? null,
-      image: collection.image,
+      image: collection.imageUrl,
       creatorId: collection.creatorId,
       totalVolume: this.toDecimalString(collection.totalVolume),
       floorPrice: this.toDecimalString(collection.floorPrice),
