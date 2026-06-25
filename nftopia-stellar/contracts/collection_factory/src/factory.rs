@@ -80,7 +80,7 @@ impl CollectionFactory {
             let token_client = token::Client::new(&env, &fee_asset);
 
             // Transfer overflow fee from creator to factory instance
-            token_client.transfer(&creator, &env.current_contract_address(), &fee_amount);
+            token_client.transfer(&creator, env.current_contract_address(), &fee_amount);
         }
 
         let collection_id: u32 = env
@@ -203,7 +203,7 @@ impl CollectionFactory {
     }
 
     pub fn get_remaining_count(env: Env, creator: Address) -> u32 {
-        let max_allowed = env
+        let max_allowed: u32 = env
             .storage()
             .instance()
             .get(&DataKey::MaxCollectionsPerCreator)
@@ -214,11 +214,7 @@ impl CollectionFactory {
             .get(&DataKey::CreatorCollectionCount(creator))
             .unwrap_or(0);
 
-        if current_count >= max_allowed {
-            0
-        } else {
-            max_allowed - current_count
-        }
+        max_allowed.saturating_sub(current_count)
     }
 
     pub fn get_collection_count(env: Env) -> u32 {

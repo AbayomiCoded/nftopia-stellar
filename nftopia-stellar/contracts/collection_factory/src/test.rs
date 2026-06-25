@@ -1,12 +1,9 @@
 use crate::collection::{NftCollection, NftCollectionClient};
-use crate::error::ContractError;
 use crate::factory::{CollectionFactory, CollectionFactoryClient};
 use crate::types::CollectionConfig;
 use soroban_sdk::TryFromVal;
 use soroban_sdk::testutils::Events;
-use soroban_sdk::{
-    Address, BytesN, Env, String, Symbol, Vec, symbol_short, testutils::Address as _, token,
-};
+use soroban_sdk::{Address, Env, String, Symbol, Vec, symbol_short, testutils::Address as _};
 
 #[test]
 fn test_factory_logic() {
