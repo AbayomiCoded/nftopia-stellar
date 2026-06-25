@@ -29,6 +29,7 @@ pub enum SettlementError {
     AuctionReserveNotMet = 205,
     BidRevealFailed = 206,
     CommitmentMismatch = 207,
+    BidBelowMinimumIncrement = 208,
 
     // Payment errors
     PaymentFailed = 300,
@@ -53,6 +54,7 @@ pub enum SettlementError {
     FrontRunningDetected = 601,
     InvalidSignature = 602,
     CooldownActive = 603,
+    ContractPaused = 604,
 
     // Fee errors
     FeeCalculationFailed = 700,
@@ -63,6 +65,7 @@ pub enum SettlementError {
     // Admin errors
     NotAdmin = 800,
     EmergencyWithdrawalNotAllowed = 801,
+    AddressBlocked = 802,
 
     // Math errors
     Overflow = 900,

@@ -2,12 +2,14 @@ use crate::atomic_swap::AtomicSwapEngine;
 use crate::auction_engine::AuctionEngine;
 use crate::dispute_resolution::DisputeResolutionManager;
 use crate::error::SettlementError;
+use crate::events::{emit_address_blocked, emit_address_unblocked, emit_contract_paused, AddressBlockedEvent, AddressUnblockedEvent, ContractPausedEvent};
 use crate::fee_manager::FeeManager;
 use crate::royalty_distributor::RoyaltyDistributor;
 use crate::security::reentrancy_guard::ReentrancyGuard;
 use crate::storage::{
     allowlist_store::AllowlistStore,
     auction_store::AuctionStore,
+    blocklist_store::BlocklistStore,
     transaction_store::{BundleTransactionStore, SaleTransactionStore, TradeTransactionStore},
 };
 use crate::types::{
@@ -75,6 +77,17 @@ impl MarketplaceSettlement {
         duration_seconds: u64,
     ) -> Result<u64, SettlementError> {
         seller.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
+        // Check if seller is blocked
+        if BlocklistStore::is_blocked(&env, &seller) {
+            return Err(SettlementError::AddressBlocked);
+        }
+        
         ReentrancyGuard::execute(&env, &seller, "create_sale", || {
             crate::security::rate_limiter::RateLimiter::check_rate_limit(
                 &env,
@@ -146,6 +159,17 @@ impl MarketplaceSettlement {
         payment_amount: i128,
     ) -> Result<ExecutionResult, SettlementError> {
         buyer.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
+        // Check if buyer is blocked
+        if BlocklistStore::is_blocked(&env, &buyer) {
+            return Err(SettlementError::AddressBlocked);
+        }
+        
         ReentrancyGuard::execute(&env, &buyer, "execute_sale", || {
             let mut sale = SaleTransactionStore::get(&env, transaction_id)?;
 
@@ -213,6 +237,17 @@ impl MarketplaceSettlement {
         currency: Asset,
     ) -> Result<u64, SettlementError> {
         seller.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
+        // Check if seller is blocked
+        if BlocklistStore::is_blocked(&env, &seller) {
+            return Err(SettlementError::AddressBlocked);
+        }
+        
         ReentrancyGuard::execute(&env, &seller, "create_auction", || {
             crate::security::rate_limiter::RateLimiter::check_rate_limit(
                 &env,
@@ -244,6 +279,17 @@ impl MarketplaceSettlement {
         commitment_hash: Option<Bytes>,
     ) -> Result<(), SettlementError> {
         bidder.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
+        // Check if bidder is blocked
+        if BlocklistStore::is_blocked(&env, &bidder) {
+            return Err(SettlementError::AddressBlocked);
+        }
+        
         ReentrancyGuard::execute(&env, &bidder, "place_bid", || {
             crate::security::rate_limiter::RateLimiter::check_rate_limit(
                 &env,
@@ -264,6 +310,17 @@ impl MarketplaceSettlement {
         salt: Bytes,
     ) -> Result<(), SettlementError> {
         bidder.require_auth();
+        
+        // Check if bidder is blocked
+        if BlocklistStore::is_blocked(&env, &bidder) {
+            return Err(SettlementError::AddressBlocked);
+        }
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &bidder, "reveal_bid", || {
             crate::security::rate_limiter::RateLimiter::check_rate_limit(
                 &env,
@@ -278,6 +335,12 @@ impl MarketplaceSettlement {
     /// End an auction
     pub fn end_auction(env: Env, auction_id: u64, caller: Address) -> Result<(), SettlementError> {
         caller.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &caller, "end_auction", || {
             AuctionEngine::end_auction(&env, auction_id, &caller)
         })
@@ -290,6 +353,12 @@ impl MarketplaceSettlement {
         canceller: Address,
     ) -> Result<(), SettlementError> {
         canceller.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &canceller, "cancel_auction_with_refund", || {
             AuctionEngine::cancel_auction_with_refund(&env, auction_id, &canceller)
         })
@@ -302,6 +371,12 @@ impl MarketplaceSettlement {
         bidder: Address,
     ) -> Result<(), SettlementError> {
         bidder.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &bidder, "withdraw_losing_bid", || {
             AuctionEngine::withdraw_losing_bid(&env, auction_id, &bidder)
         })
@@ -317,6 +392,17 @@ impl MarketplaceSettlement {
         duration_seconds: u64,
     ) -> Result<u64, SettlementError> {
         initiator.require_auth();
+        
+        // Check if initiator is blocked
+        if BlocklistStore::is_blocked(&env, &initiator) {
+            return Err(SettlementError::AddressBlocked);
+        }
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &initiator, "create_trade", || {
             crate::security::rate_limiter::RateLimiter::check_rate_limit(
                 &env,
@@ -351,6 +437,17 @@ impl MarketplaceSettlement {
     /// Accept a trade
     pub fn accept_trade(env: Env, trade_id: u64, acceptor: Address) -> Result<(), SettlementError> {
         acceptor.require_auth();
+        
+        // Check if acceptor is blocked
+        if BlocklistStore::is_blocked(&env, &acceptor) {
+            return Err(SettlementError::AddressBlocked);
+        }
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &acceptor.clone(), "accept_trade", || {
             crate::security::rate_limiter::RateLimiter::check_rate_limit(
                 &env,
@@ -383,6 +480,17 @@ impl MarketplaceSettlement {
         executor: Address,
     ) -> Result<(), SettlementError> {
         executor.require_auth();
+        
+        // Check if executor is blocked
+        if BlocklistStore::is_blocked(&env, &executor) {
+            return Err(SettlementError::AddressBlocked);
+        }
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &executor, "execute_trade", || {
             crate::security::rate_limiter::RateLimiter::check_rate_limit(
                 &env,
@@ -415,6 +523,12 @@ impl MarketplaceSettlement {
         duration_seconds: u64,
     ) -> Result<u64, SettlementError> {
         seller.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &seller, "create_bundle", || {
             if items.is_empty() {
                 return Err(SettlementError::InvalidAmount);
@@ -448,6 +562,12 @@ impl MarketplaceSettlement {
         canceller: Address,
     ) -> Result<(), SettlementError> {
         canceller.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &canceller, "cancel_transaction", || {
             if transaction_type == Symbol::new(&env, "sale") {
                 let mut sale = SaleTransactionStore::get(&env, transaction_id)?;
@@ -475,6 +595,12 @@ impl MarketplaceSettlement {
         initiator: Address,
     ) -> Result<u64, SettlementError> {
         initiator.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &initiator, "initiate_dispute", || {
             DisputeResolutionManager::initiate_dispute(
                 &env,
@@ -495,6 +621,12 @@ impl MarketplaceSettlement {
         vote: u64,
     ) -> Result<(), SettlementError> {
         arbitrator.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &arbitrator, "vote_on_dispute", || {
             DisputeResolutionManager::vote_on_dispute(&env, dispute_id, &arbitrator, vote)
         })
@@ -507,6 +639,12 @@ impl MarketplaceSettlement {
         executor: Address,
     ) -> Result<(), SettlementError> {
         executor.require_auth();
+        
+        // Check if contract is paused
+        if Self::is_paused(env.clone()) {
+            return Err(SettlementError::ContractPaused);
+        }
+        
         ReentrancyGuard::execute(&env, &executor, "execute_dispute_resolution", || {
             DisputeResolutionManager::execute_dispute_resolution(&env, dispute_id, &executor)
         })
@@ -708,6 +846,186 @@ impl MarketplaceSettlement {
         }
         AllowlistStore::set_token_allowed(&env, &contract, true);
         Ok(())
+    }
+
+    /// Block an address (admin only)
+    pub fn block_address(
+        env: Env,
+        admin: Address,
+        address: Address,
+        reason: u32,
+        expires_at: Option<u64>,
+    ) -> Result<(), SettlementError> {
+        admin.require_auth();
+        // Check admin permissions
+        let admin_config: AdminConfig = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("admin_cfg"))
+            .ok_or(SettlementError::Unauthorized)?;
+
+        if admin_config.admin != admin {
+            return Err(SettlementError::Unauthorized);
+        }
+
+        let block_reason = match reason {
+            0 => crate::storage::blocklist_store::BlockReason::Scam,
+            1 => crate::storage::blocklist_store::BlockReason::Sanctioned,
+            2 => crate::storage::blocklist_store::BlockReason::Suspicious,
+            3 => crate::storage::blocklist_store::BlockReason::Temporary,
+            4 => crate::storage::blocklist_store::BlockReason::AdminOverride,
+            _ => return Err(SettlementError::InvalidAmount),
+        };
+
+        crate::storage::blocklist_store::BlocklistStore::block_address(
+            &env, &admin, &address, block_reason.clone(), expires_at,
+        )?;
+
+        emit_address_blocked(
+            &env,
+            AddressBlockedEvent {
+                blocked_address: address.clone(),
+                blocked_by: admin,
+                reason: reason,
+                expires_at,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Unblock an address (admin only)
+    pub fn unblock_address(
+        env: Env,
+        admin: Address,
+        address: Address,
+    ) -> Result<(), SettlementError> {
+        admin.require_auth();
+        // Check admin permissions
+        let admin_config: AdminConfig = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("admin_cfg"))
+            .ok_or(SettlementError::Unauthorized)?;
+
+        if admin_config.admin != admin {
+            return Err(SettlementError::Unauthorized);
+        }
+
+        crate::storage::blocklist_store::BlocklistStore::unblock_address(&env, &address);
+
+        emit_address_unblocked(
+            &env,
+            AddressUnblockedEvent {
+                unblocked_address: address.clone(),
+                unblocked_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Update block reason for an address (admin only)
+    pub fn update_block_reason(
+        env: Env,
+        admin: Address,
+        address: Address,
+        reason: u32,
+        expires_at: Option<u64>,
+    ) -> Result<(), SettlementError> {
+        admin.require_auth();
+        // Check admin permissions
+        let admin_config: AdminConfig = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("admin_cfg"))
+            .ok_or(SettlementError::Unauthorized)?;
+
+        if admin_config.admin != admin {
+            return Err(SettlementError::Unauthorized);
+        }
+
+        let block_reason = match reason {
+            0 => crate::storage::blocklist_store::BlockReason::Scam,
+            1 => crate::storage::blocklist_store::BlockReason::Sanctioned,
+            2 => crate::storage::blocklist_store::BlockReason::Suspicious,
+            3 => crate::storage::blocklist_store::BlockReason::Temporary,
+            4 => crate::storage::blocklist_store::BlockReason::AdminOverride,
+            _ => return Err(SettlementError::InvalidAmount),
+        };
+
+        crate::storage::blocklist_store::BlocklistStore::update_block_reason(
+            &env, &admin, &address, block_reason, expires_at,
+        )?;
+
+        Ok(())
+    }
+
+    /// Check if an address is blocked (view function)
+    pub fn is_blocked(env: Env, address: Address) -> bool {
+        crate::storage::blocklist_store::BlocklistStore::is_blocked(&env, &address)
+    }
+
+    /// Get blocked addresses (view function)
+    pub fn get_blocked_addresses(env: Env) -> Vec<(Address, crate::storage::blocklist_store::BlockRecord)> {
+        let map = crate::storage::blocklist_store::BlocklistStore::get_blocked_addresses(&env);
+        let mut result = Vec::new(&env);
+        for (addr, record) in map.iter() {
+            result.push_back((addr, record));
+        }
+        result
+    }
+
+    /// Get block record for an address (view function)
+    pub fn get_block_record(
+        env: Env,
+        address: Address,
+    ) -> Option<crate::storage::blocklist_store::BlockRecord> {
+        crate::storage::blocklist_store::BlocklistStore::get_block_record(&env, &address)
+    }
+
+    /// Set contract pause state (admin only) - emergency circuit breaker
+    pub fn set_pause(
+        env: Env,
+        admin: Address,
+        paused: bool,
+    ) -> Result<(), SettlementError> {
+        admin.require_auth();
+        // Check admin permissions
+        let admin_config: AdminConfig = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("admin_cfg"))
+            .ok_or(SettlementError::Unauthorized)?;
+
+        if admin_config.admin != admin {
+            return Err(SettlementError::Unauthorized);
+        }
+
+        env.storage().instance().set(&symbol_short!("is_paused"), &paused);
+
+        if paused {
+            emit_contract_paused(
+                &env,
+                ContractPausedEvent {
+                    paused: true,
+                    admin,
+                    timestamp: env.ledger().timestamp(),
+                },
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Check if contract is paused (view function)
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&symbol_short!("is_paused"))
+            .unwrap_or(false)
     }
 
     /// Remove allowed token contract (admin only)
