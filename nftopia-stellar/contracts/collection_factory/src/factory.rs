@@ -3,7 +3,7 @@ use crate::events;
 use crate::storage::DataKey;
 use crate::types::{CollectionConfig, CollectionInfo};
 use soroban_sdk::{
-    Address, BytesN, Env, Val, Vec, contract, contractimpl, panic_with_error, token,
+    Address, BytesN, Env, IntoVal, Val, Vec, contract, contractimpl, panic_with_error, token,
 };
 
 #[contract]
@@ -171,6 +171,8 @@ impl CollectionFactory {
         }
 
         collections
+    }
+
     /* Operational Admin Functions */
 
     pub fn update_creator_limit(env: Env, new_limit: u32) {
@@ -305,6 +307,3 @@ impl CollectionFactory {
         Ok(())
     }
 }
-
-// Helper trait to convert Address to Val
-use soroban_sdk::IntoVal;
