@@ -220,7 +220,9 @@ async function bootstrapRestApi() {
 
   app.useGlobalPipes(createValidationPipe());
 
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['health', 'health/(.*)'],
+  });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('NFTopia API')
