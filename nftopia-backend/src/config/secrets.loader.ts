@@ -134,6 +134,33 @@ export function loadDockerSecrets(
     loadedVars.push(targetEnvVar);
   }
 
+  // -------------------------------------------------------------------------
+  // Post-processing: reconstruct DATABASE_URL with the resolved DB password.
+  //
+  // The compose file provides DATABASE_URL_TEMPLATE in the form:
+  //   postgresql://<user>@<host>:<port>/<db>
+  // This loader injects DB_PASSWORD into the authority component so that the
+  // app's TypeORM config receives a complete, authenticated connection string
+  // without the password ever appearing as a plain environment variable.
+  // -------------------------------------------------------------------------
+  const dbPasswordResolved = process.env.DB_PASSWORD;
+  const dbUrlTemplate = process.env.DATABASE_URL_TEMPLATE;
+
+  if (dbPasswordResolved && dbUrlTemplate) {
+    try {
+      const url = new URL(dbUrlTemplate);
+      url.password = encodeURIComponent(dbPasswordResolved);
+      process.env.DATABASE_URL = url.toString();
+      delete process.env.DATABASE_URL_TEMPLATE;
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `[SecretsLoader] Failed to reconstruct DATABASE_URL from DATABASE_URL_TEMPLATE. ` +
+          `Template value: "${dbUrlTemplate}". Cause: ${cause}.`,
+      );
+    }
+  }
+
   return {
     loadedCount: loadedVars.length,
     loadedVars: Object.freeze([...loadedVars]),
