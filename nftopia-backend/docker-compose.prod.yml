@@ -27,7 +27,7 @@
 #     docker stack deploy -c docker-compose.prod.yml nftopia
 # =============================================================================
 
-name: nftopia-prod
+# Stack name is supplied on the CLI: docker stack deploy -c docker-compose.prod.yml nftopia
 
 # ---------------------------------------------------------------------------
 # Secrets
@@ -57,11 +57,10 @@ secrets:
 # ---------------------------------------------------------------------------
 networks:
   nftopia_internal:
-    driver: bridge
-    internal: false   # Allow egress (Stellar RPC, Pinata, Arweave calls)
-    ipam:
-      config:
-        - subnet: 172.28.0.0/16
+    # overlay: required for Docker Swarm (multi-host capable, scoped to swarm).
+    # For plain docker-compose use, change to `driver: bridge`.
+    driver: overlay
+    attachable: true   # Allows standalone containers to attach (useful for debugging)
 
 # ---------------------------------------------------------------------------
 # Volumes
@@ -155,9 +154,9 @@ services:
       # --- CORS ---
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
 
-      # --- Database (no password — read from secret file) ---
-      DATABASE_URL: postgresql://${DB_USER}@postgres:5432/${DB_NAME}
-      # The app reads /run/secrets/nftopia_db_password to complete the DSN.
+      # --- Database (password injected by SecretsLoader from secret file) ---
+      # SecretsLoader reads DATABASE_URL_TEMPLATE, injects DB_PASSWORD, then sets DATABASE_URL.
+      DATABASE_URL_TEMPLATE: postgresql://${DB_USER}@postgres:5432/${DB_NAME}
 
       # --- Redis (no password — read from secret file) ---
       REDIS_HOST: redis
@@ -172,6 +171,7 @@ services:
       # --- Stellar / Soroban ---
       SOROBAN_RPC_URL: ${SOROBAN_RPC_URL}
       STELLAR_NETWORK: ${STELLAR_NETWORK:-mainnet}
+      STELLAR_HORIZON_URL: ${STELLAR_HORIZON_URL}
       COLLECTION_FACTORY_CONTRACT_ID: ${COLLECTION_FACTORY_CONTRACT_ID}
       TRANSACTION_CONTRACT_ID: ${TRANSACTION_CONTRACT_ID}
       MARKETPLACE_SETTLEMENT_CONTRACT_ID: ${MARKETPLACE_SETTLEMENT_CONTRACT_ID}
@@ -228,19 +228,16 @@ services:
       SECRET_FILE_MEILISEARCH_KEY: /run/secrets/nftopia_meilisearch_master_key
       SECRET_FILE_REDIS_PASSWORD: /run/secrets/nftopia_redis_password
 
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      meilisearch:
-        condition: service_healthy
+    # NOTE: depends_on is intentionally omitted — it is not supported by
+    # `docker stack deploy` (Swarm mode). Swarm handles startup ordering via
+    # the restart_policy: on backend failure it retries until all dependencies
+    # are healthy. Use plain `docker-compose up` for depends_on support.
 
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/health || exit 1"]
       interval: 30s
       timeout: 10s
-      start_period: 60s
+      start_period: 120s   # NestJS + TypeORM module init can take 60-90s on first boot
       retries: 3
 
     logging:
@@ -396,6 +393,8 @@ services:
       MEILI_DB_PATH: /meili_data
       MEILI_HTTP_ADDR: "0.0.0.0:7700"
       MEILI_LOG_LEVEL: ${MEILISEARCH_LOG_LEVEL:-WARN}
+      MEILI_MAX_INDEXING_MEMORY: ${MEILI_MAX_INDEXING_MEMORY:-512Mb}
+      MEILI_NO_ANALYTICS: "true"
       # Master key is populated from the secret file by the entrypoint above.
 
     # No host port binding
@@ -412,7 +411,7 @@ services:
       resources:
         limits:
           cpus: "1.0"
-          memory: 2G
+          # memory: 2G   # Restore for production; omit limit for local dev to avoid OOM
         reservations:
           cpus: "0.25"
           memory: 256M
@@ -425,7 +424,7 @@ services:
     restart: unless-stopped
 
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7700/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:7700/health || exit 1"]
       interval: 15s
       timeout: 10s
       start_period: 30s
