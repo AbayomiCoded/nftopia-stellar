@@ -62,7 +62,7 @@ function withCleanEnv(vars: Record<string, string | undefined>) {
  * Creates a ReadFileFn mock that returns the given content for any path.
  */
 function makeReader(content: string): ReadFileFn {
-  return (_filePath: string, _encoding: 'utf8') => content;
+  return () => content;
 }
 
 /**
@@ -89,7 +89,9 @@ describe('loadDockerSecrets', () => {
 
     it('returns loadedCount=0 and skips all mappings without reading any files', () => {
       const neverCalled: ReadFileFn = () => {
-        throw new Error('readFileFn must not be called when no pointers are set');
+        throw new Error(
+          'readFileFn must not be called when no pointers are set',
+        );
       };
 
       const result: SecretsLoadResult = loadDockerSecrets(neverCalled);
@@ -134,14 +136,18 @@ describe('loadDockerSecrets', () => {
     withCleanEnv({
       SECRET_FILE_JWT: '/run/secrets/nftopia_jwt_secret',
       SECRET_FILE_DB_PASSWORD: '/run/secrets/nftopia_db_password',
-      SECRET_FILE_STELLAR_OPERATOR: '/run/secrets/nftopia_stellar_operator_secret',
+      SECRET_FILE_STELLAR_OPERATOR:
+        '/run/secrets/nftopia_stellar_operator_secret',
       SECRET_FILE_PINATA_JWT: '/run/secrets/nftopia_pinata_jwt',
-      SECRET_FILE_MEILISEARCH_KEY: '/run/secrets/nftopia_meilisearch_master_key',
+      SECRET_FILE_MEILISEARCH_KEY:
+        '/run/secrets/nftopia_meilisearch_master_key',
       SECRET_FILE_REDIS_PASSWORD: '/run/secrets/nftopia_redis_password',
     });
 
     it('resolves all 6 secrets and leaves no SECRET_FILE_* pointers', () => {
-      const result: SecretsLoadResult = loadDockerSecrets(makeReader('test-secret-value'));
+      const result: SecretsLoadResult = loadDockerSecrets(
+        makeReader('test-secret-value'),
+      );
 
       expect(result.loadedCount).toBe(6);
       expect(result.skippedVars).toHaveLength(0);
@@ -212,7 +218,9 @@ describe('loadDockerSecrets', () => {
     withCleanEnv({ SECRET_FILE_JWT: '/run/secrets/jwt' });
 
     it('returns frozen arrays that cannot be mutated', () => {
-      const result: SecretsLoadResult = loadDockerSecrets(makeReader('jwt-value'));
+      const result: SecretsLoadResult = loadDockerSecrets(
+        makeReader('jwt-value'),
+      );
 
       expect(() => {
         // Deliberately bypass TypeScript to test the runtime Object.freeze guarantee.

@@ -349,7 +349,9 @@ async function bootstrap() {
   try {
     getCorsConfig();
   } catch (error) {
-    startupLogger.error(`CORS configuration error: ${(error as Error).message}`);
+    startupLogger.error(
+      `CORS configuration error: ${(error as Error).message}`,
+    );
     if (process.env.NODE_ENV === 'production') {
       process.exit(1);
     }
