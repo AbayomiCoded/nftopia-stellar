@@ -411,7 +411,7 @@ services:
       resources:
         limits:
           cpus: "1.0"
-          # memory: 2G   # Restore for production; omit limit for local dev to avoid OOM
+          memory: 2G
         reservations:
           cpus: "0.25"
           memory: 256M
