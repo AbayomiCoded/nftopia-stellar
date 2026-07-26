@@ -13,6 +13,13 @@ import CreateCollectionScreen from '@/screens/Creator/CreateCollectionScreen';
 import EarningsScreen from '@/screens/Creator/EarningsScreen';
 import NotificationsScreen from '@/screens/Notifications/NotificationsScreen';
 import NotificationSettingsScreen from '@/screens/Notifications/NotificationSettingsScreen';
+import SearchResultsScreen from '@/screens/Search/SearchResultsScreen';
+import CollectionsScreen from '@/screens/Collections/CollectionsScreen';
+import CollectionDetailScreen from '@/screens/Collections/CollectionDetailScreen';
+import CreatorProfileScreen from '@/screens/Profile/CreatorProfileScreen';
+import AuctionsScreen from '@/screens/Auctions/AuctionsScreen';
+import AuctionDetailScreen from '@/screens/Auctions/AuctionDetailScreen';
+import CreateAuctionScreen from '@/screens/Auctions/CreateAuctionScreen';
 
 export type MainStackParamList = {
   Home: undefined;
@@ -24,10 +31,18 @@ export type MainStackParamList = {
   CreateCollection: undefined;
   NFTDetail: { nftId: string };
   CollectionDetail: { collectionId: string };
+  EditCollection: { collectionId: string };
   Earnings: undefined;
   Transactions: undefined;
   Notifications: undefined;
   NotificationSettings: undefined;
+  Search: undefined;
+  SearchResults: undefined;
+  Collections: undefined;
+  CreatorProfile: { userId: string };
+  Auctions: undefined;
+  AuctionDetail: { auctionId: string };
+  CreateAuction: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -61,6 +76,15 @@ export default function MainNavigator() {
         <Stack.Screen name="Earnings" component={EarningsScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
+        <Stack.Screen name="Search" component={SearchScreen} />
+        <Stack.Screen name="SearchResults" component={SearchResultsScreen} />
+        <Stack.Screen name="Collections" component={CollectionsScreen} />
+        <Stack.Screen name="CollectionDetail" component={CollectionDetailScreen} />
+        <Stack.Screen name="EditCollection" component={EditCollectionScreen} />
+        <Stack.Screen name="CreatorProfile" component={CreatorProfileScreen} />
+        <Stack.Screen name="Auctions" component={AuctionsScreen} />
+        <Stack.Screen name="AuctionDetail" component={AuctionDetailScreen} />
+        <Stack.Screen name="CreateAuction" component={CreateAuctionScreen} />
       </Stack.Navigator>
     </View>
   );
@@ -80,6 +104,25 @@ function ProfileScreen() {
   return (
     <View style={styles.placeholder}>
       <Text style={styles.placeholderTitle}>Profile</Text>
+      <Text style={styles.placeholderSubtitle}>Coming Soon</Text>
+    </View>
+  );
+}
+
+// Placeholder screens for new features
+function SearchScreen() {
+  return (
+    <View style={styles.placeholder}>
+      <Text style={styles.placeholderTitle}>Search</Text>
+      <Text style={styles.placeholderSubtitle}>Use the search bar above</Text>
+    </View>
+  );
+}
+
+function EditCollectionScreen() {
+  return (
+    <View style={styles.placeholder}>
+      <Text style={styles.placeholderTitle}>Edit Collection</Text>
       <Text style={styles.placeholderSubtitle}>Coming Soon</Text>
     </View>
   );
