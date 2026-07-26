@@ -1,9 +1,6 @@
 export const IMAGE_DEFAULTS = {
   fallback: {
-    collection: '/images/fallbacks/collection-fallback.svg',
     avatar: '/images/fallbacks/avatar-fallback.svg',
-    nft: '/images/fallbacks/nft-fallback.svg',
-    category: '/images/fallbacks/category-fallback.svg',
   },
   blurPlaceholders: {
     collection:
