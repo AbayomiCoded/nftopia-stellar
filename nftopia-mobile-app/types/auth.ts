@@ -3,6 +3,7 @@ export interface User {
   email?: string;
   walletAddress?: string;
   walletType?: 'argentx' | 'braavos' | 'stellar';
+  isCreator?: boolean;
   createdAt: Date;
 }
 
@@ -19,6 +20,7 @@ export interface AuthStore {
   user: User | null;
   loading: boolean;
   isAuthenticated: boolean;
+  isCreator: boolean;
   error: string | null;
   isCheckingAuth: boolean;
   
@@ -28,6 +30,7 @@ export interface AuthStore {
   setError: (error: string | null) => void;
   clearError: () => void;
   setIsCheckingAuth: (isChecking: boolean) => void;
+  setIsCreator: (isCreator: boolean) => void;
   
   // Actions - Authentication
   initializeAuth: () => Promise<void>;
