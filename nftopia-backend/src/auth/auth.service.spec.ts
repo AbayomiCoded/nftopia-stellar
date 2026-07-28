@@ -204,6 +204,9 @@ describe('AuthService', () => {
       signature: Buffer.from('signed').toString('base64'),
     });
 
+    if ('requiresTwoFactor' in result) {
+      throw new Error('expected direct auth response, got 2FA challenge');
+    }
     expect(result.access_token).toEqual('access-token');
     expect(result.refresh_token).toEqual('refresh-token');
     expect(result.user.id).toEqual('user-1');
