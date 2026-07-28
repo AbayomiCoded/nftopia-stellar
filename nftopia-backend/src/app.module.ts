@@ -4,6 +4,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { BullModule } from '@nestjs/bull';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -31,6 +32,7 @@ import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { OfferModule } from './modules/offer/offer.module';
 import { TransactionModule } from './modules/transaction/transaction.module';
+import { TransactionRetryModule } from './modules/transaction/transaction-retry.module';
 import { AuditModule } from './common/audit/audit.module';
 import { MetricsModule } from './common/metrics/metrics.module';
 import { getLoggerConfig } from './config/logger.config';
@@ -59,6 +61,37 @@ import { PaymentModule } from './modules/payment/payment.module';
         password: config.get('REDIS_PASSWORD'),
         db: parseInt(config.get('REDIS_DB') || '0', 10),
         ttl: parseInt(config.get('CACHE_TTL') || '300', 10),
+      }),
+    }),
+
+    /**
+     * BullMQ configuration for job queues
+     * Used by TransactionRetryModule and other queue-based features
+     */
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        redis: {
+          host: config.get('REDIS_HOST') || 'localhost',
+          port: parseInt(config.get('REDIS_PORT') || '6379', 10),
+          password: config.get('REDIS_PASSWORD') || undefined,
+          db: parseInt(config.get('REDIS_DB') || '0', 10),
+        },
+        defaultJobOptions: {
+          attempts: 1, // We handle retries ourselves in the worker
+          backoff: {
+            type: 'exponential',
+            delay: 1000,
+          },
+          removeOnComplete: false, // Keep for DLQ handling
+          removeOnFail: false, // Keep for DLQ handling
+          timeout: 300000, // 5 minutes timeout for long-running jobs
+        },
+        // Optimize for transaction retry workloads
+        limiter: {
+          max: 100, // Max concurrent jobs
+          duration: 1000, // Per second
+        },
       }),
     }),
 
@@ -118,6 +151,7 @@ import { PaymentModule } from './modules/payment/payment.module';
     OrderModule,
     OfferModule,
     TransactionModule,
+    TransactionRetryModule, // Add the transaction retry module
     StorageModule,
     SearchModule,
     CollectionFactoryModule,

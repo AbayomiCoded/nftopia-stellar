@@ -339,6 +339,110 @@ export class SorobanService implements OnModuleInit {
     }
   }
 
+  /**
+   * Submit a transaction with queue-based retry support
+   * This method is called by the retry worker for async retries
+   * It takes a raw XDR string and submits it directly without requiring a BuildTransactionResult
+   */
+  async submitTransactionWithRetry(
+    txXdr: string,
+    signature?: string,
+  ): Promise<SubmitTransactionResult> {
+    this.logger.log(`Audit submitting transaction with retry support`);
+
+    try {
+      // Build a transaction object from XDR
+      const networkPassphrase = this.getNetworkPassphrase();
+      const unsignedTx = TransactionBuilder.fromXDR(
+        txXdr,
+        networkPassphrase,
+      ) as Transaction;
+
+      const server = this.createRpcServer();
+
+      // If no signature provided, use the operator secret
+      const signer =
+        signature || this.configService.get<string>('STELLAR_OPERATOR_SECRET');
+      if (!signer) {
+        throw new ServiceUnavailableException(
+          'No transaction signer provided for retry submission',
+        );
+      }
+
+      const keypair = Keypair.fromSecret(signer);
+      unsignedTx.sign(keypair);
+
+      // Submit the transaction
+      const sendResult = await this.withRpcRetry('sendTransaction', () =>
+        server.sendTransaction(unsignedTx),
+      );
+
+      if (sendResult.status === 'ERROR') {
+        throw new BadRequestException(
+          `Soroban submission error: ${JSON.stringify(sendResult.errorResult ?? {})}`,
+        );
+      }
+
+      // Poll for finalization
+      const finalized = await this.pollTransactionResult(
+        server,
+        sendResult.hash,
+      );
+
+      this.logger.log(
+        `Transaction submitted with hash=${sendResult.hash} status=${finalized.status}`,
+      );
+
+      return finalized;
+    } catch (error) {
+      throw this.mapSorobanError(error);
+    }
+  }
+
+  /**
+   * Get transaction data including XDR for retry
+   * This is a convenience method that can be extended to fetch transaction data
+   * from the contract client if needed
+   */
+  async getTransactionData(
+    contractTxId: number,
+  ): Promise<{ xdr: string; data: Record<string, unknown> }> {
+    try {
+      // Implementation would fetch the transaction data from the contract client
+      // This is a placeholder - actual implementation depends on TransactionContractClient
+      const txData = await this.getTransactionFromContract(contractTxId);
+      return {
+        xdr: txData.xdr || '',
+        data: txData,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to get transaction data for ${contractTxId}: ${error}`,
+      );
+      throw this.mapSorobanError(error);
+    }
+  }
+
+  /**
+   * Placeholder for getting transaction from contract
+   * This would be replaced with actual implementation that integrates with TransactionContractClient
+   *
+   * @param contractTxId - The contract transaction ID
+   * @returns Object containing the transaction XDR
+   */
+  private getTransactionFromContract(
+    contractTxId: number,
+  ): Promise<{ xdr: string }> {
+    // This should integrate with TransactionContractClient
+    // For now, return empty XDR
+    this.logger.warn(
+      `getTransactionFromContract not fully implemented for ${contractTxId}`,
+    );
+    // In a real implementation, you would fetch the transaction from the contract client
+    // Example: return { xdr: await this.txContract.getTransactionXdr(contractTxId) };
+    return Promise.resolve({ xdr: '' });
+  }
+
   ensureValidAccountAddress(address: string): void {
     if (!StrKey.isValidEd25519PublicKey(address)) {
       throw new BadRequestException(

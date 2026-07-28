@@ -144,6 +144,12 @@ export class TransactionContractClient {
     return [];
   }
 
+  async getTransactionData(
+    txId: number,
+  ): Promise<{ xdr: string; data: Record<string, unknown> }> {
+    return this.sorobanService.getTransactionData(txId);
+  }
+
   private async call(method: string, args: SorobanContractArg[]) {
     try {
       const response = await this.sorobanService.invokeContract(

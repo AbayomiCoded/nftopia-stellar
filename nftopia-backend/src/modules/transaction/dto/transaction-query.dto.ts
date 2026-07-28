@@ -1,5 +1,13 @@
-import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsBoolean,
+  IsString,
+  Min,
+} from 'class-validator';
 import { TransactionState } from '../enums/transaction-state.enum';
+import { Type } from 'class-transformer';
 
 export class TransactionQueryDto {
   @IsOptional()
@@ -19,4 +27,14 @@ export class TransactionQueryDto {
   @IsNumber()
   @Min(1)
   limit?: number;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  includeRetries?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  includeDlq?: boolean;
 }
