@@ -7,6 +7,7 @@ import {
   NotFoundException,
   UnauthorizedException,
   Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -29,17 +30,34 @@ import { WalletSession } from './entities/wallet-session.entity';
 import { UserWallet } from './entities/user-wallet.entity';
 import { User } from '../users/user.entity';
 import { StellarSignatureStrategy } from './strategies/stellar.strategy';
+import { TwoFactorService } from './two-factor.service';
 
 type JwtUserPayload = {
   sub: string;
   username?: string;
   email?: string;
   walletAddress?: string;
+  twoFactorVerified?: boolean;
 };
 
 type JwtRefreshPayload = {
   sub: string;
   type: string;
+};
+
+type AuthResponse = {
+  access_token: string;
+  refresh_token: string;
+  user: {
+    id: string;
+    address?: string | null;
+    email?: string | null;
+    username?: string | null;
+    walletAddress?: string | null;
+    walletProvider?: string | null;
+    avatarUrl?: string | null;
+    bannerUrl?: string | null;
+  };
 };
 
 const scryptAsync = promisify(crypto.scrypt);
@@ -62,6 +80,10 @@ export class AuthService {
     process.env.JWT_REFRESH_EXPIRES_IN_SECONDS || '604800',
     10,
   );
+  private readonly twoFactorTempTokenExpirySeconds = parseInt(
+    process.env.TWO_FACTOR_TEMP_TOKEN_EXPIRY_SECONDS || '300',
+    10,
+  );
   private readonly challengeRateLimitByIp = new Map<
     string,
     { count: number; windowStart: number }
@@ -77,6 +99,8 @@ export class AuthService {
     @InjectRepository(WalletSession)
     private readonly walletSessionRepository: Repository<WalletSession>,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    @Inject(forwardRef(() => TwoFactorService))
+    private readonly twoFactorService: TwoFactorService,
   ) {}
 
   async registerWithEmail(dto: EmailRegisterDto) {
@@ -98,6 +122,7 @@ export class AuthService {
         passwordHash,
         username: dto.username,
         isEmailVerified: false,
+        twoFactorEnabled: false,
       }),
     );
 
@@ -120,6 +145,23 @@ export class AuthService {
     );
     if (!isValidPassword) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // Check if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      // Create temporary session and return temp token
+      const tempToken = await this.twoFactorService.createTwoFactorSession(
+        user.id,
+      );
+      return {
+        requiresTwoFactor: true,
+        tempToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+        },
+      };
     }
 
     user.lastLoginAt = new Date();
@@ -232,6 +274,25 @@ export class AuthService {
 
     // Delete nonce from Redis after successful verification (one-time use)
     await this.cacheManager.del(sessionKey);
+
+    // Check if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      // Create temporary session and return temp token
+      const tempToken = await this.twoFactorService.createTwoFactorSession(
+        user.id,
+      );
+      return {
+        requiresTwoFactor: true,
+        tempToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          walletAddress: user.walletAddress,
+          walletProvider: user.walletProvider,
+        },
+      };
+    }
 
     return this.buildAuthResponse(user);
   }
@@ -403,6 +464,74 @@ export class AuthService {
     return this.buildTokenPair(user);
   }
 
+  /**
+   * Build auth response with 2FA claim in JWT
+   */
+  buildAuthResponse(user: User): AuthResponse {
+    const resolvedWalletAddress =
+      user.walletAddress ?? user.address ?? undefined;
+    const resolvedEmail = user.email ?? undefined;
+
+    const tokenPair = this.buildTokenPair({
+      sub: user.id,
+      username: user.username,
+      email: resolvedEmail,
+      walletAddress: resolvedWalletAddress,
+      twoFactorVerified: true, // User has passed 2FA check
+    });
+
+    return {
+      ...tokenPair,
+      user: {
+        id: user.id,
+        address: user.address,
+        email: resolvedEmail,
+        username: user.username,
+        walletAddress: resolvedWalletAddress,
+        walletProvider: user.walletProvider,
+        avatarUrl: user.avatarUrl ?? null,
+        bannerUrl: user.bannerUrl ?? null,
+      },
+    };
+  }
+
+  async refreshTokens(refreshToken: string) {
+    try {
+      const payload = this.jwtService.verify<JwtRefreshPayload>(refreshToken);
+      if (payload.type !== 'refresh') {
+        throw new UnauthorizedException('Invalid token type');
+      }
+      const user = await this.userRepository.findOne({
+        where: { id: payload.sub },
+      });
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+      return this.buildAuthResponse(user);
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+  }
+
+  /**
+   * Get user with 2FA status
+   */
+  async getUserWithTwoFactorStatus(userId: string): Promise<{
+    user: User;
+    twoFactorEnabled: boolean;
+  } | null> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+    if (!user) {
+      return null;
+    }
+    return {
+      user,
+      twoFactorEnabled: user.twoFactorEnabled || false,
+    };
+  }
+
   private assertChallengeRateLimit(requestIp?: string) {
     const key = requestIp || 'unknown';
     const now = Date.now();
@@ -476,6 +605,7 @@ export class AuthService {
         walletPublicKey: walletAddress,
         walletProvider: walletProvider || 'freighter',
         walletConnectedAt: new Date(),
+        twoFactorEnabled: false,
       }),
     );
   }
@@ -576,56 +706,13 @@ export class AuthService {
     return crypto.timingSafeEqual(storedHashBuffer, derivedHash);
   }
 
-  private buildAuthResponse(user: User) {
-    const resolvedWalletAddress =
-      user.walletAddress ?? user.address ?? undefined;
-    const resolvedEmail = user.email ?? undefined;
-
-    const tokenPair = this.buildTokenPair({
-      sub: user.id,
-      username: user.username,
-      email: resolvedEmail,
-      walletAddress: resolvedWalletAddress,
-    });
-
-    return {
-      ...tokenPair,
-      user: {
-        id: user.id,
-        address: user.address,
-        email: resolvedEmail,
-        username: user.username,
-        walletAddress: resolvedWalletAddress,
-        walletProvider: user.walletProvider,
-        avatarUrl: user.avatarUrl ?? null,
-        bannerUrl: user.bannerUrl ?? null,
-      },
-    };
-  }
-  async refreshTokens(refreshToken: string) {
-    try {
-      const payload = this.jwtService.verify<JwtRefreshPayload>(refreshToken);
-      if (payload.type !== 'refresh') {
-        throw new UnauthorizedException('Invalid token type');
-      }
-      const user = await this.userRepository.findOne({
-        where: { id: payload.sub },
-      });
-      if (!user) {
-        throw new UnauthorizedException('User not found');
-      }
-      return this.buildAuthResponse(user);
-    } catch {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-  }
-
   private buildTokenPair(user: JwtUserPayload) {
     const accessToken = this.jwtService.sign({
       sub: user.sub,
       username: user.username,
       email: user.email,
       walletAddress: user.walletAddress,
+      twoFactorVerified: user.twoFactorVerified || false,
       type: 'access',
     });
     const refreshToken = this.jwtService.sign(

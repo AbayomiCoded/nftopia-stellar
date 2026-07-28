@@ -8,6 +8,7 @@ import { User } from '../users/user.entity';
 import { UserWallet } from './entities/user-wallet.entity';
 import { WalletSession } from './entities/wallet-session.entity';
 import { StellarSignatureStrategy } from './strategies/stellar.strategy';
+import { TwoFactorService } from './two-factor.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -52,6 +53,10 @@ describe('AuthService', () => {
     del: jest.fn(),
   };
 
+  const twoFactorService = {
+    createTwoFactorSession: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -81,6 +86,10 @@ describe('AuthService', () => {
         {
           provide: CACHE_MANAGER,
           useValue: cacheManager,
+        },
+        {
+          provide: TwoFactorService,
+          useValue: twoFactorService,
         },
       ],
     }).compile();

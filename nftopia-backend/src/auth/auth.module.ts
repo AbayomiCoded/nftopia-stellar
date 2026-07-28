@@ -1,33 +1,46 @@
-import { Module } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { AuthController } from './auth.controller';
-import { JwtModule } from '@nestjs/jwt';
+import { Module, forwardRef } from '@nestjs/common';
+import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
-import { User } from '../users/user.entity';
+import { StellarSignatureStrategy } from './strategies/stellar.strategy';
+import { StellarSignatureGuard } from './stellar-signature.guard';
+import { JwtAuthGuard } from './jwt-auth.guard';
 import { UserWallet } from './entities/user-wallet.entity';
 import { WalletSession } from './entities/wallet-session.entity';
-import { StellarSignatureStrategy } from './strategies/stellar.strategy';
-
-const jwtAccessExpiresInSeconds = parseInt(
-  process.env.JWT_EXPIRES_IN_SECONDS || '900',
-  10,
-);
+import { User } from '../users/user.entity';
+import { TwoFactorModule } from './two-factor.module';
 
 @Module({
   imports: [
-    PassportModule,
-    TypeOrmModule.forFeature([User, UserWallet, WalletSession]),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-      signOptions: {
-        expiresIn: jwtAccessExpiresInSeconds,
-      },
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret:
+          configService.get<string>('JWT_SECRET') ||
+          'your-secret-key-change-in-production',
+        signOptions: {
+          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ||
+            '1h') as JwtSignOptions['expiresIn'],
+        },
+      }),
     }),
+    TypeOrmModule.forFeature([User, UserWallet, WalletSession]),
+    forwardRef(() => TwoFactorModule),
   ],
   controllers: [AuthController],
-  providers: [AuthService, StellarSignatureStrategy, JwtStrategy],
-  exports: [AuthService, JwtStrategy],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    StellarSignatureStrategy,
+    StellarSignatureGuard,
+    JwtAuthGuard,
+  ],
+  exports: [AuthService, JwtStrategy, StellarSignatureStrategy, JwtAuthGuard],
 })
 export class AuthModule {}
