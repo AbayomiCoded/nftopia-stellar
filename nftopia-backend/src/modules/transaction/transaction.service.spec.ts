@@ -11,6 +11,7 @@ import { TransactionContractClient } from '../stellar/transaction-contract.clien
 import { UsersService } from '../../users/users.service';
 import { NftService } from '../nft/nft.service';
 import { StorageService } from '../../storage/storage.service';
+import { TransactionRetryQueueService } from './transaction-retry-queue.service';
 import { TransactionState } from './enums/transaction-state.enum';
 import { UnauthorizedException } from '@nestjs/common';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -89,6 +90,13 @@ describe('TransactionService', () => {
     del: jest.fn(),
   };
 
+  const retryQueueService = {
+    enqueueRetry: jest.fn(),
+    getRetryStatus: jest.fn(),
+    cancelRetry: jest.fn(),
+    getRetriesForTransaction: jest.fn(),
+  };
+
   // Helper to create mock Transaction objects
   const createMockTransaction = (
     overrides: Partial<Transaction> = {},
@@ -127,6 +135,10 @@ describe('TransactionService', () => {
         { provide: StorageService, useValue: storageService },
         { provide: ConfigService, useValue: configService },
         { provide: CACHE_MANAGER, useValue: cacheManager },
+        {
+          provide: TransactionRetryQueueService,
+          useValue: retryQueueService,
+        },
       ],
     }).compile();
 
