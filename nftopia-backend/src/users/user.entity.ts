@@ -97,6 +97,44 @@ export class User {
   @Column({ name: 'wallet_connected_at', type: 'timestamp', nullable: true })
   walletConnectedAt?: Date | null;
 
+  // 2FA Fields
+  @Column({
+    name: 'two_factor_secret',
+    type: 'text',
+    nullable: true,
+  })
+  twoFactorSecret?: string | null;
+
+  @Column({
+    name: 'is_two_factor_enabled',
+    type: 'boolean',
+    default: false,
+  })
+  twoFactorEnabled: boolean;
+
+  @Column({
+    name: 'two_factor_backup_codes',
+    type: 'text',
+    array: true,
+    nullable: true,
+    default: [],
+  })
+  twoFactorBackupCodes?: string[] | null;
+
+  @Column({
+    name: 'two_factor_enabled_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  twoFactorEnabledAt?: Date | null;
+
+  @Column({
+    name: 'two_factor_disabled_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  twoFactorDisabledAt?: Date | null;
+
   @OneToMany(() => UserWallet, (wallet) => wallet.user)
   wallets?: UserWallet[];
 
