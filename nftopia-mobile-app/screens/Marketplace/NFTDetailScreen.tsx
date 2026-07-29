@@ -1,0 +1,355 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  Image, 
+  RefreshControl,
+  ActivityIndicator,
+  Alert
+} from 'react-native';
+import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import * as Clipboard from 'expo-clipboard';
+import { MainStackParamList } from '@/navigation/MainNavigator';
+import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
+import TransferHistory from '@/components/wallet/TransferHistory';
+import { MOCK_NFTS, NFT } from './MarketplaceScreen';
+
+type NFTDetailRouteProp = RouteProp<MainStackParamList, 'NFTDetail'>;
+type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
+
+export default function NFTDetailScreen() {
+  const route = useRoute<NFTDetailRouteProp>();
+  const navigation = useNavigation<NavigationProp>();
+  const { nftId } = route.params;
+
+  const [nft, setNft] = useState<NFT | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchNFTDetails = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Simulate network request
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const foundNft = MOCK_NFTS.find(n => n.id === nftId);
+      if (foundNft) {
+        setNft(foundNft);
+      } else {
+        setError('NFT not found.');
+      }
+    } catch (err) {
+      setError('Failed to load NFT details.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [nftId]);
+
+  useEffect(() => {
+    fetchNFTDetails();
+  }, [fetchNFTDetails]);
+
+  const copyToClipboard = async (text: string, type: string) => {
+    await Clipboard.setStringAsync(text);
+    Alert.alert('Copied!', `${type} address copied to clipboard.`);
+  };
+
+  const renderSkeleton = () => (
+    <View style={styles.skeletonContainer}>
+      <View style={styles.skeletonImage} />
+      <View style={styles.content}>
+        <View style={styles.skeletonTitle} />
+        <View style={styles.skeletonDesc} />
+        <View style={styles.skeletonDesc} />
+        <View style={[styles.skeletonDesc, { width: '60%' }]} />
+      </View>
+    </View>
+  );
+
+  const renderError = () => (
+    <View style={styles.centerContainer}>
+      <Text style={styles.errorText}>{error}</Text>
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <Text style={styles.backButtonText}>Go Back</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  if (isLoading && !nft) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBackButton}>
+            <Text style={styles.headerBackText}>←</Text>
+          </TouchableOpacity>
+        </View>
+        {renderSkeleton()}
+      </View>
+    );
+  }
+
+  if (error || !nft) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBackButton}>
+            <Text style={styles.headerBackText}>←</Text>
+          </TouchableOpacity>
+        </View>
+        {renderError()}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBackButton}>
+          <Text style={styles.headerBackText}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {nft.name}
+        </Text>
+      </View>
+      
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={fetchNFTDetails} />}
+      >
+        {/* Image viewer with zoom and pinch support */}
+        <ScrollView 
+          horizontal 
+          contentContainerStyle={styles.imageScrollContainer}
+          maximumZoomScale={3}
+          minimumZoomScale={1}
+          showsHorizontalScrollIndicator={false}
+          bouncesZoom={true}
+        >
+          <Image 
+            source={{ uri: nft.imageUrl }} 
+            style={styles.image} 
+            resizeMode="contain"
+          />
+        </ScrollView>
+
+        <View style={styles.content}>
+          <Text style={styles.title}>{nft.name}</Text>
+          <Text style={styles.description}>{nft.description}</Text>
+
+          {/* Creator and Owner */}
+          <View style={styles.addressSection}>
+            <View style={styles.addressRow}>
+              <Text style={styles.addressLabel}>Creator</Text>
+              <TouchableOpacity style={styles.addressPill} onPress={() => copyToClipboard(nft.creator, 'Creator')}>
+                <Text style={styles.addressText}>{nft.creator}</Text>
+                <Text style={styles.copyIcon}>📋</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.addressRow}>
+              <Text style={styles.addressLabel}>Owner</Text>
+              <TouchableOpacity style={styles.addressPill} onPress={() => copyToClipboard(nft.owner, 'Owner')}>
+                <Text style={styles.addressText}>{nft.owner}</Text>
+                <Text style={styles.copyIcon}>📋</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Attributes Grid */}
+          {nft.attributes && nft.attributes.length > 0 && (
+            <View style={styles.attributesSection}>
+              <Text style={styles.sectionTitle}>Attributes</Text>
+              <View style={styles.attributesGrid}>
+                {nft.attributes.map((attr, index) => (
+                  <View key={index} style={styles.attributeCard}>
+                    <Text style={styles.attributeType}>{attr.trait_type}</Text>
+                    <Text style={styles.attributeValue}>{attr.value}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Transfer History */}
+          <TransferHistory events={nft.history} isLoading={isLoading} />
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    paddingTop: 60,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  headerBackButton: {
+    padding: spacing.sm,
+    marginRight: spacing.sm,
+  },
+  headerBackText: {
+    fontSize: 24,
+    color: colors.text,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: spacing.xxl,
+  },
+  imageScrollContainer: {
+    width: '100%',
+    height: 350,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  image: {
+    width: 350,
+    height: 350,
+  },
+  content: {
+    padding: spacing.md,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  description: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    lineHeight: 24,
+    marginBottom: spacing.lg,
+  },
+  addressSection: {
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    ...shadows.sm,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: spacing.xs,
+  },
+  addressLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  addressPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  addressText: {
+    fontSize: 14,
+    color: colors.text,
+    marginRight: spacing.xs,
+  },
+  copyIcon: {
+    fontSize: 14,
+  },
+  attributesSection: {
+    marginBottom: spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  attributesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  attributeCard: {
+    flexBasis: '48%',
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  attributeType: {
+    fontSize: 12,
+    color: colors.primary,
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  attributeValue: {
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  errorText: {
+    fontSize: 16,
+    color: colors.error,
+    marginBottom: spacing.md,
+  },
+  backButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+  },
+  backButtonText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  skeletonContainer: {
+    flex: 1,
+  },
+  skeletonImage: {
+    width: '100%',
+    height: 350,
+    backgroundColor: colors.border,
+  },
+  skeletonTitle: {
+    height: 32,
+    backgroundColor: colors.border,
+    borderRadius: 4,
+    width: '70%',
+    marginBottom: spacing.md,
+  },
+  skeletonDesc: {
+    height: 16,
+    backgroundColor: colors.border,
+    borderRadius: 4,
+    width: '100%',
+    marginBottom: spacing.sm,
+  },
+});
