@@ -1,69 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
-
-export interface NFT {
-  id: string;
-  name: string;
-  description: string;
-  imageUrl: string;
-  creator: string;
-  owner: string;
-  attributes: { trait_type: string; value: string }[];
-  history: TransferEvent[];
-}
-
-export interface TransferEvent {
-  id: string;
-  type: 'mint' | 'transfer' | 'sale';
-  fromAddress?: string;
-  toAddress: string;
-  date: string;
-  price?: string;
-  transactionHash: string;
-}
-
-// Mock data for Marketplace
-export const MOCK_NFTS: NFT[] = [
-  {
-    id: '1',
-    name: 'Cosmic Stellar #1',
-    description: 'A beautiful digital artwork representing the Stellar network ecosystem in a cosmic style.',
-    imageUrl: 'https://picsum.photos/id/1018/400/400',
-    creator: 'GAHQ7...XYZ',
-    owner: 'GBDX3...ABC',
-    attributes: [
-      { trait_type: 'Background', value: 'Deep Space' },
-      { trait_type: 'Rarity', value: 'Legendary' },
-      { trait_type: 'Planet', value: 'Stellar' }
-    ],
-    history: [
-      { id: 'ev1', type: 'mint', toAddress: 'GAHQ7...XYZ', date: '2023-10-01T12:00:00Z', transactionHash: '0x123...' },
-      { id: 'ev2', type: 'sale', fromAddress: 'GAHQ7...XYZ', toAddress: 'GBDX3...ABC', date: '2023-10-15T15:30:00Z', price: '500 XLM', transactionHash: '0x456...' }
-    ]
-  },
-  {
-    id: '2',
-    name: 'Abstract Node',
-    description: 'An abstract visualization of a validator node processing transactions.',
-    imageUrl: 'https://picsum.photos/id/1043/400/400',
-    creator: 'GAHQ7...XYZ',
-    owner: 'GCXY9...DEF',
-    attributes: [
-      { trait_type: 'Color', value: 'Neon Green' },
-      { trait_type: 'Type', value: 'Abstract' }
-    ],
-    history: [
-      { id: 'ev3', type: 'mint', toAddress: 'GAHQ7...XYZ', date: '2023-11-05T09:20:00Z', transactionHash: '0x789...' }
-    ]
-  }
-];
+import { useNFTs } from '@/hooks/useNFTs';
+import { NFT } from '@/types';
 
 export default function MarketplaceScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
+  const { nfts, loading, error, loadMore, refetch } = useNFTs();
 
   const renderItem = ({ item }: { item: NFT }) => (
     <TouchableOpacity 
@@ -73,9 +19,43 @@ export default function MarketplaceScreen() {
       <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
       <View style={styles.cardContent}>
         <Text style={styles.cardTitle}>{item.name}</Text>
-        <Text style={styles.cardOwner}>Owner: {item.owner}</Text>
+        <Text style={styles.cardOwner}>Owner: {item.owner.username || item.owner.address}</Text>
       </View>
     </TouchableOpacity>
+  );
+
+  const renderFooter = () => {
+    if (!loading) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color={colors.primary} />
+      </View>
+    );
+  };
+
+  const renderSkeleton = () => (
+    <View style={styles.listContent}>
+      {[1, 2, 3].map(key => (
+        <View key={key} style={styles.card}>
+          <View style={styles.skeletonImage} />
+          <View style={styles.cardContent}>
+            <View style={styles.skeletonTextLong} />
+            <View style={styles.skeletonTextShort} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+
+  const renderError = () => (
+    <View style={styles.centerContainer}>
+      <Text style={styles.errorText}>
+        {error?.message || 'Something went wrong fetching NFTs.'}
+      </Text>
+      <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+        <Text style={styles.retryText}>Retry</Text>
+      </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -86,13 +66,25 @@ export default function MarketplaceScreen() {
         </TouchableOpacity>
         <Text style={styles.title}>Marketplace</Text>
       </View>
-      <FlatList
-        data={MOCK_NFTS}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      {error && nfts.length === 0 ? (
+        renderError()
+      ) : loading && nfts.length === 0 ? (
+        renderSkeleton()
+      ) : (
+        <FlatList
+          data={nfts}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
+          refreshControl={
+            <RefreshControl refreshing={loading && nfts.length > 0} onRefresh={refetch} />
+          }
+        />
+      )}
     </View>
   );
 }
@@ -152,5 +144,49 @@ const styles = StyleSheet.create({
   cardOwner: {
     fontSize: 14,
     color: colors.textSecondary,
+  },
+  footerLoader: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  errorText: {
+    fontSize: 16,
+    color: colors.error,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+  },
+  retryText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+  skeletonImage: {
+    width: '100%',
+    height: 200,
+    backgroundColor: colors.border,
+  },
+  skeletonTextLong: {
+    height: 18,
+    backgroundColor: colors.border,
+    borderRadius: 4,
+    width: '70%',
+    marginBottom: 8,
+  },
+  skeletonTextShort: {
+    height: 14,
+    backgroundColor: colors.border,
+    borderRadius: 4,
+    width: '40%',
   },
 });

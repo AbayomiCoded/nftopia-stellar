@@ -16,7 +16,7 @@ import * as Clipboard from 'expo-clipboard';
 import { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import TransferHistory from '@/components/wallet/TransferHistory';
-import { MOCK_NFTS, NFT } from './MarketplaceScreen';
+import { useNFTDetail } from '@/hooks/useNFTDetail';
 
 type NFTDetailRouteProp = RouteProp<MainStackParamList, 'NFTDetail'>;
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
@@ -26,32 +26,7 @@ export default function NFTDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { nftId } = route.params;
 
-  const [nft, setNft] = useState<NFT | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchNFTDetails = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      // Simulate network request
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const foundNft = MOCK_NFTS.find(n => n.id === nftId);
-      if (foundNft) {
-        setNft(foundNft);
-      } else {
-        setError('NFT not found.');
-      }
-    } catch (err) {
-      setError('Failed to load NFT details.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [nftId]);
-
-  useEffect(() => {
-    fetchNFTDetails();
-  }, [fetchNFTDetails]);
+  const { nft, loading: isLoading, error, refetch } = useNFTDetail(nftId);
 
   const copyToClipboard = async (text: string, type: string) => {
     await Clipboard.setStringAsync(text);
@@ -72,7 +47,7 @@ export default function NFTDetailScreen() {
 
   const renderError = () => (
     <View style={styles.centerContainer}>
-      <Text style={styles.errorText}>{error}</Text>
+      <Text style={styles.errorText}>{error?.message || 'NFT not found.'}</Text>
       <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
         <Text style={styles.backButtonText}>Go Back</Text>
       </TouchableOpacity>
@@ -118,7 +93,7 @@ export default function NFTDetailScreen() {
       
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={fetchNFTDetails} />}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
       >
         {/* Image viewer with zoom and pinch support */}
         <ScrollView 
@@ -144,15 +119,15 @@ export default function NFTDetailScreen() {
           <View style={styles.addressSection}>
             <View style={styles.addressRow}>
               <Text style={styles.addressLabel}>Creator</Text>
-              <TouchableOpacity style={styles.addressPill} onPress={() => copyToClipboard(nft.creator, 'Creator')}>
-                <Text style={styles.addressText}>{nft.creator}</Text>
+              <TouchableOpacity style={styles.addressPill} onPress={() => copyToClipboard(nft.creator.address, 'Creator')}>
+                <Text style={styles.addressText}>{nft.creator.username || nft.creator.address}</Text>
                 <Text style={styles.copyIcon}>📋</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.addressRow}>
               <Text style={styles.addressLabel}>Owner</Text>
-              <TouchableOpacity style={styles.addressPill} onPress={() => copyToClipboard(nft.owner, 'Owner')}>
-                <Text style={styles.addressText}>{nft.owner}</Text>
+              <TouchableOpacity style={styles.addressPill} onPress={() => copyToClipboard(nft.owner.address, 'Owner')}>
+                <Text style={styles.addressText}>{nft.owner.username || nft.owner.address}</Text>
                 <Text style={styles.copyIcon}>📋</Text>
               </TouchableOpacity>
             </View>

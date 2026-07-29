@@ -10,9 +10,12 @@
     "test": "jest"
   },
   "dependencies": {
+    "@apollo/client": "^4.2.8",
+    "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-navigation/native": "^7.0.14",
     "@react-navigation/native-stack": "^7.14.10",
     "@react-navigation/stack": "^7.1.1",
+    "apollo3-cache-persist": "^0.15.0",
     "bip39": "^3.1.0",
     "expo": "~54.0.0",
     "expo-clipboard": "~7.1.5",
@@ -20,6 +23,7 @@
     "expo-local-authentication": "^57.0.2",
     "expo-secure-store": "~12.2.0",
     "expo-status-bar": "~3.0.9",
+    "graphql": "^17.0.2",
     "react": "18.2.0",
     "react-native": "0.73.7",
     "react-native-safe-area-context": "^5.1.0",
