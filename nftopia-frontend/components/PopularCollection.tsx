@@ -4,6 +4,7 @@ import React, { useMemo } from "react";
 import Link from "next/link";
 import { emitCtaClicked, CTA_IDS, CTA_PLACEMENTS, normalizeRoute } from "@/lib/telemetry/navigation-instrumentation";
 import CollectionCard from "./CollectionCard";
+import { CollectionGridSkeleton } from "./Skeleton/CollectionGridSkeleton";
 import { Collection } from "@/types";
 import { ChevronRight, RefreshCw, Package } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -76,22 +77,7 @@ const PopularCollection: React.FC<PopularCollectionProps> = ({ title }) => {
           </div>
         ) : loading && !data ? (
           // Loading Skeleton
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 md:gap-8">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse bg-[#1E1A45] rounded-xl h-[400px] border border-purple-900/30">
-                <div className="h-48 bg-purple-900/20 rounded-t-xl mb-4" />
-                <div className="px-4 pb-4">
-                  <div className="h-6 bg-purple-900/20 rounded-md w-3/4 mb-3" />
-                  <div className="h-4 bg-purple-900/20 rounded-md w-1/2 mb-6" />
-                  <div className="flex gap-2">
-                    <div className="h-16 w-16 bg-purple-900/20 rounded-lg" />
-                    <div className="h-16 w-16 bg-purple-900/20 rounded-lg" />
-                    <div className="h-16 w-16 bg-purple-900/20 rounded-lg" />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <CollectionGridSkeleton count={3} />
         ) : collections.length === 0 ? (
           <EmptyState
             icon={<Package className="h-12 w-12" />}

@@ -1,10 +1,10 @@
-// import { MarketplaceHero } from "@/components/marketplace-hero";
+import { Suspense } from "react";
 import { CircuitBackground } from "@/components/circuit-background";
 import { LiveAuctions } from "@/components/live-auctions";
 import { TopSellers } from "@/components/top-sellers";
 import { TodaysPicks } from "@/components/todays-picks";
 import PopularCollection from "@/components/PopularCollection";
-// import { CreateAndSell } from "@/components/create-and-sell";
+import { MarketplaceSkeleton } from "@/components/Skeleton/MarketplaceSkeleton";
 
 export default function MarketplacePage() {
   return (
@@ -14,12 +14,12 @@ export default function MarketplacePage() {
 
       {/* Main Content */}
       <div className="relative z-10 max-w-screen-xl mx-auto px-2 sm:px-4 md:px-8 lg:px-12 pt-12 space-y-16">
-        {/* <MarketplaceHero /> */}
-        <LiveAuctions />
-        <TopSellers />
-        <TodaysPicks />
-        <PopularCollection />
-        {/* <CreateAndSell /> */}
+        <Suspense fallback={<MarketplaceSkeleton />}>
+          <LiveAuctions />
+          <TopSellers />
+          <TodaysPicks />
+          <PopularCollection />
+        </Suspense>
       </div>
     </main>
   );
