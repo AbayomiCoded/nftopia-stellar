@@ -17,6 +17,9 @@ import { CircuitBackground } from "@/components/circuit-background";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import CreatorCardSkeleton from "@/components/Skeleton/CreatorCardSkeleton";
+import OwnerCardSkeleton from "@/components/Skeleton/OwnerCardSkeleton";
+import TransferHistorySkeleton from "@/components/nft/TransferHistorySkeleton";
 import { useNFTByIdQuery, useNFTTransferHistoryQuery } from "@/hooks/graphql/useNFTQueries";
 import TransferHistory from "@/components/nft/TransferHistory";
 
@@ -40,24 +43,74 @@ function formatDate(date: string | Date | null | undefined): string {
   });
 }
 
-// Skeleton component for NFT detail
-function NftDetailSkeleton() {
+// Comprehensive Skeleton component for NFT detail page
+export function NftDetailSkeleton() {
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div
+      role="status"
+      aria-label="Loading NFT details"
+      className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8"
+    >
+      <span className="sr-only">Loading NFT details...</span>
+      {/* Back button skeleton */}
+      <Skeleton className="h-4 w-36 mb-6" />
+
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Left Column - Image & Collection Info */}
         <div className="space-y-4">
           <Skeleton className="aspect-square w-full rounded-xl" />
-        </div>
-        <div className="space-y-6">
-          <Skeleton className="h-8 w-3/4" />
-          <Skeleton className="h-4 w-1/2" />
-          <Skeleton className="h-24 w-full" />
-          <div className="grid grid-cols-2 gap-4">
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-20 w-full" />
+          {/* Collection info card skeleton */}
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/30 border border-gray-800/50">
+            <Skeleton className="w-10 h-10 rounded-full" />
+            <div className="space-y-1 flex-1">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-16" />
+            </div>
           </div>
-          <Skeleton className="h-12 w-full" />
         </div>
+
+        {/* Right Column - Title, Token ID, Description, Attributes, Creator/Owner Cards, Contract */}
+        <div className="space-y-6">
+          <div>
+            <Skeleton className="h-8 w-3/4 mb-2" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+          <Skeleton className="h-20 w-full" />
+
+          {/* Attributes Grid (6 placeholder attribute pills) */}
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-24" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="p-2 rounded-lg bg-gray-900/30 border border-gray-800/50 space-y-1.5 text-center"
+                >
+                  <Skeleton className="h-3 w-16 mx-auto" />
+                  <Skeleton className="h-4 w-20 mx-auto" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Owner & Creator Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <CreatorCardSkeleton />
+            <OwnerCardSkeleton />
+          </div>
+
+          {/* Contract Address */}
+          <div className="p-3 rounded-lg bg-gray-900/20 border border-gray-800/30 flex items-center justify-between">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-4 w-6" />
+          </div>
+        </div>
+      </div>
+
+      {/* Transfer History / Provenance Section Skeleton */}
+      <div className="mt-12">
+        <TransferHistorySkeleton count={5} />
       </div>
     </div>
   );
