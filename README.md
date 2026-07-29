@@ -1,7 +1,7 @@
 <p align="center">
   <img src="nftopia-frontend/public/nftopia-04.svg" alt="NFTopia" width="420" />
 </p>
-
+//WIP
 # NFTopia
 **Stellar NFT Marketplace Monorepo**
 
