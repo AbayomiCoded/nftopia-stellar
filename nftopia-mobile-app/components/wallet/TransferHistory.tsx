@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Linking, ActivityIndicator } from 'react-native';
 import { colors, spacing, borderRadius } from '@/constants/theme';
-import { TransferEvent } from '@/screens/Marketplace/MarketplaceScreen';
+import { TransferEvent } from '@/types';
 
 interface TransferHistoryProps {
   events: TransferEvent[];
