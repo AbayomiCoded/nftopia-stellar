@@ -1,11 +1,15 @@
 import React, { useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { useWalletConnect } from '@/hooks/useWalletConnect';
 import { useWalletStore } from '@/stores/walletStore';
 import BalanceDisplay from '@/components/wallet/BalanceDisplay';
 
 export default function HomeScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const {
     activeWallet,
     activePublicKey,
@@ -66,6 +70,10 @@ export default function HomeScreen() {
       />
 
       <View style={styles.actions}>
+        <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Marketplace')}>
+          <Text style={styles.actionIcon}>🛍️</Text>
+          <Text style={styles.actionLabel}>Marketplace</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.actionCard}>
           <Text style={styles.actionIcon}>📤</Text>
           <Text style={styles.actionLabel}>Send</Text>
