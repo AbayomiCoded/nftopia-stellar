@@ -43,6 +43,8 @@ import {
   PaymentMethod,
   OFFCHAIN_PAYMENT_METHODS,
 } from '../payment/enums/payment-method.enum';
+import { TransactionRetryQueueService } from './transaction-retry-queue.service';
+import { TransactionRetryStatus } from './interfaces/transaction-retry.interface';
 
 type ContractExecutionResult = {
   status?: unknown;
@@ -72,6 +74,7 @@ export class TransactionService {
     private readonly nftService: NftService,
     private readonly storageService: StorageService,
     private readonly configService: ConfigService,
+    private readonly retryQueueService: TransactionRetryQueueService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
@@ -198,6 +201,155 @@ export class TransactionService {
     });
   }
 
+  /**
+   * Execute a transaction with queue-based retry on failure
+   * Enhanced version that enqueues failed transactions for retry
+   */
+  async executeWithRetry(
+    id: number,
+    callerId: string,
+    dto: ExecuteTransactionDto,
+  ): Promise<Transaction> {
+    const transaction = await this.findById(id, callerId);
+    this.assertCanMutate(callerId, transaction);
+
+    if (
+      transaction.state === TransactionState.COMPLETED ||
+      transaction.state === TransactionState.CANCELLED
+    ) {
+      throw new ConflictException('Transaction is already finalized');
+    }
+
+    // First attempt to execute synchronously
+    try {
+      return await this.execute(id, callerId, dto);
+    } catch (error) {
+      // Check if the error is retryable
+      if (this.isRetryableError(error)) {
+        this.logger.warn(
+          `Transaction ${id} failed with retryable error, enqueuing for retry: ${(error as Error).message}`,
+        );
+
+        // Get the transaction XDR from the contract client
+        let transactionXdr: string;
+        try {
+          const txData = await this.txContract.getTransactionData(
+            Number(transaction.contractTxId),
+          );
+          transactionXdr = txData.xdr || '';
+        } catch (txError) {
+          this.logger.error(
+            `Failed to get transaction XDR for retry: ${(txError as Error).message}`,
+          );
+          throw error;
+        }
+
+        // Enqueue for retry
+        const retryRecord = await this.retryQueueService.enqueueRetry(
+          transaction.id,
+          transaction.contractTxId,
+          transactionXdr,
+          undefined, // signature will be handled by the worker
+          (error as Error).message,
+          {
+            originalError: (error as Error).message,
+            callerId,
+            dto,
+          },
+        );
+
+        // Update transaction state to PENDING_RETRY
+        transaction.state = TransactionState.PENDING_RETRY;
+        transaction.contractState = 'pending_retry';
+        transaction.errorReason = (error as Error).message;
+        await this.transactionRepo.save(transaction);
+
+        // Return the transaction with retry info
+        const result = await this.findById(id, callerId);
+        result.metadata = {
+          ...(result.metadata || {}),
+          retryId: retryRecord.retryId,
+          retryStatus: TransactionRetryStatus.PENDING,
+        };
+
+        this.logger.log(
+          `Transaction ${id} enqueued for retry with retryId ${retryRecord.retryId}`,
+        );
+
+        return result;
+      }
+
+      // Non-retryable error, throw it
+      throw error;
+    }
+  }
+
+  /**
+   * Check if an error is retryable
+   * Network errors, timeouts, and certain contract errors are retryable
+   */
+  private isRetryableError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+
+    // Network and timeout errors
+    if (
+      message.includes('timeout') ||
+      message.includes('timed out') ||
+      message.includes('network') ||
+      message.includes('fetch failed') ||
+      message.includes('unavailable') ||
+      message.includes('connection refused') ||
+      message.includes('econnrefused') ||
+      message.includes('econnreset') ||
+      message.includes('socket hang up')
+    ) {
+      return true;
+    }
+
+    // Soroban-specific errors that are retryable
+    if (
+      message.includes('tx_bad_seq') ||
+      message.includes('bad sequence') ||
+      message.includes('queue is full') ||
+      message.includes('rate limit') ||
+      message.includes('too many requests')
+    ) {
+      return true;
+    }
+
+    // Contract errors that might resolve with retry
+    if (
+      message.includes('temporarily unavailable') ||
+      message.includes('busy') ||
+      message.includes('pending')
+    ) {
+      return true;
+    }
+
+    // Non-retryable errors
+    if (
+      message.includes('invalid') ||
+      message.includes('not found') ||
+      message.includes('unauthorized') ||
+      message.includes('forbidden') ||
+      message.includes('already') ||
+      message.includes('insufficient')
+    ) {
+      return false;
+    }
+
+    // Default: retry if it's a server error or unknown
+    return message.includes('server') || message.includes('internal');
+  }
+
+  /**
+   * Execute a transaction with enhanced retry capability
+   * Preserves existing behavior while adding retry queue support
+   */
   async execute(
     id: number,
     callerId: string,
@@ -211,6 +363,35 @@ export class TransactionService {
       transaction.state === TransactionState.CANCELLED
     ) {
       throw new ConflictException('Transaction is already finalized');
+    }
+
+    // If transaction is already in retry state, check retry status
+    if (transaction.state === TransactionState.PENDING_RETRY) {
+      const retryId = transaction.metadata?.retryId as string;
+      if (retryId) {
+        const retryStatus =
+          await this.retryQueueService.getRetryStatus(retryId);
+        if (retryStatus) {
+          if (retryStatus.status === TransactionRetryStatus.COMPLETED) {
+            // Retry succeeded, update transaction
+            transaction.state = TransactionState.COMPLETED;
+            transaction.contractState = 'completed';
+            await this.transactionRepo.save(transaction);
+            await this.applySettlement(transaction);
+            await this.invalidateCaches(transaction);
+            return transaction;
+          }
+          if (retryStatus.status === TransactionRetryStatus.DLQ) {
+            throw new ConflictException(
+              `Transaction ${id} is in DLQ. Use admin API to retry.`,
+            );
+          }
+          if (retryStatus.status === TransactionRetryStatus.PENDING) {
+            // Retry is still pending, return current state
+            return transaction;
+          }
+        }
+      }
     }
 
     transaction.state = TransactionState.EXECUTING;
@@ -251,6 +432,58 @@ export class TransactionService {
       await this.invalidateCaches(saved);
       return saved;
     } catch (error) {
+      // If there's a retryable error, enqueue for retry
+      if (this.isRetryableError(error)) {
+        this.logger.warn(
+          `Transaction ${id} failed with retryable error during execution: ${(error as Error).message}`,
+        );
+
+        // Get the transaction XDR
+        let transactionXdr: string;
+        try {
+          const txData = await this.txContract.getTransactionData(
+            Number(transaction.contractTxId),
+          );
+          transactionXdr = txData.xdr || '';
+        } catch (txError) {
+          this.logger.error(
+            `Failed to get transaction XDR for retry: ${(txError as Error).message}`,
+          );
+          transaction.state = TransactionState.FAILED;
+          transaction.errorReason = (error as Error).message;
+          const failed = await this.transactionRepo.save(transaction);
+          await this.invalidateCaches(failed);
+          throw this.mapContractError(error);
+        }
+
+        const retryRecord = await this.retryQueueService.enqueueRetry(
+          transaction.id,
+          transaction.contractTxId,
+          transactionXdr,
+          undefined,
+          (error as Error).message,
+          {
+            originalError: (error as Error).message,
+            callerId,
+            dto,
+          },
+        );
+
+        transaction.state = TransactionState.PENDING_RETRY;
+        transaction.contractState = 'pending_retry';
+        transaction.errorReason = (error as Error).message;
+        transaction.metadata = {
+          ...(transaction.metadata || {}),
+          retryId: retryRecord.retryId,
+          retryStatus: TransactionRetryStatus.PENDING,
+        };
+
+        const saved = await this.transactionRepo.save(transaction);
+        await this.invalidateCaches(saved);
+        return saved;
+      }
+
+      // Non-retryable error
       transaction.state = TransactionState.FAILED;
       transaction.errorReason = (error as Error).message;
       const failed = await this.transactionRepo.save(transaction);
@@ -272,6 +505,20 @@ export class TransactionService {
       transaction.state === TransactionState.CANCELLED
     ) {
       throw new ConflictException('Transaction is already finalized');
+    }
+
+    // Check if there's a pending retry and cancel it
+    if (transaction.state === TransactionState.PENDING_RETRY) {
+      const retryId = transaction.metadata?.retryId as string;
+      if (retryId) {
+        try {
+          await this.retryQueueService.cancelRetry(retryId);
+        } catch (cancelError) {
+          this.logger.warn(
+            `Failed to cancel retry ${retryId}: ${(cancelError as Error).message}`,
+          );
+        }
+      }
     }
 
     await this.txContract.cancelTransaction(
@@ -541,12 +788,38 @@ export class TransactionService {
 
   async getQuickStatus(id: number, callerId?: string) {
     const transaction = await this.findById(id, callerId);
+    // Check if there's a retry in progress
+    let retryInfo: {
+      retryId: string;
+      status: TransactionRetryStatus;
+      attemptCount: number;
+      maxAttempts: number;
+      nextRetryAt?: number;
+    } | null = null;
+    if (transaction.state === TransactionState.PENDING_RETRY) {
+      const retryId = transaction.metadata?.retryId as string;
+      if (retryId) {
+        const retryStatus =
+          await this.retryQueueService.getRetryStatus(retryId);
+        if (retryStatus) {
+          retryInfo = {
+            retryId: retryStatus.retryId,
+            status: retryStatus.status,
+            attemptCount: retryStatus.attemptCount,
+            maxAttempts: retryStatus.maxAttempts,
+            nextRetryAt: retryStatus.nextRetryAt,
+          };
+        }
+      }
+    }
+
     return {
       id: transaction.id,
       contractTxId: transaction.contractTxId,
       state: transaction.state,
       contractState: transaction.contractState,
       errorReason: transaction.errorReason,
+      retryInfo,
     };
   }
 
@@ -574,6 +847,37 @@ export class TransactionService {
     }
   }
 
+  /**
+   * Get retry status for a transaction
+   */
+  async getTransactionRetryStatus(transactionId: number): Promise<{
+    retries: Array<{
+      retryId: string;
+      status: TransactionRetryStatus;
+      attemptCount: number;
+      maxAttempts: number;
+      lastError?: string;
+      createdAt: number;
+      nextRetryAt?: number;
+      completedAt?: number;
+    }>;
+  }> {
+    const retries =
+      await this.retryQueueService.getRetriesForTransaction(transactionId);
+    return {
+      retries: retries.map((retry) => ({
+        retryId: retry.retryId,
+        status: retry.status,
+        attemptCount: retry.attemptCount,
+        maxAttempts: retry.maxAttempts,
+        lastError: retry.lastError,
+        createdAt: retry.createdAt,
+        nextRetryAt: retry.nextRetryAt,
+        completedAt: retry.completedAt,
+      })),
+    };
+  }
+
   private async syncContractState(
     transaction: Transaction,
   ): Promise<Transaction> {
@@ -585,7 +889,8 @@ export class TransactionService {
 
       if (
         status === 'failed' &&
-        transaction.state !== TransactionState.FAILED
+        transaction.state !== TransactionState.FAILED &&
+        transaction.state !== TransactionState.PENDING_RETRY
       ) {
         transaction.state = TransactionState.FAILED;
       }

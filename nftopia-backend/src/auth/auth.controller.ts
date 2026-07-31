@@ -104,6 +104,7 @@ export class AuthController {
           walletProvider: user.walletProvider ?? null,
           avatarUrl: user.avatarUrl ?? null,
           bannerUrl: user.bannerUrl ?? null,
+          twoFactorEnabled: user.twoFactorEnabled || false,
         },
       },
     };

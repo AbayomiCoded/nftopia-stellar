@@ -4,8 +4,8 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useOfflineStore } from '@/stores/offlineStore';
 
-// Screens
-import HomeScreen from '@/screens/Home/sample';
+// Screens - HEAD branch
+import HomeScreen from '@/screens/Home/HomeScreen';
 import CreatorDashboardScreen from '@/screens/Creator/CreatorDashboardScreen';
 import MyNFTsScreen from '@/screens/Creator/MyNFTsScreen';
 import MintNFTScreen from '@/screens/Creator/MintNFTScreen';
@@ -14,9 +14,15 @@ import EarningsScreen from '@/screens/Creator/EarningsScreen';
 import NotificationsScreen from '@/screens/Notifications/NotificationsScreen';
 import NotificationSettingsScreen from '@/screens/Notifications/NotificationSettingsScreen';
 
+// Screens - upstream/main branch
+import ProfileScreen from '@/screens/Profile/ProfileScreen';
+import WalletManagementScreen from '@/screens/Profile/WalletManagementScreen';
+import MarketplaceScreen from '@/screens/Marketplace/MarketplaceScreen';
+import NFTDetailScreen from '@/screens/Marketplace/NFTDetailScreen';
+
 export type MainStackParamList = {
   Home: undefined;
-  Marketplace: undefined;
+  WalletManagement: undefined;
   Profile: undefined;
   CreatorDashboard: undefined;
   MyNFTs: undefined;
@@ -28,6 +34,7 @@ export type MainStackParamList = {
   Transactions: undefined;
   Notifications: undefined;
   NotificationSettings: undefined;
+  Marketplace: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -51,14 +58,21 @@ export default function MainNavigator() {
           headerShown: false,
         }}
       >
+        {/* Core Screens */}
         <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="Marketplace" component={MarketplaceScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen name="WalletManagement" component={WalletManagementScreen} />
+        <Stack.Screen name="Marketplace" component={MarketplaceScreen} />
+        <Stack.Screen name="NFTDetail" component={NFTDetailScreen} />
+
+        {/* Creator Screens */}
         <Stack.Screen name="CreatorDashboard" component={CreatorDashboardScreen} />
         <Stack.Screen name="MyNFTs" component={MyNFTsScreen} />
         <Stack.Screen name="MintNFT" component={MintNFTScreen} />
         <Stack.Screen name="CreateCollection" component={CreateCollectionScreen} />
         <Stack.Screen name="Earnings" component={EarningsScreen} />
+
+        {/* Notification Screens */}
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
       </Stack.Navigator>
@@ -66,42 +80,7 @@ export default function MainNavigator() {
   );
 }
 
-// Placeholder screens for development
-function MarketplaceScreen() {
-  return (
-    <View style={styles.placeholder}>
-      <Text style={styles.placeholderTitle}>Marketplace</Text>
-      <Text style={styles.placeholderSubtitle}>Coming Soon</Text>
-    </View>
-  );
-}
-
-function ProfileScreen() {
-  return (
-    <View style={styles.placeholder}>
-      <Text style={styles.placeholderTitle}>Profile</Text>
-      <Text style={styles.placeholderSubtitle}>Coming Soon</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  placeholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-  },
-  placeholderTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 8,
-  },
-  placeholderSubtitle: {
-    fontSize: 16,
-    color: '#666',
-  },
   offlineBanner: {
     backgroundColor: '#FFEAA7',
     paddingVertical: 8,

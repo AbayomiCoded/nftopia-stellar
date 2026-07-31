@@ -21,14 +21,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     email?: string;
     role?: string;
     stellarAddress?: string;
+    twoFactorVerified?: boolean;
   }) {
-    // Return user object with role from JWT payload
+    // Return user object with role and 2FA status from JWT payload
     return {
       userId: payload.sub,
       username: payload.username,
       email: payload.email,
       role: payload.role, // Ensure role is included in JWT payload
       stellarAddress: payload.stellarAddress,
+      twoFactorVerified: payload.twoFactorVerified || false,
     };
   }
 }
