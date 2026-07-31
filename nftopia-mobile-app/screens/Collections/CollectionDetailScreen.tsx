@@ -129,7 +129,7 @@ export default function CollectionDetailScreen({ route, navigation }: any) {
             <Text style={styles.name}>{collection.name}</Text>
             {collection.isVerified && <Text style={styles.verifiedBadge}>✓ Verified</Text>}
           </View>
-          <Text style={styles.creator}>by {collection.creatorName || 'Unknown'}</Text>
+          <Text style={styles.creator}>by {collection.creator?.username || 'Unknown'}</Text>
         </View>
       </View>
 

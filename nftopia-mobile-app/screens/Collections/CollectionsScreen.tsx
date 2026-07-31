@@ -21,7 +21,7 @@ function CollectionCard({ collection, onPress }: { collection: Collection; onPre
           <Text style={styles.collectionName} numberOfLines={1}>{collection.name}</Text>
           {collection.isVerified && <Text style={styles.verifiedBadge}>✓</Text>}
         </View>
-        <Text style={styles.collectionCreator}>{collection.creatorName || 'Unknown'}</Text>
+        <Text style={styles.collectionCreator}>{collection.creator?.username || 'Unknown'}</Text>
         <View style={styles.collectionStats}>
           <Text style={styles.statText}>{collection.nftCount} NFTs</Text>
           {collection.floorPrice && <Text style={styles.statText}>Floor: {collection.floorPrice} XLM</Text>}
