@@ -10,6 +10,7 @@ const initialState = {
   user: null,
   loading: false,
   isAuthenticated: false,
+  isCreator: false,
   error: null,
   isCheckingAuth: true,
 };
@@ -26,6 +27,7 @@ export const useAuthStore = create<AuthStore>()(
           ...state,
           user,
           isAuthenticated: !!user,
+          isCreator: user?.isCreator || false,
         })),
 
       setLoading: (loading: boolean) =>
@@ -38,6 +40,9 @@ export const useAuthStore = create<AuthStore>()(
 
       setIsCheckingAuth: (isChecking: boolean) =>
         set((state) => ({ ...state, isCheckingAuth: isChecking })),
+
+      setIsCreator: (isCreator: boolean) =>
+        set((state) => ({ ...state, isCreator })),
 
       // Authentication Actions
       initializeAuth: async () => {
@@ -79,6 +84,7 @@ export const useAuthStore = create<AuthStore>()(
           set({
             user: null,
             isAuthenticated: false,
+            isCreator: false,
             loading: false,
             error: null,
           });

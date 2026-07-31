@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { SafeAreaView, StatusBar, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { ApolloProvider, ApolloClient, NormalizedCacheObject } from '@apollo/client';
 import AppNavigator from './navigation/AppNavigator';
+import AppLayout from './app/_layout';
+import ToastProvider from './components/Toast';
 import { setupApollo } from './lib/api/apolloClient';
 
 export default function App() {
@@ -21,10 +23,13 @@ export default function App() {
 
   return (
     <ApolloProvider client={client}>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-        <AppNavigator />
-      </SafeAreaView>
+      <AppLayout>
+        <SafeAreaView style={styles.container}>
+          <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+          <AppNavigator />
+          <ToastProvider />
+        </SafeAreaView>
+      </AppLayout>
     </ApolloProvider>
   );
 }
