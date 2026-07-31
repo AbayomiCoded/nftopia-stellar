@@ -4,21 +4,23 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useOfflineStore } from '@/stores/offlineStore';
 
-// Screens - HEAD branch
+// Core Screens
 import HomeScreen from '@/screens/Home/HomeScreen';
+import ProfileScreen from '@/screens/Profile/ProfileScreen';
+import WalletManagementScreen from '@/screens/Profile/WalletManagementScreen';
+import MarketplaceScreen from '@/screens/Marketplace/MarketplaceScreen';
+import NFTDetailScreen from '@/screens/Marketplace/NFTDetailScreen';
+
+// Creator Screens
 import CreatorDashboardScreen from '@/screens/Creator/CreatorDashboardScreen';
 import MyNFTsScreen from '@/screens/Creator/MyNFTsScreen';
 import MintNFTScreen from '@/screens/Creator/MintNFTScreen';
 import CreateCollectionScreen from '@/screens/Creator/CreateCollectionScreen';
 import EarningsScreen from '@/screens/Creator/EarningsScreen';
+
+// Notification Screens
 import NotificationsScreen from '@/screens/Notifications/NotificationsScreen';
 import NotificationSettingsScreen from '@/screens/Notifications/NotificationSettingsScreen';
-
-// Screens - upstream/main branch
-import ProfileScreen from '@/screens/Profile/ProfileScreen';
-import WalletManagementScreen from '@/screens/Profile/WalletManagementScreen';
-import MarketplaceScreen from '@/screens/Marketplace/MarketplaceScreen';
-import NFTDetailScreen from '@/screens/Marketplace/NFTDetailScreen';
 
 export type MainStackParamList = {
   Home: undefined;

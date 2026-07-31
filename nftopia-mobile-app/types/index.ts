@@ -67,10 +67,16 @@ export interface Collection {
   name: string;
   description: string;
   imageUrl: string;
+  bannerUrl?: string;
   creatorId: string;
   creator: User;
   contractAddress?: string;
   nftCount: number;
+  floorPrice?: string;
+  volumeTraded?: string;
+  isVerified?: boolean;
+  isLiked?: boolean;
+  likeCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -90,7 +96,7 @@ export interface DashboardStats {
 
 export interface ActivityEvent {
   id: string;
-  type: 'sale' | 'purchase' | 'mint' | 'listing' | 'offer' | 'transfer';
+  type: 'sale' | 'purchase' | 'mint' | 'listing' | 'offer' | 'transfer' | 'follow' | 'like' | 'bid';
   nftId: string;
   nftName: string;
   nftImage: string;
@@ -196,6 +202,95 @@ export interface MintState {
   error: string | null;
   success: boolean;
   mintedNft?: NFT;
+}
+
+// ============================================================
+// Search Types
+// ============================================================
+
+export interface SearchResult {
+  nfts: NFT[];
+  collections: Collection[];
+  creators: CreatorProfile[];
+  totalCount: number;
+}
+
+export interface SearchFilters {
+  type: 'all' | 'nfts' | 'collections' | 'creators';
+  category?: string;
+  minPrice?: string;
+  maxPrice?: string;
+  sortBy?: 'relevance' | 'recent' | 'price_low' | 'price_high';
+}
+
+// ============================================================
+// Creator Profile Types
+// ============================================================
+
+export interface CreatorProfile {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  bannerUrl?: string;
+  bio?: string;
+  website?: string;
+  twitter?: string;
+  instagram?: string;
+  isVerified: boolean;
+  isFollowing: boolean;
+  followerCount: number;
+  followingCount: number;
+  nftCount: number;
+  collectionCount: number;
+  totalVolume: string;
+  walletAddress: string;
+  createdAt: string;
+}
+
+// ============================================================
+// Auction Types
+// ============================================================
+
+export interface Auction {
+  id: string;
+  nftId: string;
+  nftName: string;
+  nftImage: string;
+  creatorId: string;
+  creatorName: string;
+  creatorAvatar: string;
+  startPrice: string;
+  currentPrice: string;
+  reservePrice?: string;
+  currency: string;
+  startTime: string;
+  endTime: string;
+  status: 'active' | 'ending_soon' | 'ended' | 'cancelled';
+  bidCount: number;
+  topBidder?: string;
+  isWatched: boolean;
+}
+
+export interface Bid {
+  id: string;
+  auctionId: string;
+  bidderId: string;
+  bidderName: string;
+  bidderAvatar: string;
+  amount: string;
+  currency: string;
+  timestamp: string;
+  isWinning: boolean;
+}
+
+export interface AuctionFormData {
+  nftId: string;
+  startPrice: string;
+  reservePrice?: string;
+  currency: string;
+  duration: number; // in hours
+  startTime?: string;
 }
 
 // ============================================================
