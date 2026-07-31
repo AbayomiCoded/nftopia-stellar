@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TransferHistorySkeleton } from "./TransferHistorySkeleton";
 
 export interface TransferEvent {
   id: string;
@@ -229,23 +230,11 @@ export function TransferHistory({
   // Loading state
   if (loading && events.length === 0) {
     return (
-      <Card className={cn("border-gray-800/50 bg-gray-900/30 backdrop-blur-sm", className)}>
-        {showHeader && (
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between text-lg">
-              <span>Ownership History</span>
-              <span className="text-sm font-normal text-gray-400">
-                Loading...
-              </span>
-            </CardTitle>
-          </CardHeader>
-        )}
-        <CardContent className="p-0 divide-y divide-gray-800/50">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <EventSkeleton key={i} />
-          ))}
-        </CardContent>
-      </Card>
+      <TransferHistorySkeleton
+        count={5}
+        showHeader={showHeader}
+        className={className}
+      />
     );
   }
 

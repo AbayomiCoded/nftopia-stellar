@@ -33,6 +33,8 @@ export default function LocaleLayout({ children, params }: LocaleLayoutProps) {
   const isAuthPage = pathname?.includes("/auth/");
   const isCreatorDashboard = pathname?.includes("/creator-dashboard");
   const isNftDetailPage = pathname ? /^\/[a-z]{2}\/marketplace\/(?!auction$|auctions$|auction\/|auctions\/)[^/]+$/.test(pathname) : false;
+  const isCollectionDetailPage = pathname ? /^\/[a-z]{2}\/collection\/[^/]+$/.test(pathname) : false;
+  const isDynamicSeoPage = isNftDetailPage || isCollectionDetailPage;
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
   const currentPath = pathname?.replace(/^\/[a-z]{2}/, "") || "";
@@ -58,7 +60,7 @@ export default function LocaleLayout({ children, params }: LocaleLayoutProps) {
         <meta name="msapplication-TileColor" content="#181359" />
         <meta name="msapplication-tap-highlight" content="no" />
 
-        {!isNftDetailPage && (
+        {!isDynamicSeoPage && (
           <>
             <title>{t("seo.title")}</title>
             <meta name="description" content={t("seo.description")} />
@@ -74,7 +76,7 @@ export default function LocaleLayout({ children, params }: LocaleLayoutProps) {
 
         <link rel="icon" href="/nftopia-03.svg" id="favicon" />
 
-        {!isNftDetailPage && (
+        {!isDynamicSeoPage && (
           <>
             <meta property="og:title" content={t("seo.title")} />
             <meta property="og:description" content={t("seo.description")} />

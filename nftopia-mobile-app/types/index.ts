@@ -1,4 +1,33 @@
+// ============================================================
+// Core Types
+// ============================================================
+
+export interface User {
+  id: string;
+  address: string;
+  username?: string;
+  avatarUrl?: string;
+}
+
+export interface NFTAttribute {
+  trait_type: string;
+  value: string;
+}
+
+export interface TransferEvent {
+  id: string;
+  type: 'mint' | 'transfer' | 'sale';
+  fromAddress?: string;
+  toAddress: string;
+  date: string;
+  price?: string;
+  transactionHash: string;
+}
+
+// ============================================================
 // NFT Types
+// ============================================================
+
 export interface NFT {
   id: string;
   name: string;
@@ -9,14 +38,16 @@ export interface NFT {
   contractAddress: string;
   collectionId?: string;
   creatorId: string;
-  creatorName?: string;
-  creatorAvatar?: string;
   ownerId: string;
   status: 'draft' | 'minted' | 'listed' | 'sold';
   createdAt: string;
   updatedAt: string;
   metadata?: NFTMetadata;
-  isVerified?: boolean;
+  creator: User;
+  owner: User;
+  collection?: Collection;
+  attributes: NFTAttribute[];
+  history: TransferEvent[];
 }
 
 export interface NFTMetadata {
@@ -27,12 +58,10 @@ export interface NFTMetadata {
   external_url?: string;
 }
 
-export interface NFTAttribute {
-  trait_type: string;
-  value: string;
-}
-
+// ============================================================
 // Collection Types
+// ============================================================
+
 export interface Collection {
   id: string;
   name: string;
@@ -40,8 +69,7 @@ export interface Collection {
   imageUrl: string;
   bannerUrl?: string;
   creatorId: string;
-  creatorName?: string;
-  creatorAvatar?: string;
+  creator: User;
   contractAddress?: string;
   nftCount: number;
   floorPrice?: string;
@@ -53,7 +81,10 @@ export interface Collection {
   updatedAt: string;
 }
 
+// ============================================================
 // Creator Dashboard Types
+// ============================================================
+
 export interface DashboardStats {
   totalNfts: number;
   totalCollections: number;
@@ -92,7 +123,10 @@ export interface Transaction {
   txHash?: string;
 }
 
+// ============================================================
 // Notification Types
+// ============================================================
+
 export interface Notification {
   id: string;
   type: 'outbid' | 'sale' | 'follow' | 'mint' | 'auction_end' | 'listing' | 'offer' | 'transfer';
@@ -123,7 +157,10 @@ export interface NotificationPreferences {
   pushEnabled: boolean;
 }
 
+// ============================================================
 // Offline Types
+// ============================================================
+
 export interface OfflineQueueItem {
   id: string;
   action: string;
@@ -143,7 +180,10 @@ export interface CachedData {
   lastSync: string;
 }
 
+// ============================================================
 // Minting Types
+// ============================================================
+
 export interface MintFormData {
   name: string;
   description: string;
@@ -164,7 +204,10 @@ export interface MintState {
   mintedNft?: NFT;
 }
 
+// ============================================================
 // Search Types
+// ============================================================
+
 export interface SearchResult {
   nfts: NFT[];
   collections: Collection[];
@@ -180,7 +223,10 @@ export interface SearchFilters {
   sortBy?: 'relevance' | 'recent' | 'price_low' | 'price_high';
 }
 
+// ============================================================
 // Creator Profile Types
+// ============================================================
+
 export interface CreatorProfile {
   id: string;
   username: string;
@@ -202,7 +248,10 @@ export interface CreatorProfile {
   createdAt: string;
 }
 
+// ============================================================
 // Auction Types
+// ============================================================
+
 export interface Auction {
   id: string;
   nftId: string;
@@ -244,14 +293,20 @@ export interface AuctionFormData {
   startTime?: string;
 }
 
+// ============================================================
 // Telemetry Types
+// ============================================================
+
 export interface TelemetryEvent {
   event: string;
   properties?: Record<string, any>;
   timestamp: string;
 }
 
+// ============================================================
 // Navigation Types
+// ============================================================
+
 export type CreatorStackParamList = {
   CreatorDashboard: undefined;
   MyNFTs: undefined;
