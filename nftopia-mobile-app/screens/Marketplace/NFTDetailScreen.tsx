@@ -5,7 +5,6 @@ import {
   StyleSheet, 
   ScrollView, 
   TouchableOpacity, 
-  Image, 
   RefreshControl,
   ActivityIndicator,
   Alert
@@ -17,6 +16,8 @@ import { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import TransferHistory from '@/components/wallet/TransferHistory';
 import { useNFTDetail } from '@/hooks/useNFTDetail';
+import { OptimizedImage } from '@/src/components/OptimizedImage';
+import { ImageGallery } from '@/src/components/ImageGallery';
 
 type NFTDetailRouteProp = RouteProp<MainStackParamList, 'NFTDetail'>;
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
@@ -95,21 +96,11 @@ export default function NFTDetailScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
       >
-        {/* Image viewer with zoom and pinch support */}
-        <ScrollView 
-          horizontal 
-          contentContainerStyle={styles.imageScrollContainer}
-          maximumZoomScale={3}
-          minimumZoomScale={1}
-          showsHorizontalScrollIndicator={false}
-          bouncesZoom={true}
-        >
-          <Image 
-            source={{ uri: nft.imageUrl }} 
-            style={styles.image} 
-            resizeMode="contain"
-          />
-        </ScrollView>
+        <ImageGallery
+          images={[nft.imageUrl, ...(nft.additionalImages || [])]}
+          initialIndex={0}
+          showThumbnails={true}
+        />
 
         <View style={styles.content}>
           <Text style={styles.title}>{nft.name}</Text>
@@ -186,17 +177,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: spacing.xxl,
-  },
-  imageScrollContainer: {
-    width: '100%',
-    height: 350,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  image: {
-    width: 350,
-    height: 350,
   },
   content: {
     padding: spacing.md,

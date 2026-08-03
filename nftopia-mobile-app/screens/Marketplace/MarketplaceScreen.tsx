@@ -1,11 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { useNFTs } from '@/hooks/useNFTs';
 import { NFT } from '@/types';
+import { OptimizedImage } from '@/src/components/OptimizedImage';
 
 export default function MarketplaceScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
@@ -16,7 +17,17 @@ export default function MarketplaceScreen() {
       style={styles.card} 
       onPress={() => navigation.navigate('NFTDetail', { nftId: item.id })}
     >
-      <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
+      <OptimizedImage
+        source={item.imageUrl}
+        size="medium"
+        width="100%"
+        height={200}
+        resizeMode="cover"
+        cacheKey={`marketplace-${item.id}`}
+        showSkeleton={true}
+        lazyLoad={true}
+        quality="auto"
+      />
       <View style={styles.cardContent}>
         <Text style={styles.cardTitle}>{item.name}</Text>
         <Text style={styles.cardOwner}>Owner: {item.owner.username || item.owner.address}</Text>
@@ -126,11 +137,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadows.md,
     marginBottom: spacing.md,
-  },
-  cardImage: {
-    width: '100%',
-    height: 200,
-    backgroundColor: colors.border,
   },
   cardContent: {
     padding: spacing.md,
