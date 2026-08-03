@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '@/navigation/MainNavigator';
@@ -9,19 +9,38 @@ import { useAuthStore } from '@/stores/authStore';
 import { useLanguageStore } from '@/src/stores/languageStore';
 import NetworkSwitcher from '@/components/wallet/NetworkSwitcher';
 import { LanguageSwitcher } from '@/src/components/LanguageSwitcher';
+import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
+import { errorLogger } from '@/src/errors/logger';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Profile'>;
 
-export default function ProfileScreen({ navigation }: Props) {
+function ProfileContent({ navigation }: Props) {
   const { t } = useTranslation();
   const { activeWallet, network, switchNetwork, wallets } = useWalletConnect();
   const { user, logout } = useAuthStore();
   const { language } = useLanguageStore();
 
   const handleSignOut = () => {
-    // Show confirmation dialog before signing out
-    // This would use a custom confirmation modal in production
-    logout();
+    Alert.alert(
+      t('profile.signOut'),
+      t('profile.signOutConfirm'),
+      [
+        { text: t('profile.signOutCancel'), style: 'cancel' },
+        { 
+          text: t('profile.signOutConfirmButton'), 
+          style: 'destructive',
+          onPress: () => {
+            logout();
+            errorLogger.log(
+              new Error('User signed out'),
+              'ProfileScreen',
+              user?.id,
+              { action: 'sign_out' }
+            );
+          }
+        },
+      ]
+    );
   };
 
   return (
@@ -75,6 +94,20 @@ export default function ProfileScreen({ navigation }: Props) {
     </ScrollView>
   );
 }
+
+const ProfileScreen = withErrorBoundary(ProfileContent, {
+  name: 'ProfileScreen',
+  onError: (error, errorInfo) => {
+    errorLogger.log(
+      error,
+      'ProfileScreen',
+      undefined,
+      { componentStack: errorInfo.componentStack }
+    );
+  },
+});
+
+export default ProfileScreen;
 
 const styles = StyleSheet.create({
   container: {

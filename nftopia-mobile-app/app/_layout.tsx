@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, AppState, AppStateStatus } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
 import i18n, { isRTL } from '@/src/i18n';
+import { ErrorBoundary } from '@/src/components/ErrorBoundary';
+import { errorLogger } from '@/src/errors/logger';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useCreatorStore } from '@/stores/creatorStore';
@@ -10,7 +12,7 @@ import { Notification } from '@/types';
 // WebSocket URL for real-time notifications
 const WS_URL = 'wss://api.nftopia.io/ws/notifications';
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { setOnlineStatus, processQueue, isOnline } = useOfflineStore();
   const { addNotification, fetchUnreadCount } = useNotificationStore();
   const { refreshAll } = useCreatorStore();
@@ -21,9 +23,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Set RTL direction when language changes
   useEffect(() => {
     const rtl = isRTL();
-    // Apply RTL layout if needed
     if (rtl) {
-      // @ts-ignore - I18nManager is available on React Native
       const { I18nManager } = require('react-native');
       if (!I18nManager.isRTL) {
         I18nManager.forceRTL(true);
@@ -85,8 +85,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             addNotification(notification);
             fetchUnreadCount();
           }
-        } catch {
-          // Ignore parse errors
+        } catch (error) {
+          errorLogger.log(
+            error as Error,
+            'WebSocketMessageHandler',
+            undefined,
+            { event: 'ws_message', payload: event.data }
+          );
         }
       };
 
@@ -96,13 +101,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }, 5000);
       };
 
-      ws.onerror = () => {
+      ws.onerror = (error) => {
+        errorLogger.log(
+          error as Error,
+          'WebSocketConnection',
+          undefined,
+          { event: 'ws_error' }
+        );
         ws.close();
       };
 
       wsRef.current = ws;
-    } catch {
-      // WebSocket not available
+    } catch (error) {
+      errorLogger.log(
+        error as Error,
+        'WebSocketConnection',
+        undefined,
+        { event: 'ws_connect_failed' }
+      );
     }
   }, [addNotification, fetchUnreadCount]);
 
@@ -134,9 +150,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     };
   }, [refreshAll, fetchUnreadCount]);
 
+  return <>{children}</>;
+}
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <I18nextProvider i18n={i18n}>
-      {children}
-    </I18nextProvider>
+    <ErrorBoundary
+      name="AppRoot"
+      onError={(error, errorInfo) => {
+        errorLogger.log(
+          error,
+          'AppRoot',
+          undefined,
+          { componentStack: errorInfo.componentStack }
+        );
+      }}
+      onReset={() => {
+        // Reset any global state if needed
+        console.log('App reset after error');
+      }}
+    >
+      <I18nextProvider i18n={i18n}>
+        <AppLayoutContent>
+          {children}
+        </AppLayoutContent>
+      </I18nextProvider>
+    </ErrorBoundary>
   );
 }

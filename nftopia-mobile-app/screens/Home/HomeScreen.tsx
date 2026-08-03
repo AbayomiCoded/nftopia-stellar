@@ -9,8 +9,11 @@ import { useWalletConnect } from '@/hooks/useWalletConnect';
 import { useWalletStore } from '@/stores/walletStore';
 import { useAuthStore } from '@/stores/authStore';
 import BalanceDisplay from '@/components/wallet/BalanceDisplay';
+import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
+import { errorLogger } from '@/src/errors/logger';
+import { ErrorFallback } from '@/src/components/ErrorFallback';
 
-export default function HomeScreen() {
+function HomeContent() {
   const { t } = useTranslation();
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const { user } = useAuthStore();
@@ -42,6 +45,16 @@ export default function HomeScreen() {
         <Text style={styles.emptyTitle}>{t('home.noWallet')}</Text>
         <Text style={styles.emptySubtitle}>{t('home.noWalletSubtitle')}</Text>
       </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <ErrorFallback
+        error={error}
+        onRetry={onRefresh}
+        customMessage="Failed to load wallet data. Please try again."
+      />
     );
   }
 
@@ -100,6 +113,20 @@ export default function HomeScreen() {
     </ScrollView>
   );
 }
+
+const HomeScreen = withErrorBoundary(HomeContent, {
+  name: 'HomeScreen',
+  onError: (error, errorInfo) => {
+    errorLogger.log(
+      error,
+      'HomeScreen',
+      undefined,
+      { componentStack: errorInfo.componentStack }
+    );
+  },
+});
+
+export default HomeScreen;
 
 const styles = StyleSheet.create({
   container: {

@@ -7,8 +7,12 @@ import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { useNFTs } from '@/hooks/useNFTs';
 import { NFT } from '@/types';
 import { OptimizedImage } from '@/src/components/OptimizedImage';
+import { ErrorBoundary } from '@/src/components/ErrorBoundary';
+import { ErrorFallback } from '@/src/components/ErrorFallback';
+import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
+import { errorLogger } from '@/src/errors/logger';
 
-export default function MarketplaceScreen() {
+function MarketplaceContent() {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const { nfts, loading, error, loadMore, refetch } = useNFTs();
 
@@ -27,10 +31,15 @@ export default function MarketplaceScreen() {
         showSkeleton={true}
         lazyLoad={true}
         quality="auto"
+        onError={(err) => {
+          errorLogger.log(err, 'MarketplaceImage', undefined, { nftId: item.id });
+        }}
       />
       <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{item.name}</Text>
-        <Text style={styles.cardOwner}>Owner: {item.owner.username || item.owner.address}</Text>
+        <Text style={styles.cardTitle}>{item.name || 'Untitled NFT'}</Text>
+        <Text style={styles.cardOwner}>
+          Owner: {item.owner?.username || item.owner?.address || 'Unknown'}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -58,16 +67,15 @@ export default function MarketplaceScreen() {
     </View>
   );
 
-  const renderError = () => (
-    <View style={styles.centerContainer}>
-      <Text style={styles.errorText}>
-        {error?.message || 'Something went wrong fetching NFTs.'}
-      </Text>
-      <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
-        <Text style={styles.retryText}>Retry</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  if (error && nfts.length === 0) {
+    return (
+      <ErrorFallback
+        error={error}
+        onRetry={refetch}
+        customMessage="Failed to load NFTs. Please check your connection and try again."
+      />
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -77,9 +85,7 @@ export default function MarketplaceScreen() {
         </TouchableOpacity>
         <Text style={styles.title}>Marketplace</Text>
       </View>
-      {error && nfts.length === 0 ? (
-        renderError()
-      ) : loading && nfts.length === 0 ? (
+      {loading && nfts.length === 0 ? (
         renderSkeleton()
       ) : (
         <FlatList
@@ -99,6 +105,21 @@ export default function MarketplaceScreen() {
     </View>
   );
 }
+
+// Wrap with error boundary
+const MarketplaceScreen = withErrorBoundary(MarketplaceContent, {
+  name: 'MarketplaceScreen',
+  onError: (error, errorInfo) => {
+    errorLogger.log(
+      error,
+      'MarketplaceScreen',
+      undefined,
+      { componentStack: errorInfo.componentStack }
+    );
+  },
+});
+
+export default MarketplaceScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -154,28 +175,6 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: spacing.md,
     alignItems: 'center',
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  errorText: {
-    fontSize: 16,
-    color: colors.error,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  retryButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-  },
-  retryText: {
-    color: '#FFF',
-    fontWeight: 'bold',
   },
   skeletonImage: {
     width: '100%',
