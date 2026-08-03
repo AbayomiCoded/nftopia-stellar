@@ -1,9 +1,12 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { View, Text, StyleSheet, AppState, AppStateStatus } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
 import i18n, { isRTL } from '@/src/i18n';
 import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 import { errorLogger } from '@/src/errors/logger';
+import { analyticsService } from '@/src/analytics/analytics.service';
+import { ANALYTICS_EVENTS } from '@/src/analytics/config';
+import { ConsentManager } from '@/src/components/ConsentManager';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useCreatorStore } from '@/stores/creatorStore';
@@ -19,6 +22,21 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appState = useRef(AppState.currentState);
+  const [showConsent, setShowConsent] = useState(false);
+
+  // Initialize analytics
+  useEffect(() => {
+    const initAnalytics = async () => {
+      const hasConsent = analyticsService.hasConsent();
+      if (hasConsent) {
+        await analyticsService.initialize();
+        analyticsService.track(ANALYTICS_EVENTS.APP_OPEN);
+      } else {
+        setShowConsent(true);
+      }
+    };
+    initAnalytics();
+  }, []);
 
   // Set RTL direction when language changes
   useEffect(() => {
@@ -45,11 +63,15 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
             setOnlineStatus(true);
             processQueue();
             refreshAll();
+            // Retry offline analytics events
+            analyticsService.retryOfflineEvents();
+            analyticsService.track(ANALYTICS_EVENTS.ONLINE_MODE);
           }
         })
         .catch(() => {
           if (isOnline) {
             setOnlineStatus(false);
+            analyticsService.track(ANALYTICS_EVENTS.OFFLINE_MODE);
           }
         });
     };
@@ -67,6 +89,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
 
       ws.onopen = () => {
         console.log('WebSocket connected');
+        analyticsService.track('websocket_connected');
       };
 
       ws.onmessage = (event) => {
@@ -86,12 +109,11 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
             fetchUnreadCount();
           }
         } catch (error) {
-          errorLogger.log(
-            error as Error,
-            'WebSocketMessageHandler',
-            undefined,
-            { event: 'ws_message', payload: event.data }
-          );
+          errorLogger.log(error as Error, 'WebSocketMessageHandler');
+          analyticsService.trackError(error as Error, {
+            event: 'ws_message',
+            payload: event.data,
+          });
         }
       };
 
@@ -99,26 +121,19 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         reconnectTimeoutRef.current = setTimeout(() => {
           connectWebSocket();
         }, 5000);
+        analyticsService.track('websocket_closed');
       };
 
       ws.onerror = (error) => {
-        errorLogger.log(
-          error as Error,
-          'WebSocketConnection',
-          undefined,
-          { event: 'ws_error' }
-        );
+        errorLogger.log(error as Error, 'WebSocketConnection');
+        analyticsService.trackError(error as Error, { event: 'ws_error' });
         ws.close();
       };
 
       wsRef.current = ws;
     } catch (error) {
-      errorLogger.log(
-        error as Error,
-        'WebSocketConnection',
-        undefined,
-        { event: 'ws_connect_failed' }
-      );
+      errorLogger.log(error as Error, 'WebSocketConnection');
+      analyticsService.trackError(error as Error, { event: 'ws_connect_failed' });
     }
   }, [addNotification, fetchUnreadCount]);
 
@@ -141,6 +156,9 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         refreshAll();
         fetchUnreadCount();
+        analyticsService.track(ANALYTICS_EVENTS.APP_FOREGROUND);
+      } else if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
+        analyticsService.track(ANALYTICS_EVENTS.APP_BACKGROUND);
       }
       appState.current = nextAppState;
     });
@@ -150,7 +168,41 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
     };
   }, [refreshAll, fetchUnreadCount]);
 
-  return <>{children}</>;
+  // Handle app close
+  useEffect(() => {
+    const cleanup = async () => {
+      analyticsService.track(ANALYTICS_EVENTS.APP_CLOSE);
+      await analyticsService.destroy();
+    };
+
+    // Note: This is a simplified cleanup, real apps would use AppState for this
+    return () => {
+      cleanup();
+    };
+  }, []);
+
+  const handleConsentGiven = async () => {
+    setShowConsent(false);
+    await analyticsService.initialize();
+    analyticsService.track(ANALYTICS_EVENTS.APP_OPEN);
+  };
+
+  const handleConsentDenied = () => {
+    setShowConsent(false);
+  };
+
+  return (
+    <>
+      <I18nextProvider i18n={i18n}>
+        {children}
+      </I18nextProvider>
+      <ConsentManager
+        visible={showConsent}
+        onConsentGiven={handleConsentGiven}
+        onConsentDenied={handleConsentDenied}
+      />
+    </>
+  );
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -158,23 +210,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <ErrorBoundary
       name="AppRoot"
       onError={(error, errorInfo) => {
-        errorLogger.log(
-          error,
-          'AppRoot',
-          undefined,
-          { componentStack: errorInfo.componentStack }
-        );
+        errorLogger.log(error, 'AppRoot', undefined, { componentStack: errorInfo.componentStack });
+        analyticsService.trackError(error, { componentStack: errorInfo.componentStack });
       }}
       onReset={() => {
-        // Reset any global state if needed
         console.log('App reset after error');
       }}
     >
-      <I18nextProvider i18n={i18n}>
-        <AppLayoutContent>
-          {children}
-        </AppLayoutContent>
-      </I18nextProvider>
+      <AppLayoutContent>
+        {children}
+      </AppLayoutContent>
     </ErrorBoundary>
   );
 }
