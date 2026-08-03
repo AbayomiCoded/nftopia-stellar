@@ -1,11 +1,22 @@
 import React, { useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { useTranslation } from 'react-i18next';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { useWalletConnect } from '@/hooks/useWalletConnect';
 import { useWalletStore } from '@/stores/walletStore';
+import { useAuthStore } from '@/stores/authStore';
 import BalanceDisplay from '@/components/wallet/BalanceDisplay';
+import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
+import { errorLogger } from '@/src/errors/logger';
+import { ErrorFallback } from '@/src/components/ErrorFallback';
 
-export default function HomeScreen() {
+function HomeContent() {
+  const { t } = useTranslation();
+  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
+  const { user } = useAuthStore();
   const {
     activeWallet,
     activePublicKey,
@@ -26,18 +37,28 @@ export default function HomeScreen() {
     if (activePublicKey) {
       fetchBalances(activePublicKey);
     }
-  }, [activePublicKey]);
+  }, [activePublicKey, fetchBalances]);
 
   if (!activeWallet) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>No Wallet Active</Text>
-        <Text style={styles.emptySubtitle}>
-          Import or create a wallet to get started
-        </Text>
+        <Text style={styles.emptyTitle}>{t('home.noWallet')}</Text>
+        <Text style={styles.emptySubtitle}>{t('home.noWalletSubtitle')}</Text>
       </View>
     );
   }
+
+  if (error) {
+    return (
+      <ErrorFallback
+        error={error ? new Error(error) : null}
+        onRetry={onRefresh}
+        customMessage="Failed to load wallet data. Please try again."
+      />
+    );
+  }
+
+  const greetingName = user?.email?.split('@')[0] || t('home.greetingDefault');
 
   return (
     <ScrollView
@@ -48,10 +69,13 @@ export default function HomeScreen() {
       }
     >
       <View style={styles.header}>
-        <Text style={styles.greeting}>Your Wallet</Text>
+        <View>
+          <Text style={styles.greeting}>{t('home.greeting', { name: greetingName })}</Text>
+          <Text style={styles.subGreeting}>{t('home.title')}</Text>
+        </View>
         <View style={styles.networkBadge}>
           <Text style={styles.networkBadgeText}>
-            {network === 'testnet' ? 'Testnet' : 'Mainnet'}
+            {network === 'testnet' ? t('home.testnet') : t('home.mainnet')}
           </Text>
         </View>
       </View>
@@ -66,22 +90,43 @@ export default function HomeScreen() {
       />
 
       <View style={styles.actions}>
+        <TouchableOpacity 
+          style={styles.actionCard} 
+          onPress={() => navigation.navigate('Marketplace')}
+        >
+          <Text style={styles.actionIcon}>🛍️</Text>
+          <Text style={styles.actionLabel}>{t('home.actions.marketplace')}</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.actionCard}>
           <Text style={styles.actionIcon}>📤</Text>
-          <Text style={styles.actionLabel}>Send</Text>
+          <Text style={styles.actionLabel}>{t('home.actions.send')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionCard}>
           <Text style={styles.actionIcon}>📥</Text>
-          <Text style={styles.actionLabel}>Receive</Text>
+          <Text style={styles.actionLabel}>{t('home.actions.receive')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionCard}>
           <Text style={styles.actionIcon}>🔄</Text>
-          <Text style={styles.actionLabel}>Swap</Text>
+          <Text style={styles.actionLabel}>{t('home.actions.swap')}</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
   );
 }
+
+const HomeScreen = withErrorBoundary(HomeContent, {
+  name: 'HomeScreen',
+  onError: (error, errorInfo) => {
+    errorLogger.log(
+      error,
+      'HomeScreen',
+      undefined,
+      { componentStack: errorInfo.componentStack }
+    );
+  },
+});
+
+export default HomeScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -96,12 +141,17 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   greeting: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: colors.text,
+  },
+  subGreeting: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
   networkBadge: {
     backgroundColor: colors.surface,
