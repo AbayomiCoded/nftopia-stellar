@@ -4,7 +4,8 @@
     "^.+\\.tsx?$": ["ts-jest", { "tsconfig": { "strict": false } }]
   },
   "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json"],
-  "testMatch": ["**/src/services/auth/__tests__/**/*.test.ts"],
+  "testMatch": ["**/__tests__/**/*.test.ts", "**/*.test.ts"],
+  "testPathIgnorePatterns": ["/node_modules/"],
   "collectCoverageFrom": [
     "src/services/auth/**/*.ts",
     "!src/services/auth/__tests__/**"

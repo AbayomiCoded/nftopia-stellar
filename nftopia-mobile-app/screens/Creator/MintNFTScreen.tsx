@@ -6,15 +6,14 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   Alert,
-  Platform,
 } from 'react-native';
 import { useCreatorStore } from '@/stores/creatorStore';
 import { useOfflineStore } from '@/stores/offlineStore';
 import apiClient from '@/lib/api/sample';
 import { MintFormData, NFTAttribute } from '@/types';
+import { OptimizedImage } from '@/src/components/OptimizedImage';
 
 export default function MintNFTScreen({ navigation }: any) {
   const { collections, fetchMyCollections } = useCreatorStore();
@@ -64,8 +63,6 @@ export default function MintNFTScreen({ navigation }: any) {
   };
 
   const handleImagePick = async () => {
-    // In a real app, use expo-image-picker
-    // For now, simulate image selection
     Alert.alert(
       'Select Image',
       'Choose image source',
@@ -78,7 +75,7 @@ export default function MintNFTScreen({ navigation }: any) {
   };
 
   const simulateImagePick = () => {
-    setImage('file:///simulated/image_' + Date.now() + '.jpg');
+    setImage('https://via.placeholder.com/800x800/6C5CE7/FFFFFF?text=NFT+Preview');
   };
 
   const addAttribute = () => {
@@ -112,7 +109,6 @@ export default function MintNFTScreen({ navigation }: any) {
     setLoading(true);
     setUploading(true);
 
-    // Simulate upload progress
     const progressInterval = setInterval(() => {
       setUploadProgress((prev) => Math.min(prev + 10, 90));
     }, 500);
@@ -176,7 +172,16 @@ export default function MintNFTScreen({ navigation }: any) {
         <TouchableOpacity style={styles.imageUpload} onPress={handleImagePick}>
           {image ? (
             <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: image }} style={styles.imagePreview} />
+              <OptimizedImage
+                source={image}
+                size="medium"
+                width="100%"
+                height={200}
+                resizeMode="cover"
+                cacheKey={`mint-preview-${Date.now()}`}
+                showSkeleton={true}
+                quality="medium"
+              />
               <Text style={styles.changeImageText}>Tap to change</Text>
             </View>
           ) : (
@@ -469,11 +474,6 @@ const styles = StyleSheet.create({
   },
   imagePreviewContainer: {
     position: 'relative',
-  },
-  imagePreview: {
-    width: '100%',
-    height: 200,
-    resizeMode: 'cover',
   },
   changeImageText: {
     position: 'absolute',

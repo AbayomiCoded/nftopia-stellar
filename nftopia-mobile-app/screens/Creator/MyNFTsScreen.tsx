@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  Image,
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
@@ -12,6 +11,7 @@ import {
 import { useCreatorStore } from '@/stores/creatorStore';
 import apiClient from '@/lib/api/sample';
 import { NFT } from '@/types';
+import { OptimizedImage } from '@/src/components/OptimizedImage';
 
 function NFTCard({ nft, onPress }: { nft: NFT; onPress: () => void }) {
   const statusColor = {
@@ -24,13 +24,18 @@ function NFTCard({ nft, onPress }: { nft: NFT; onPress: () => void }) {
   return (
     <TouchableOpacity style={styles.nftCard} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.nftImageContainer}>
-        {nft.imageUrl ? (
-          <Image source={{ uri: nft.imageUrl }} style={styles.nftImage} />
-        ) : (
-          <View style={styles.nftPlaceholder}>
-            <Text style={styles.nftPlaceholderText}>🎨</Text>
-          </View>
-        )}
+        <OptimizedImage
+          source={nft.imageUrl}
+          size="medium"
+          width="100%"
+          height={160}
+          resizeMode="cover"
+          cacheKey={`my-nft-${nft.id}`}
+          showSkeleton={true}
+          lazyLoad={true}
+          quality="auto"
+          fallbackSource="https://via.placeholder.com/400x400/F0F0F0/999?text=No+Image"
+        />
         <View style={[styles.statusBadge, { backgroundColor: statusColor[nft.status] }]}>
           <Text style={styles.statusText}>{nft.status}</Text>
         </View>
@@ -182,21 +187,6 @@ const styles = StyleSheet.create({
   },
   nftImageContainer: {
     position: 'relative',
-  },
-  nftImage: {
-    width: '100%',
-    height: 160,
-    resizeMode: 'cover',
-  },
-  nftPlaceholder: {
-    width: '100%',
-    height: 160,
-    backgroundColor: '#F0F0F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  nftPlaceholderText: {
-    fontSize: 48,
   },
   statusBadge: {
     position: 'absolute',

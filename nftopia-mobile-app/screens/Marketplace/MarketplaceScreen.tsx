@@ -1,25 +1,73 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { useNFTs } from '@/hooks/useNFTs';
 import { NFT } from '@/types';
+import { OptimizedImage } from '@/src/components/OptimizedImage';
+import { ErrorFallback } from '@/src/components/ErrorFallback';
+import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
+import { useAnalytics } from '@/src/hooks/useAnalytics';
+import { ANALYTICS_EVENTS } from '@/src/analytics/config';
+import { analyticsService } from '@/src/analytics/analytics.service';
+import { errorLogger } from '@/src/errors/logger';
 
-export default function MarketplaceScreen() {
+function MarketplaceContent() {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const { nfts, loading, error, loadMore, refetch } = useNFTs();
+  const { track, trackScreenView, trackPerformance } = useAnalytics();
+
+  useEffect(() => {
+    trackScreenView('Marketplace');
+  }, [trackScreenView]);
+
+  const handleNFTPress = (nft: NFT) => {
+    track(ANALYTICS_EVENTS.NFT_VIEW, {
+      nftId: nft.id,
+      nftName: nft.name,
+      price: nft.price,
+      currency: nft.currency,
+    });
+    navigation.navigate('NFTDetail', { nftId: nft.id });
+  };
 
   const renderItem = ({ item }: { item: NFT }) => (
     <TouchableOpacity 
       style={styles.card} 
-      onPress={() => navigation.navigate('NFTDetail', { nftId: item.id })}
+      onPress={() => handleNFTPress(item)}
     >
-      <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
+      <OptimizedImage
+        source={item.imageUrl}
+        size="medium"
+        width="100%"
+        height={200}
+        resizeMode="cover"
+        cacheKey={`marketplace-${item.id}`}
+        showSkeleton={true}
+        lazyLoad={true}
+        quality="auto"
+        onLoad={() => {
+          trackPerformance('image_load_time', Date.now(), {
+            nftId: item.id,
+            type: 'marketplace',
+          });
+        }}
+        onError={(err) => {
+          errorLogger.log(err, 'MarketplaceImage', undefined, { nftId: item.id });
+          track(ANALYTICS_EVENTS.ERROR_OCCURRED, {
+            component: 'MarketplaceImage',
+            nftId: item.id,
+            error: err.message,
+          });
+        }}
+      />
       <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{item.name}</Text>
-        <Text style={styles.cardOwner}>Owner: {item.owner.username || item.owner.address}</Text>
+        <Text style={styles.cardTitle}>{item.name || 'Untitled NFT'}</Text>
+        <Text style={styles.cardOwner}>
+          Owner: {item.owner?.username || item.owner?.address || 'Unknown'}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -47,28 +95,34 @@ export default function MarketplaceScreen() {
     </View>
   );
 
-  const renderError = () => (
-    <View style={styles.centerContainer}>
-      <Text style={styles.errorText}>
-        {error?.message || 'Something went wrong fetching NFTs.'}
-      </Text>
-      <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
-        <Text style={styles.retryText}>Retry</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  if (error && nfts.length === 0) {
+    return (
+      <ErrorFallback
+        error={error}
+        onRetry={() => {
+          track('marketplace_refresh');
+          refetch();
+        }}
+        customMessage="Failed to load NFTs. Please check your connection and try again."
+      />
+    );
+  }
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => {
+            track('marketplace_back');
+            navigation.goBack();
+          }}
+        >
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Marketplace</Text>
       </View>
-      {error && nfts.length === 0 ? (
-        renderError()
-      ) : loading && nfts.length === 0 ? (
+      {loading && nfts.length === 0 ? (
         renderSkeleton()
       ) : (
         <FlatList
@@ -77,17 +131,36 @@ export default function MarketplaceScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          onEndReached={loadMore}
+          onEndReached={() => {
+            track('marketplace_load_more', { currentCount: nfts.length });
+            loadMore();
+          }}
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
           refreshControl={
-            <RefreshControl refreshing={loading && nfts.length > 0} onRefresh={refetch} />
+            <RefreshControl 
+              refreshing={loading && nfts.length > 0} 
+              onRefresh={() => {
+                track('marketplace_refresh');
+                refetch();
+              }}
+            />
           }
         />
       )}
     </View>
   );
 }
+
+const MarketplaceScreen = withErrorBoundary(MarketplaceContent, {
+  name: 'MarketplaceScreen',
+  onError: (error, errorInfo) => {
+    errorLogger.log(error, 'MarketplaceScreen', undefined, { componentStack: errorInfo.componentStack });
+    analyticsService.trackError(error, { componentStack: errorInfo.componentStack });
+  },
+});
+
+export default MarketplaceScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -127,11 +200,6 @@ const styles = StyleSheet.create({
     ...shadows.md,
     marginBottom: spacing.md,
   },
-  cardImage: {
-    width: '100%',
-    height: 200,
-    backgroundColor: colors.border,
-  },
   cardContent: {
     padding: spacing.md,
   },
@@ -148,28 +216,6 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: spacing.md,
     alignItems: 'center',
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  errorText: {
-    fontSize: 16,
-    color: colors.error,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  retryButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-  },
-  retryText: {
-    color: '#FFF',
-    fontWeight: 'bold',
   },
   skeletonImage: {
     width: '100%',
