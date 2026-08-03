@@ -125,8 +125,8 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       };
 
       ws.onerror = (error) => {
-        errorLogger.log(error as Error, 'WebSocketConnection');
-        analyticsService.trackError(error as Error, { event: 'ws_error' });
+        errorLogger.log(error as unknown as Error, 'WebSocketConnection');
+        analyticsService.trackError(error as unknown as Error, { event: 'ws_error' });
         ws.close();
       };
 

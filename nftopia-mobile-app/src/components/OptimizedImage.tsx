@@ -9,6 +9,7 @@ import {
   Dimensions,
   ViewStyle,
   ImageStyle,
+  DimensionValue,
 } from 'react-native';
 import { Image as ExpoImage, ImageProps as ExpoImageProps } from 'expo-image';
 import { useNetworkQuality } from '@/src/hooks/useNetworkQuality';
@@ -18,8 +19,8 @@ import { getImageUrl, IMAGE_SIZES, ImageSize, DEFAULT_IMAGE_CONFIG } from '@/src
 interface OptimizedImageProps {
   source: string;
   size?: ImageSize;
-  width?: number | string;
-  height?: number | string;
+  width?: DimensionValue;
+  height?: DimensionValue;
   style?: ImageStyle;
   containerStyle?: ViewStyle;
   resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
@@ -321,7 +322,7 @@ export function OptimizedImage({
             style,
           ]}
           resizeMode={resizeMode as any}
-          placeholder={blurRadius > 0 ? { blurRadius } : undefined}
+          blurRadius={blurRadius > 0 ? blurRadius : undefined}
           onLoad={handleLoad}
           onError={handleError}
           cachePolicy="memory-disk"

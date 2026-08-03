@@ -3,7 +3,7 @@ import { initReactI18next } from 'react-i18next';
 import * as Localization from 'expo-localization';
 import { match } from '@formatjs/intl-localematcher';
 import resources from './resources';
-import { Language, DEFAULT_LANGUAGE, FALLBACK_LANGUAGE, SUPPORTED_LANGUAGES } from './types';
+import { Language, DEFAULT_LANGUAGE, FALLBACK_LANGUAGE, SUPPORTED_LANGUAGES, LANGUAGE_OPTIONS } from './types';
 import type { TranslationResources } from './types';
 
 // Initialize with device language
@@ -54,4 +54,5 @@ export const isRTL = (language?: Language): boolean => {
   return lang === 'ar';
 };
 
-export { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE, FALLBACK_LANGUAGE };
+export { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE, FALLBACK_LANGUAGE, LANGUAGE_OPTIONS };
+export type { Language };

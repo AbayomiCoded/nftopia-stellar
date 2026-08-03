@@ -91,16 +91,16 @@ export default function MainNavigator() {
           )}
         </Stack.Screen>
         <Stack.Screen name="Profile">
-          {() => (
+          {(props) => (
             <ScreenErrorBoundary name="ProfileScreen">
-              <ProfileScreen />
+              <ProfileScreen {...props} />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
         <Stack.Screen name="WalletManagement">
-          {() => (
+          {(props) => (
             <ScreenErrorBoundary name="WalletManagementScreen">
-              <WalletManagementScreen />
+              <WalletManagementScreen {...props} />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>

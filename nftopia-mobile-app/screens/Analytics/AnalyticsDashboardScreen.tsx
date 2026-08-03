@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useAnalytics } from '@/src/hooks/useAnalytics';
+import { analyticsService } from '@/src/analytics/analytics.service';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 
 interface MetricCard {

@@ -51,14 +51,14 @@ function HomeContent() {
   if (error) {
     return (
       <ErrorFallback
-        error={error}
+        error={error ? new Error(error) : null}
         onRetry={onRefresh}
         customMessage="Failed to load wallet data. Please try again."
       />
     );
   }
 
-  const greetingName = user?.name || user?.email?.split('@')[0] || t('home.greetingDefault');
+  const greetingName = user?.email?.split('@')[0] || t('home.greetingDefault');
 
   return (
     <ScrollView

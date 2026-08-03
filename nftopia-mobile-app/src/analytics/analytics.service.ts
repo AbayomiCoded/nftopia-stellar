@@ -60,13 +60,10 @@ class AnalyticsService {
           ANALYTICS_CONFIG.posthog.apiKey,
           {
             host: ANALYTICS_CONFIG.posthog.host,
-            debug: ANALYTICS_CONFIG.posthog.debug,
-            captureApplicationLifecycleEvents: ANALYTICS_CONFIG.posthog.captureApplicationLifecycleEvents,
-            captureScreenViews: ANALYTICS_CONFIG.posthog.captureScreenViews,
-            captureTouches: ANALYTICS_CONFIG.posthog.captureTouches,
-            captureDeepLinks: ANALYTICS_CONFIG.posthog.captureDeepLinks,
+            captureAppLifecycleEvents: ANALYTICS_CONFIG.posthog.captureApplicationLifecycleEvents,
           }
         );
+        this.posthog.debug(ANALYTICS_CONFIG.posthog.debug);
 
         // Set session ID
         this.posthog.register({
@@ -363,14 +360,14 @@ class AnalyticsService {
     if (!this.consentGiven || !this.posthog) {
       return Promise.resolve(null);
     }
-    return this.posthog.getFeatureFlag(key);
+    return Promise.resolve(this.posthog.getFeatureFlag(key) ?? null);
   }
 
   getFeatureFlags(): Promise<Record<string, any>> {
     if (!this.consentGiven || !this.posthog) {
       return Promise.resolve({});
     }
-    return this.posthog.getFeatureFlags();
+    return Promise.resolve(this.posthog.getFeatureFlags() ?? {});
   }
 
   // Reload feature flags

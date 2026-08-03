@@ -11,6 +11,7 @@ import { ErrorFallback } from '@/src/components/ErrorFallback';
 import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
 import { useAnalytics } from '@/src/hooks/useAnalytics';
 import { ANALYTICS_EVENTS } from '@/src/analytics/config';
+import { analyticsService } from '@/src/analytics/analytics.service';
 import { errorLogger } from '@/src/errors/logger';
 
 function MarketplaceContent() {

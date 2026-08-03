@@ -97,7 +97,7 @@ export default function NFTDetailScreen() {
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
       >
         <ImageGallery
-          images={[nft.imageUrl, ...(nft.additionalImages || [])]}
+          images={[nft.imageUrl]}
           initialIndex={0}
           showThumbnails={true}
         />
