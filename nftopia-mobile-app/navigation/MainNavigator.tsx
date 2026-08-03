@@ -1,6 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useOfflineStore } from '@/stores/offlineStore';
 
@@ -42,11 +43,12 @@ export type MainStackParamList = {
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
 function OfflineBanner() {
+  const { t } = useTranslation();
   const { isOnline } = useOfflineStore();
   if (isOnline) return null;
   return (
     <View style={styles.offlineBanner}>
-      <Text style={styles.offlineBannerText}>You are offline. Some features may be limited.</Text>
+      <Text style={styles.offlineBannerText}>{t('common.offline')}</Text>
     </View>
   );
 }

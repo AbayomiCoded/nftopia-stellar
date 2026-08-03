@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, AppState, AppStateStatus } from 'react-native';
+import { I18nextProvider } from 'react-i18next';
+import i18n, { isRTL } from '@/src/i18n';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useCreatorStore } from '@/stores/creatorStore';
@@ -16,9 +18,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appState = useRef(AppState.currentState);
 
+  // Set RTL direction when language changes
+  useEffect(() => {
+    const rtl = isRTL();
+    // Apply RTL layout if needed
+    if (rtl) {
+      // @ts-ignore - I18nManager is available on React Native
+      const { I18nManager } = require('react-native');
+      if (!I18nManager.isRTL) {
+        I18nManager.forceRTL(true);
+      }
+    } else {
+      const { I18nManager } = require('react-native');
+      if (I18nManager.isRTL) {
+        I18nManager.forceRTL(false);
+      }
+    }
+  }, [i18n.language]);
+
   // Network status monitoring
   useEffect(() => {
-    // Simulate NetInfo listener (would use @react-native-community/netinfo)
     const checkConnection = () => {
       fetch('https://api.nftopia.io/health', { method: 'HEAD' })
         .then(() => {
@@ -36,10 +55,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     };
 
     const interval = setInterval(checkConnection, 30000);
-    checkConnection(); // Initial check
+    checkConnection();
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isOnline, setOnlineStatus, processQueue, refreshAll]);
 
   // WebSocket connection for real-time notifications
   const connectWebSocket = useCallback(() => {
@@ -72,7 +91,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       };
 
       ws.onclose = () => {
-        // Reconnect after 5 seconds
         reconnectTimeoutRef.current = setTimeout(() => {
           connectWebSocket();
         }, 5000);
@@ -86,7 +104,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     } catch {
       // WebSocket not available
     }
-  }, []);
+  }, [addNotification, fetchUnreadCount]);
 
   useEffect(() => {
     connectWebSocket();
@@ -105,7 +123,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        // App came to foreground - refresh data
         refreshAll();
         fetchUnreadCount();
       }
@@ -115,7 +132,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [refreshAll, fetchUnreadCount]);
 
-  return <>{children}</>;
+  return (
+    <I18nextProvider i18n={i18n}>
+      {children}
+    </I18nextProvider>
+  );
 }
