@@ -11,6 +11,7 @@ import { usePushNotifications } from '@/src/hooks/usePushNotifications';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useCreatorStore } from '@/stores/creatorStore';
+import { persistenceManager } from '@/src/utils/persistence.manager';
 import { Notification } from '@/types';
 
 // WebSocket URL for real-time notifications
@@ -24,22 +25,39 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appState = useRef(AppState.currentState);
   const [showConsent, setShowConsent] = useState(false);
+  const [appInitialized, setAppInitialized] = useState(false);
 
   // Initialize push notifications
   const { isInitialized: pushInitialized } = usePushNotifications();
 
-  // Initialize analytics
+  // Initialize app (persistence, analytics, etc.)
   useEffect(() => {
-    const initAnalytics = async () => {
-      const hasConsent = analyticsService.hasConsent();
-      if (hasConsent) {
-        await analyticsService.initialize();
-        analyticsService.track(ANALYTICS_EVENTS.APP_OPEN);
-      } else {
-        setShowConsent(true);
+    const initApp = async () => {
+      try {
+        // Initialize persistence first
+        await persistenceManager.initialize();
+        console.log('[App] Persistence initialized');
+
+        // Initialize analytics
+        const hasConsent = analyticsService.hasConsent();
+        if (hasConsent) {
+          await analyticsService.initialize();
+          analyticsService.track(ANALYTICS_EVENTS.APP_OPEN);
+        } else {
+          setShowConsent(true);
+        }
+
+        setAppInitialized(true);
+        console.log('[App] App initialized successfully');
+      } catch (error) {
+        console.error('[App] Initialization failed:', error);
+        errorLogger.log(error as Error, 'AppInitialization');
+        // Still set initialized to true to prevent infinite loading
+        setAppInitialized(true);
       }
     };
-    initAnalytics();
+
+    initApp();
   }, []);
 
   // Set RTL direction when language changes
@@ -193,6 +211,11 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const handleConsentDenied = () => {
     setShowConsent(false);
   };
+
+  // Show nothing until app is initialized
+  if (!appInitialized) {
+    return null;
+  }
 
   return (
     <>
