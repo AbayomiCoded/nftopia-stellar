@@ -6,15 +6,15 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { useCreatorStore } from '@/stores/creatorStore';
 import apiClient from '@/lib/api/sample';
 import { NFT } from '@/types';
 import { OptimizedImage } from '@/src/components/OptimizedImage';
+import { MyNFTsGridSkeleton } from '@/src/components/skeletons';
 
 function NFTCard({ nft, onPress }: { nft: NFT; onPress: () => void }) {
-  const statusColor = {
+  const statusColor: Record<string, string> = {
     draft: '#999',
     minted: '#6C5CE7',
     listed: '#00B894',
@@ -36,7 +36,7 @@ function NFTCard({ nft, onPress }: { nft: NFT; onPress: () => void }) {
           quality="auto"
           fallbackSource="https://via.placeholder.com/400x400/F0F0F0/999?text=No+Image"
         />
-        <View style={[styles.statusBadge, { backgroundColor: statusColor[nft.status] }]}>
+        <View style={[styles.statusBadge, { backgroundColor: statusColor[nft.status] || '#999' }]}>
           <Text style={styles.statusText}>{nft.status}</Text>
         </View>
       </View>
@@ -56,22 +56,6 @@ function EmptyState() {
       <Text style={styles.emptySubtitle}>
         Start minting your first NFT to see it here
       </Text>
-    </View>
-  );
-}
-
-function LoadingSkeleton() {
-  return (
-    <View style={styles.skeletonContainer}>
-      {[1, 2, 3, 4].map((i) => (
-        <View key={i} style={styles.skeletonCard}>
-          <View style={styles.skeletonImage} />
-          <View style={styles.skeletonInfo}>
-            <View style={[styles.skeletonLine, { width: '70%' }]} />
-            <View style={[styles.skeletonLine, { width: '40%', marginTop: 6 }]} />
-          </View>
-        </View>
-      ))}
     </View>
   );
 }
@@ -105,7 +89,7 @@ export default function MyNFTsScreen({ navigation }: any) {
           <Text style={styles.headerTitle}>My NFTs</Text>
           <Text style={styles.headerCount}>0 total</Text>
         </View>
-        <LoadingSkeleton />
+        <MyNFTsGridSkeleton count={4} animated={true} />
       </View>
     );
   }
@@ -237,30 +221,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
-  },
-  skeletonContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 12,
-    gap: 12,
-  },
-  skeletonCard: {
-    width: '47%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  skeletonImage: {
-    height: 160,
-    backgroundColor: '#E8E8E8',
-  },
-  skeletonInfo: {
-    padding: 12,
-  },
-  skeletonLine: {
-    height: 12,
-    backgroundColor: '#E8E8E8',
-    borderRadius: 6,
   },
   errorContainer: {
     alignItems: 'center',

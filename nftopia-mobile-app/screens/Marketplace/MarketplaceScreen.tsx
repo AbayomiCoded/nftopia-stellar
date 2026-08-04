@@ -13,6 +13,7 @@ import { useAnalytics } from '@/src/hooks/useAnalytics';
 import { ANALYTICS_EVENTS } from '@/src/analytics/config';
 import { analyticsService } from '@/src/analytics/analytics.service';
 import { errorLogger } from '@/src/errors/logger';
+import { MarketplaceCardSkeleton } from '@/src/components/skeletons';
 
 function MarketplaceContent() {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
@@ -81,20 +82,6 @@ function MarketplaceContent() {
     );
   };
 
-  const renderSkeleton = () => (
-    <View style={styles.listContent}>
-      {[1, 2, 3].map(key => (
-        <View key={key} style={styles.card}>
-          <View style={styles.skeletonImage} />
-          <View style={styles.cardContent}>
-            <View style={styles.skeletonTextLong} />
-            <View style={styles.skeletonTextShort} />
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-
   if (error && nfts.length === 0) {
     return (
       <ErrorFallback
@@ -123,7 +110,7 @@ function MarketplaceContent() {
         <Text style={styles.title}>Marketplace</Text>
       </View>
       {loading && nfts.length === 0 ? (
-        renderSkeleton()
+        <MarketplaceCardSkeleton count={3} animated={true} />
       ) : (
         <FlatList
           data={nfts}
@@ -216,23 +203,5 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: spacing.md,
     alignItems: 'center',
-  },
-  skeletonImage: {
-    width: '100%',
-    height: 200,
-    backgroundColor: colors.border,
-  },
-  skeletonTextLong: {
-    height: 18,
-    backgroundColor: colors.border,
-    borderRadius: 4,
-    width: '70%',
-    marginBottom: 8,
-  },
-  skeletonTextShort: {
-    height: 14,
-    backgroundColor: colors.border,
-    borderRadius: 4,
-    width: '40%',
   },
 });

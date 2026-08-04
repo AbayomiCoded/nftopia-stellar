@@ -12,6 +12,7 @@ import BalanceDisplay from '@/components/wallet/BalanceDisplay';
 import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
 import { errorLogger } from '@/src/errors/logger';
 import { ErrorFallback } from '@/src/components/ErrorFallback';
+import { HomeSkeleton } from '@/src/components/skeletons';
 
 function HomeContent() {
   const { t } = useTranslation();
@@ -38,6 +39,11 @@ function HomeContent() {
       fetchBalances(activePublicKey);
     }
   }, [activePublicKey, fetchBalances]);
+
+  // Show skeleton while loading
+  if (isLoading && !activeWallet) {
+    return <HomeSkeleton />;
+  }
 
   if (!activeWallet) {
     return (
