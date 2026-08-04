@@ -1,9 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius } from '@/constants/theme';
 import { useWalletConnect } from '@/hooks/useWalletConnect';
+import { useBiometric } from '@/src/hooks/useBiometric';
+import { BiometricConfirmationDialog } from '@/src/components/BiometricConfirmationDialog';
 import WalletList from '@/components/wallet/WalletList';
 import WalletExportModal from '@/components/wallet/WalletExportModal';
 
@@ -19,7 +21,14 @@ export default function WalletManagementScreen({ navigation }: Props) {
     revealMnemonic,
   } = useWalletConnect();
 
+  const { requireBiometric, isAvailable } = useBiometric();
+
   const [exportingKey, setExportingKey] = useState<string | null>(null);
+  const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    action: 'export' | 'reveal' | 'remove';
+    publicKey: string;
+  } | null>(null);
 
   const handleSelect = useCallback(
     (publicKey: string) => {
@@ -30,17 +39,173 @@ export default function WalletManagementScreen({ navigation }: Props) {
 
   const handleRemove = useCallback(
     (publicKey: string) => {
-      removeWallet(publicKey);
+      // Require biometric for wallet removal
+      if (isAvailable) {
+        setPendingAction({ action: 'remove', publicKey });
+        setShowBiometricPrompt(true);
+      } else {
+        // Fallback to confirmation dialog
+        Alert.alert(
+          'Remove Wallet',
+          'Are you sure you want to remove this wallet?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Remove',
+              style: 'destructive',
+              onPress: () => removeWallet(publicKey),
+            },
+          ]
+        );
+      }
     },
-    [removeWallet],
+    [isAvailable, removeWallet],
   );
 
   const handleExport = useCallback(
     (publicKey: string) => {
-      setExportingKey(publicKey);
+      // Require biometric for wallet export
+      if (isAvailable) {
+        setPendingAction({ action: 'export', publicKey });
+        setShowBiometricPrompt(true);
+      } else {
+        // Fallback to direct export (with confirmation)
+        Alert.alert(
+          'Export Wallet',
+          'Exporting wallet keys is sensitive. Continue?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Continue',
+              onPress: () => setExportingKey(publicKey),
+            },
+          ]
+        );
+      }
     },
-    [],
+    [isAvailable],
   );
+
+  const handleRevealSecretKey = useCallback(
+    async (publicKey: string) => {
+      // Require biometric for revealing secret key
+      if (isAvailable) {
+        return new Promise<string | null>((resolve) => {
+          setPendingAction({ action: 'reveal', publicKey });
+          setShowBiometricPrompt(true);
+          // Store resolve callback
+          (window as any).__resolveReveal = resolve;
+        });
+      } else {
+        // Fallback: show confirmation
+        return new Promise((resolve) => {
+          Alert.alert(
+            'Reveal Secret Key',
+            'This will reveal your wallet secret key. Continue?',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+              {
+                text: 'Continue',
+                onPress: async () => {
+                  const key = await revealSecretKey(publicKey);
+                  resolve(key);
+                },
+              },
+            ]
+          );
+        });
+      }
+    },
+    [isAvailable, revealSecretKey],
+  );
+
+  const handleRevealMnemonic = useCallback(
+    async (publicKey: string) => {
+      // Require biometric for revealing mnemonic
+      if (isAvailable) {
+        return new Promise<string | null>((resolve) => {
+          setPendingAction({ action: 'reveal', publicKey });
+          setShowBiometricPrompt(true);
+          // Store resolve callback
+          (window as any).__resolveMnemonic = resolve;
+        });
+      } else {
+        // Fallback: show confirmation
+        return new Promise((resolve) => {
+          Alert.alert(
+            'Reveal Mnemonic',
+            'This will reveal your wallet mnemonic phrase. Continue?',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+              {
+                text: 'Continue',
+                onPress: async () => {
+                  const mnemonic = await revealMnemonic(publicKey);
+                  resolve(mnemonic);
+                },
+              },
+            ]
+          );
+        });
+      }
+    },
+    [isAvailable, revealMnemonic],
+  );
+
+  const handleBiometricSuccess = useCallback(async () => {
+    setShowBiometricPrompt(false);
+
+    if (!pendingAction) return;
+
+    const { action, publicKey } = pendingAction;
+    setPendingAction(null);
+
+    switch (action) {
+      case 'export':
+        setExportingKey(publicKey);
+        break;
+      case 'remove':
+        Alert.alert(
+          'Remove Wallet',
+          'Are you sure you want to remove this wallet?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Remove',
+              style: 'destructive',
+              onPress: () => removeWallet(publicKey),
+            },
+          ]
+        );
+        break;
+      case 'reveal':
+        // Handle reveal based on which callback was set
+        if ((window as any).__resolveReveal) {
+          const key = await revealSecretKey(publicKey);
+          (window as any).__resolveReveal(key);
+          delete (window as any).__resolveReveal;
+        } else if ((window as any).__resolveMnemonic) {
+          const mnemonic = await revealMnemonic(publicKey);
+          (window as any).__resolveMnemonic(mnemonic);
+          delete (window as any).__resolveMnemonic;
+        }
+        break;
+    }
+  }, [pendingAction, removeWallet, revealSecretKey, revealMnemonic]);
+
+  const handleBiometricFailure = useCallback(() => {
+    setShowBiometricPrompt(false);
+    setPendingAction(null);
+    // Resolve any pending promises with null
+    if ((window as any).__resolveReveal) {
+      (window as any).__resolveReveal(null);
+      delete (window as any).__resolveReveal;
+    }
+    if ((window as any).__resolveMnemonic) {
+      (window as any).__resolveMnemonic(null);
+      delete (window as any).__resolveMnemonic;
+    }
+  }, []);
 
   const exportingWallet = wallets.find((w) => w.publicKey === exportingKey);
 
@@ -74,15 +239,37 @@ export default function WalletManagementScreen({ navigation }: Props) {
       <WalletExportModal
         visible={exportingKey !== null}
         publicKey={exportingWallet?.publicKey ?? ''}
-        onRevealSecretKey={async () => {
-          if (!exportingKey) return null;
-          return await revealSecretKey(exportingKey);
-        }}
-        onRevealMnemonic={async () => {
-          if (!exportingKey) return null;
-          return await revealMnemonic(exportingKey);
-        }}
+        onRevealSecretKey={() => handleRevealSecretKey(exportingKey!)}
+        onRevealMnemonic={() => handleRevealMnemonic(exportingKey!)}
         onClose={() => setExportingKey(null)}
+      />
+
+      <BiometricConfirmationDialog
+        visible={showBiometricPrompt}
+        action={pendingAction?.action === 'remove' ? 'SETTINGS_CHANGE' : 'EXPORT_WALLET'}
+        title={
+          pendingAction?.action === 'remove'
+            ? 'Remove Wallet'
+            : pendingAction?.action === 'reveal'
+            ? 'Reveal Wallet Key'
+            : 'Export Wallet'
+        }
+        message={
+          pendingAction?.action === 'remove'
+            ? 'Are you sure you want to remove this wallet? This action cannot be undone.'
+            : pendingAction?.action === 'reveal'
+            ? 'Authenticate to reveal your wallet key or mnemonic phrase.'
+            : 'Authenticate to export your wallet keys.'
+        }
+        confirmLabel={
+          pendingAction?.action === 'remove' ? 'Remove' : 'Authenticate'
+        }
+        destructive={pendingAction?.action === 'remove'}
+        onConfirm={handleBiometricSuccess}
+        onCancel={handleBiometricFailure}
+        onSuccess={handleBiometricSuccess}
+        onFailure={handleBiometricFailure}
+        requireFallback={true}
       />
     </View>
   );
