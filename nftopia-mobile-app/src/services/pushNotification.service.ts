@@ -10,7 +10,8 @@ import { Notification } from '@/types';
 // Configure notification handler
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -18,7 +19,7 @@ Notifications.setNotificationHandler({
 
 export interface PushNotificationData {
   notificationId: string;
-  type: 'bid' | 'sale' | 'follow' | 'mint' | 'auction_end' | 'listing' | 'offer' | 'transfer';
+  type: 'outbid' | 'sale' | 'follow' | 'mint' | 'auction_end' | 'listing' | 'offer' | 'transfer';
   title: string;
   message: string;
   data?: {
@@ -31,6 +32,7 @@ export interface PushNotificationData {
     currency?: string;
     auctionId?: string;
     collectionId?: string;
+    deepLink?: string;
   };
   timestamp: number;
 }
@@ -130,9 +132,7 @@ class PushNotificationService {
   // Get Expo push token
   private async getExpoPushToken(): Promise<string | null> {
     try {
-      const token = await Notifications.getExpoPushTokenAsync({
-        experienceId: '@nftopia/nftopia',
-      });
+      const token = await Notifications.getExpoPushTokenAsync();
       return token.data;
     } catch (error) {
       errorLogger.log(error as Error, 'getExpoPushToken');
@@ -191,11 +191,11 @@ class PushNotificationService {
   // Remove listeners
   private removeListeners(): void {
     if (this.notificationListener) {
-      Notifications.removeNotificationSubscription(this.notificationListener);
+      this.notificationListener.remove();
       this.notificationListener = null;
     }
     if (this.responseListener) {
-      Notifications.removeNotificationSubscription(this.responseListener);
+      this.responseListener.remove();
       this.responseListener = null;
     }
   }
@@ -262,10 +262,10 @@ class PushNotificationService {
 
       return {
         notificationId: notification.request.identifier || Date.now().toString(),
-        type: customData.type || 'mint',
+        type: (customData.type as PushNotificationData['type']) || 'mint',
         title: data.title || 'New Notification',
         message: data.body || '',
-        data: customData,
+        data: customData as PushNotificationData['data'],
         timestamp: Date.now(),
       };
     } catch (error) {
@@ -403,7 +403,7 @@ class PushNotificationService {
       return this.scheduleNotification(
         'Auction Ending Soon!',
         `"${auctionName}" is ending in ${minutesBefore} minutes. Place your final bid!`,
-        { seconds: 5 },
+        { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 5 },
         {
           type: 'auction_end',
           auctionId,
@@ -416,7 +416,7 @@ class PushNotificationService {
     return this.scheduleNotification(
       'Auction Ending Soon',
       `"${auctionName}" is ending in ${minutesBefore} minutes. Place your final bid!`,
-      { date: trigger },
+      { type: Notifications.SchedulableTriggerInputTypes.DATE, date: trigger },
       {
         type: 'auction_end',
         auctionId,
@@ -435,7 +435,7 @@ class PushNotificationService {
     return this.scheduleNotification(
       'Auction Ended',
       `"${auctionName}" has ended. Check the results!`,
-      { date: endTime },
+      { type: Notifications.SchedulableTriggerInputTypes.DATE, date: endTime },
       {
         type: 'auction_end',
         auctionId,

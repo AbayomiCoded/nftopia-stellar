@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { persistenceManager } from '@/src/utils/persistence.manager';
-import { colors, spacing, borderRadius } from '@/constants/theme';
+import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 
 interface StoreInfo {
   name: string;
@@ -281,12 +281,5 @@ const styles = StyleSheet.create({
   clearAllButtonText: {
     color: '#FFFFFF',
     fontWeight: '600',
-  },
-  shadows: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
 });

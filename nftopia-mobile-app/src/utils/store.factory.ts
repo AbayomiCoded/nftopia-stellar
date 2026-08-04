@@ -1,5 +1,6 @@
 import { create, StateCreator, StoreApi, UseBoundStore } from 'zustand';
-import { persist, PersistOptions, devtools } from 'zustand/middleware';
+import { persist, PersistOptions, devtools, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   PersistenceConfig,
   asyncStorageAdapter,
@@ -13,7 +14,7 @@ import {
 export interface StoreConfig<T> {
   name: string;
   initialState: T;
-  actions: (set: any, get: any, store?: any) => T;
+  actions: StateCreator<T, [], [], T>;
   persist?: {
     enabled: boolean;
     name?: string;
@@ -73,13 +74,20 @@ export function createStore<T>(
         storage,
         persistConfig.name || name,
         persistConfig.version,
-        persistConfig.migrate ? [{ version: persistConfig.version, up: persistConfig.migrate }] : []
+        persistConfig.migrate
+          ? [
+              {
+                version: persistConfig.version,
+                up: (state: any) => persistConfig.migrate!(state, persistConfig.version!),
+              },
+            ]
+          : []
       );
     }
 
     const persistOptions: PersistOptions<T, any> = {
       name: persistConfig.name || name,
-      storage: finalStorage,
+      storage: createJSONStorage(() => finalStorage),
       version: persistConfig.version || 0,
       migrate: persistConfig.migrate
         ? async (persistedState: any, version: number) => {
@@ -137,14 +145,13 @@ export function createStore<T>(
     };
 
     // Apply persist middleware
-    store = create(
-      devtoolsConfig?.enabled
-        ? devtools(
-            persist(stateCreator, persistOptions),
-            { name: devtoolsConfig.name || name }
-          )
-        : persist(stateCreator, persistOptions)
-    );
+    if (devtoolsConfig?.enabled) {
+      store = create<T>()(
+        devtools(persist(stateCreator, persistOptions), { name: devtoolsConfig.name || name })
+      );
+    } else {
+      store = create<T>()(persist(stateCreator, persistOptions));
+    }
   } else {
     // No persistence
     const stateCreator: StateCreator<T, [], [], T> = (set, get, store) => {
@@ -156,11 +163,11 @@ export function createStore<T>(
       }
     };
 
-    store = create(
-      devtoolsConfig?.enabled
-        ? devtools(stateCreator, { name: devtoolsConfig.name || name })
-        : stateCreator
-    );
+    if (devtoolsConfig?.enabled) {
+      store = create<T>()(devtools(stateCreator, { name: devtoolsConfig.name || name }));
+    } else {
+      store = create<T>()(stateCreator);
+    }
   }
 
   // Wrap store methods with error handling

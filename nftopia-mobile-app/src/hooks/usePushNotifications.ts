@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { pushNotificationService, PushNotificationData } from '@/src/services/pushNotification.service';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useAnalytics } from '@/src/hooks/useAnalytics';

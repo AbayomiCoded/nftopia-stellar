@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { biometricService } from '@/src/services/biometric.service';
 
-interface BiometricState {
+interface BiometricData {
   enabled: boolean;
   requireForTransactions: boolean;
   requireForWalletAccess: boolean;
@@ -11,7 +11,9 @@ interface BiometricState {
   sessionTimeout: number; // in minutes
   lastActivity: string | null;
   isLocked: boolean;
+}
 
+interface BiometricState extends BiometricData {
   setEnabled: (enabled: boolean) => void;
   setRequireForTransactions: (require: boolean) => void;
   setRequireForWalletAccess: (require: boolean) => void;
@@ -24,7 +26,7 @@ interface BiometricState {
   reset: () => void;
 }
 
-const initialState: BiometricState = {
+const initialState: BiometricData = {
   enabled: false,
   requireForTransactions: true,
   requireForWalletAccess: true,

@@ -37,7 +37,7 @@ class SecureStorageService {
     requireBiometric: boolean = false
   ): Promise<SecureStorageResult<T>> {
     try {
-      const options: SecureStore.Options = {
+      const options: SecureStore.SecureStoreOptions = {
         keychainAccessible: this.DEFAULT_OPTIONS,
         requireAuthentication: requireBiometric,
         authenticationPrompt: requireBiometric
@@ -77,7 +77,7 @@ class SecureStorageService {
     requireBiometric: boolean = false
   ): Promise<SecureStorageResult<T>> {
     try {
-      const options: SecureStore.Options = {
+      const options: SecureStore.SecureStoreOptions = {
         keychainAccessible: this.DEFAULT_OPTIONS,
         requireAuthentication: requireBiometric,
         authenticationPrompt: requireBiometric

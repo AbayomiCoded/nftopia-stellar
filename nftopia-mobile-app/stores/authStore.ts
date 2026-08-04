@@ -27,7 +27,7 @@ const migrations = [
   },
 ];
 
-const initialState = {
+const initialState: AuthStore = {
   user: null,
   loading: false,
   isAuthenticated: false,
@@ -35,11 +35,23 @@ const initialState = {
   error: null,
   isCheckingAuth: true,
   lastLogin: null,
+
+  setUser: () => {},
+  setLoading: () => {},
+  setError: () => {},
+  clearError: () => {},
+  setIsCheckingAuth: () => {},
+  setIsCreator: () => {},
+  initializeAuth: async () => {},
+  logout: async () => {},
+  navigateToScreen: () => {},
+  goBack: () => {},
+  resetToScreen: () => {},
 };
 
 export const useAuthStore = createStore<AuthStore>({
   name: 'auth-store',
-  initialState: initialState as AuthStore,
+  initialState,
   actions: (set, get) => ({
     ...initialState,
 

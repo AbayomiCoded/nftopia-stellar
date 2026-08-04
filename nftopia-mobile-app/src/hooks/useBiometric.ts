@@ -210,6 +210,10 @@ export function useBiometric() {
     return biometricService.getFailedAttempts();
   }, []);
 
+  const getMaxFailures = useCallback((): number => {
+    return biometricService.getMaxFailures();
+  }, []);
+
   const refreshStatus = useCallback(async () => {
     await checkStatus();
   }, [checkStatus]);
@@ -229,6 +233,7 @@ export function useBiometric() {
     getCooldownRemaining,
     resetCooldown,
     getFailedAttempts,
+    getMaxFailures,
     refreshStatus,
   };
 }

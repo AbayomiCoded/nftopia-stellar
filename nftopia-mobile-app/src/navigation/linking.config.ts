@@ -1,9 +1,16 @@
 import { LinkingOptions } from '@react-navigation/native';
 import * as Linking from 'expo-linking';
 
+declare global {
+  namespace ReactNavigation {
+    interface RootParamList extends RootStackParamList {}
+  }
+}
+
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
+  Home: undefined;
   NFTDetail: { nftId: string };
   CollectionDetail: { collectionId: string };
   Profile: { userId?: string };
@@ -90,8 +97,6 @@ export const getLinkingConfig = (): LinkingOptions<RootStackParamList> => {
             WalletManagement: DEEP_LINK_PATHS.wallet,
           },
         },
-        // Deep link catch-all
-        NotFound: '*',
       },
     },
     // Custom function to get the initial URL

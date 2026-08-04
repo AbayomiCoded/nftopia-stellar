@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { useBiometric } from '@/src/hooks/useBiometric';
-import { colors, spacing, borderRadius } from '@/constants/theme';
+import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 
 interface BiometricSettingsProps {
   onToggle?: (enabled: boolean) => void;
@@ -256,12 +256,5 @@ const styles = StyleSheet.create({
     color: colors.info,
     fontSize: 13,
     fontWeight: '500',
-  },
-  shadows: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
 });

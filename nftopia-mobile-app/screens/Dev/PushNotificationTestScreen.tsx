@@ -9,8 +9,9 @@ import {
   Alert,
   Switch,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { usePushNotifications, useScheduledNotifications } from '@/src/hooks/usePushNotifications';
-import { colors, spacing, borderRadius } from '@/constants/theme';
+import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 
 export default function PushNotificationTestScreen() {
   const {
@@ -42,7 +43,7 @@ export default function PushNotificationTestScreen() {
       const notificationId = await scheduleNotification(
         title,
         message,
-        { seconds: 5 },
+        { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 5 },
         {
           type: 'test',
           test: true,
@@ -302,12 +303,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.textTertiary,
     marginTop: 4,
-  },
-  shadows: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '@/navigation/MainNavigator';
@@ -29,6 +29,8 @@ export default function WalletManagementScreen({ navigation }: Props) {
     action: 'export' | 'reveal' | 'remove';
     publicKey: string;
   } | null>(null);
+  const resolveRevealRef = useRef<((value: string | null) => void) | null>(null);
+  const resolveMnemonicRef = useRef<((value: string | null) => void) | null>(null);
 
   const handleSelect = useCallback(
     (publicKey: string) => {
@@ -93,12 +95,11 @@ export default function WalletManagementScreen({ navigation }: Props) {
         return new Promise<string | null>((resolve) => {
           setPendingAction({ action: 'reveal', publicKey });
           setShowBiometricPrompt(true);
-          // Store resolve callback
-          (window as any).__resolveReveal = resolve;
+          resolveRevealRef.current = resolve;
         });
       } else {
         // Fallback: show confirmation
-        return new Promise((resolve) => {
+        return new Promise<string | null>((resolve) => {
           Alert.alert(
             'Reveal Secret Key',
             'This will reveal your wallet secret key. Continue?',
@@ -126,12 +127,11 @@ export default function WalletManagementScreen({ navigation }: Props) {
         return new Promise<string | null>((resolve) => {
           setPendingAction({ action: 'reveal', publicKey });
           setShowBiometricPrompt(true);
-          // Store resolve callback
-          (window as any).__resolveMnemonic = resolve;
+          resolveMnemonicRef.current = resolve;
         });
       } else {
         // Fallback: show confirmation
-        return new Promise((resolve) => {
+        return new Promise<string | null>((resolve) => {
           Alert.alert(
             'Reveal Mnemonic',
             'This will reveal your wallet mnemonic phrase. Continue?',
@@ -180,14 +180,14 @@ export default function WalletManagementScreen({ navigation }: Props) {
         break;
       case 'reveal':
         // Handle reveal based on which callback was set
-        if ((window as any).__resolveReveal) {
+        if (resolveRevealRef.current) {
           const key = await revealSecretKey(publicKey);
-          (window as any).__resolveReveal(key);
-          delete (window as any).__resolveReveal;
-        } else if ((window as any).__resolveMnemonic) {
+          resolveRevealRef.current(key);
+          resolveRevealRef.current = null;
+        } else if (resolveMnemonicRef.current) {
           const mnemonic = await revealMnemonic(publicKey);
-          (window as any).__resolveMnemonic(mnemonic);
-          delete (window as any).__resolveMnemonic;
+          resolveMnemonicRef.current(mnemonic);
+          resolveMnemonicRef.current = null;
         }
         break;
     }
@@ -197,13 +197,13 @@ export default function WalletManagementScreen({ navigation }: Props) {
     setShowBiometricPrompt(false);
     setPendingAction(null);
     // Resolve any pending promises with null
-    if ((window as any).__resolveReveal) {
-      (window as any).__resolveReveal(null);
-      delete (window as any).__resolveReveal;
+    if (resolveRevealRef.current) {
+      resolveRevealRef.current(null);
+      resolveRevealRef.current = null;
     }
-    if ((window as any).__resolveMnemonic) {
-      (window as any).__resolveMnemonic(null);
-      delete (window as any).__resolveMnemonic;
+    if (resolveMnemonicRef.current) {
+      resolveMnemonicRef.current(null);
+      resolveMnemonicRef.current = null;
     }
   }, []);
 

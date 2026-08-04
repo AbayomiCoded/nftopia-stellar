@@ -200,8 +200,8 @@ class BiometricService {
         success: result.success,
         type: authType,
         duration,
-        hasError: !!result.error,
-        error: result.error,
+        hasError: !result.success,
+        error: !result.success ? result.error : undefined,
       });
 
       if (result.success) {

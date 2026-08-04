@@ -1,5 +1,6 @@
 import { NavigationContainer } from '@react-navigation/native';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import * as Linking from 'expo-linking';
 import { useAuthStore } from '@/stores/authStore';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
@@ -37,7 +38,7 @@ export default function AppNavigator() {
   };
 
   // Handle deep link
-  const onDeepLink = async (url: string) => {
+  const onDeepLink = useCallback(async (url: string) => {
     try {
       console.log('[DeepLink] Received:', url);
       await deepLinkService.processDeepLink(url);
@@ -45,7 +46,20 @@ export default function AppNavigator() {
       errorLogger.log(error as Error, 'AppNavigator', undefined, { url });
       analyticsService.track('deep_link_processing_error', { url });
     }
-  };
+  }, []);
+
+  // Subscribe to incoming deep links (cold start + while running)
+  useEffect(() => {
+    Linking.getInitialURL().then((url) => {
+      if (url) onDeepLink(url);
+    });
+
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      onDeepLink(url);
+    });
+
+    return () => subscription.remove();
+  }, [onDeepLink]);
 
   // Get linking config
   const linking = getLinkingConfig();
@@ -59,7 +73,6 @@ export default function AppNavigator() {
     <NavigationContainer
       linking={linking}
       onStateChange={onStateChange}
-      onDeepLink={onDeepLink}
       fallback={<SplashScreen />}
     >
       {isAuthenticated ? <MainNavigator /> : <AuthNavigator />}

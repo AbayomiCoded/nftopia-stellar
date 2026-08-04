@@ -3,6 +3,9 @@ import {
   TouchableOpacity,
   Text,
   StyleSheet,
+  StyleProp,
+  ViewStyle,
+  TextStyle,
   ActivityIndicator,
   Share,
   Alert,
@@ -83,7 +86,7 @@ export function ShareButton({
   };
 
   const getButtonStyles = () => {
-    const baseStyle = [styles.button];
+    const baseStyle: StyleProp<ViewStyle>[] = [styles.button];
     
     // Variant styles
     switch (variant) {
@@ -114,7 +117,7 @@ export function ShareButton({
   };
 
   const getTextStyles = () => {
-    const baseStyle = [styles.buttonText];
+    const baseStyle: StyleProp<TextStyle>[] = [styles.buttonText];
     
     switch (variant) {
       case 'primary':
