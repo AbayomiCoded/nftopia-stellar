@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,6 +12,9 @@ import BalanceDisplay from '@/components/wallet/BalanceDisplay';
 import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
 import { errorLogger } from '@/src/errors/logger';
 import { ErrorFallback } from '@/src/components/ErrorFallback';
+import { HomeSkeleton } from '@/src/components/skeletons';
+import { usePullToRefresh } from '@/src/hooks/usePullToRefresh';
+import { PullToRefresh } from '@/src/components/PullToRefresh';
 
 function HomeContent() {
   const { t } = useTranslation();
@@ -27,17 +30,35 @@ function HomeContent() {
   } = useWalletConnect();
   const network = useWalletStore((s) => s.network);
 
-  const onRefresh = useCallback(() => {
-    if (activePublicKey) {
-      fetchBalances(activePublicKey);
-    }
-  }, [activePublicKey, fetchBalances]);
+  const {
+    isRefreshing,
+    error: refreshError,
+    lastUpdated,
+    handleRefresh,
+    getLastUpdatedText,
+    cooldownRemaining,
+  } = usePullToRefresh({
+    onRefresh: async () => {
+      if (activePublicKey) {
+        await fetchBalances(activePublicKey);
+      }
+    },
+    cooldown: 2000,
+    hapticFeedback: true,
+    trackAnalytics: true,
+    analyticsEvent: 'home_refresh',
+  });
 
   useEffect(() => {
     if (activePublicKey) {
       fetchBalances(activePublicKey);
     }
   }, [activePublicKey, fetchBalances]);
+
+  // Show skeleton while loading
+  if (isLoading && !activeWallet) {
+    return <HomeSkeleton />;
+  }
 
   if (!activeWallet) {
     return (
@@ -52,7 +73,7 @@ function HomeContent() {
     return (
       <ErrorFallback
         error={error ? new Error(error) : null}
-        onRetry={onRefresh}
+        onRetry={handleRefresh}
         customMessage="Failed to load wallet data. Please try again."
       />
     );
@@ -61,56 +82,66 @@ function HomeContent() {
   const greetingName = user?.email?.split('@')[0] || t('home.greetingDefault');
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={isLoading} onRefresh={onRefresh} />
-      }
+    <PullToRefresh
+      refreshing={isRefreshing}
+      onRefresh={handleRefresh}
+      loading={isLoading}
+      error={refreshError}
+      onRetry={handleRefresh}
+      lastUpdated={lastUpdated}
+      getLastUpdatedText={getLastUpdatedText}
+      cooldownRemaining={cooldownRemaining}
+      tintColor="#6C5CE7"
+      title="Pull to refresh wallet"
     >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>{t('home.greeting', { name: greetingName })}</Text>
-          <Text style={styles.subGreeting}>{t('home.title')}</Text>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>{t('home.greeting', { name: greetingName })}</Text>
+            <Text style={styles.subGreeting}>{t('home.title')}</Text>
+          </View>
+          <View style={styles.networkBadge}>
+            <Text style={styles.networkBadgeText}>
+              {network === 'testnet' ? t('home.testnet') : t('home.mainnet')}
+            </Text>
+          </View>
         </View>
-        <View style={styles.networkBadge}>
-          <Text style={styles.networkBadgeText}>
-            {network === 'testnet' ? t('home.testnet') : t('home.mainnet')}
-          </Text>
+
+        <BalanceDisplay
+          xlmBalance={activeBalance?.xlm ?? null}
+          tokenBalances={activeBalance?.tokens ?? []}
+          isLoading={isLoading}
+          error={error}
+          onRefresh={handleRefresh}
+          publicKey={activePublicKey ?? undefined}
+        />
+
+        <View style={styles.actions}>
+          <TouchableOpacity 
+            style={styles.actionCard} 
+            onPress={() => navigation.navigate('Marketplace')}
+          >
+            <Text style={styles.actionIcon}>🛍️</Text>
+            <Text style={styles.actionLabel}>{t('home.actions.marketplace')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>📤</Text>
+            <Text style={styles.actionLabel}>{t('home.actions.send')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>📥</Text>
+            <Text style={styles.actionLabel}>{t('home.actions.receive')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>🔄</Text>
+            <Text style={styles.actionLabel}>{t('home.actions.swap')}</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-
-      <BalanceDisplay
-        xlmBalance={activeBalance?.xlm ?? null}
-        tokenBalances={activeBalance?.tokens ?? []}
-        isLoading={isLoading}
-        error={error}
-        onRefresh={onRefresh}
-        publicKey={activePublicKey ?? undefined}
-      />
-
-      <View style={styles.actions}>
-        <TouchableOpacity 
-          style={styles.actionCard} 
-          onPress={() => navigation.navigate('Marketplace')}
-        >
-          <Text style={styles.actionIcon}>🛍️</Text>
-          <Text style={styles.actionLabel}>{t('home.actions.marketplace')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionCard}>
-          <Text style={styles.actionIcon}>📤</Text>
-          <Text style={styles.actionLabel}>{t('home.actions.send')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionCard}>
-          <Text style={styles.actionIcon}>📥</Text>
-          <Text style={styles.actionLabel}>{t('home.actions.receive')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionCard}>
-          <Text style={styles.actionIcon}>🔄</Text>
-          <Text style={styles.actionLabel}>{t('home.actions.swap')}</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </PullToRefresh>
   );
 }
 

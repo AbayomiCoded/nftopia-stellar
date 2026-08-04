@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '@/navigation/MainNavigator';
@@ -10,6 +10,9 @@ import { OptimizedImage } from '@/src/components/OptimizedImage';
 import { ErrorFallback } from '@/src/components/ErrorFallback';
 import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
 import { useAnalytics } from '@/src/hooks/useAnalytics';
+import { usePullToRefresh } from '@/src/hooks/usePullToRefresh';
+import { MarketplaceCardSkeleton } from '@/src/components/skeletons';
+import { PullToRefresh } from '@/src/components/PullToRefresh';
 import { ANALYTICS_EVENTS } from '@/src/analytics/config';
 import { analyticsService } from '@/src/analytics/analytics.service';
 import { errorLogger } from '@/src/errors/logger';
@@ -18,6 +21,24 @@ function MarketplaceContent() {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const { nfts, loading, error, loadMore, refetch } = useNFTs();
   const { track, trackScreenView, trackPerformance } = useAnalytics();
+
+  const {
+    isRefreshing,
+    error: refreshError,
+    lastUpdated,
+    handleRefresh,
+    getLastUpdatedText,
+    isInCooldown,
+    cooldownRemaining,
+  } = usePullToRefresh({
+    onRefresh: async () => {
+      await refetch();
+    },
+    cooldown: 2000,
+    hapticFeedback: true,
+    trackAnalytics: true,
+    analyticsEvent: 'marketplace_refresh',
+  });
 
   useEffect(() => {
     trackScreenView('Marketplace');
@@ -81,32 +102,20 @@ function MarketplaceContent() {
     );
   };
 
-  const renderSkeleton = () => (
-    <View style={styles.listContent}>
-      {[1, 2, 3].map(key => (
-        <View key={key} style={styles.card}>
-          <View style={styles.skeletonImage} />
-          <View style={styles.cardContent}>
-            <View style={styles.skeletonTextLong} />
-            <View style={styles.skeletonTextShort} />
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-
   if (error && nfts.length === 0) {
     return (
       <ErrorFallback
         error={error}
         onRetry={() => {
           track('marketplace_refresh');
-          refetch();
+          handleRefresh();
         }}
         customMessage="Failed to load NFTs. Please check your connection and try again."
       />
     );
   }
+
+  const isRefreshingState = isRefreshing || (loading && nfts.length === 0);
 
   return (
     <View style={styles.container}>
@@ -122,31 +131,36 @@ function MarketplaceContent() {
         </TouchableOpacity>
         <Text style={styles.title}>Marketplace</Text>
       </View>
-      {loading && nfts.length === 0 ? (
-        renderSkeleton()
+      
+      {isRefreshingState && nfts.length === 0 ? (
+        <MarketplaceCardSkeleton count={3} animated={true} />
       ) : (
-        <FlatList
-          data={nfts}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          onEndReached={() => {
-            track('marketplace_load_more', { currentCount: nfts.length });
-            loadMore();
-          }}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={renderFooter}
-          refreshControl={
-            <RefreshControl 
-              refreshing={loading && nfts.length > 0} 
-              onRefresh={() => {
-                track('marketplace_refresh');
-                refetch();
-              }}
-            />
-          }
-        />
+        <PullToRefresh
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          loading={loading}
+          error={refreshError}
+          onRetry={handleRefresh}
+          lastUpdated={lastUpdated}
+          getLastUpdatedText={getLastUpdatedText}
+          cooldownRemaining={cooldownRemaining}
+          tintColor="#6C5CE7"
+          title="Pull to refresh marketplace"
+        >
+          <FlatList
+            data={nfts}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            onEndReached={() => {
+              track('marketplace_load_more', { currentCount: nfts.length });
+              loadMore();
+            }}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={renderFooter}
+          />
+        </PullToRefresh>
       )}
     </View>
   );
@@ -216,23 +230,5 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: spacing.md,
     alignItems: 'center',
-  },
-  skeletonImage: {
-    width: '100%',
-    height: 200,
-    backgroundColor: colors.border,
-  },
-  skeletonTextLong: {
-    height: 18,
-    backgroundColor: colors.border,
-    borderRadius: 4,
-    width: '70%',
-    marginBottom: 8,
-  },
-  skeletonTextShort: {
-    height: 14,
-    backgroundColor: colors.border,
-    borderRadius: 4,
-    width: '40%',
   },
 });

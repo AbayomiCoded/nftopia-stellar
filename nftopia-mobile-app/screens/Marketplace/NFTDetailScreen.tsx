@@ -18,6 +18,7 @@ import TransferHistory from '@/components/wallet/TransferHistory';
 import { useNFTDetail } from '@/hooks/useNFTDetail';
 import { OptimizedImage } from '@/src/components/OptimizedImage';
 import { ImageGallery } from '@/src/components/ImageGallery';
+import { NFTDetailSkeleton } from '@/src/components/skeletons';
 
 type NFTDetailRouteProp = RouteProp<MainStackParamList, 'NFTDetail'>;
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
@@ -33,18 +34,6 @@ export default function NFTDetailScreen() {
     await Clipboard.setStringAsync(text);
     Alert.alert('Copied!', `${type} address copied to clipboard.`);
   };
-
-  const renderSkeleton = () => (
-    <View style={styles.skeletonContainer}>
-      <View style={styles.skeletonImage} />
-      <View style={styles.content}>
-        <View style={styles.skeletonTitle} />
-        <View style={styles.skeletonDesc} />
-        <View style={styles.skeletonDesc} />
-        <View style={[styles.skeletonDesc, { width: '60%' }]} />
-      </View>
-    </View>
-  );
 
   const renderError = () => (
     <View style={styles.centerContainer}>
@@ -63,7 +52,7 @@ export default function NFTDetailScreen() {
             <Text style={styles.headerBackText}>←</Text>
           </TouchableOpacity>
         </View>
-        {renderSkeleton()}
+        <NFTDetailSkeleton animated={true} />
       </View>
     );
   }
@@ -284,27 +273,5 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: 'bold',
     fontSize: 16,
-  },
-  skeletonContainer: {
-    flex: 1,
-  },
-  skeletonImage: {
-    width: '100%',
-    height: 350,
-    backgroundColor: colors.border,
-  },
-  skeletonTitle: {
-    height: 32,
-    backgroundColor: colors.border,
-    borderRadius: 4,
-    width: '70%',
-    marginBottom: spacing.md,
-  },
-  skeletonDesc: {
-    height: 16,
-    backgroundColor: colors.border,
-    borderRadius: 4,
-    width: '100%',
-    marginBottom: spacing.sm,
   },
 });

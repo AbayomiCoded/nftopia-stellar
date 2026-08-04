@@ -6,6 +6,7 @@ import { useNotificationStore } from '@/stores/notificationStore';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 import { errorLogger } from '@/src/errors/logger';
+import { getTransitionConfig } from '@/src/navigation/transition.config';
 
 // Core Screens
 import HomeScreen from '@/screens/Home/HomeScreen';
@@ -80,38 +81,65 @@ export default function MainNavigator() {
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
         }}
       >
-        {/* Core Screens */}
-        <Stack.Screen name="Home">
+        {/* Core Screens - Home with fade transition */}
+        <Stack.Screen 
+          name="Home"
+          options={getTransitionConfig('auth')}
+        >
           {() => (
             <ScreenErrorBoundary name="HomeScreen">
               <HomeScreen />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
-        <Stack.Screen name="Profile">
+        
+        {/* Profile screens with slide transition */}
+        <Stack.Screen 
+          name="Profile"
+          options={getTransitionConfig('detail')}
+        >
           {(props) => (
             <ScreenErrorBoundary name="ProfileScreen">
               <ProfileScreen {...props} />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
-        <Stack.Screen name="WalletManagement">
+        
+        <Stack.Screen 
+          name="WalletManagement"
+          options={getTransitionConfig('detail')}
+        >
           {(props) => (
             <ScreenErrorBoundary name="WalletManagementScreen">
               <WalletManagementScreen {...props} />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
-        <Stack.Screen name="Marketplace">
+        
+        {/* Marketplace with detail transition */}
+        <Stack.Screen 
+          name="Marketplace"
+          options={getTransitionConfig('detail')}
+        >
           {() => (
             <ScreenErrorBoundary name="MarketplaceScreen">
               <MarketplaceScreen />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
-        <Stack.Screen name="NFTDetail">
+        
+        {/* NFT Detail with special detail transition */}
+        <Stack.Screen 
+          name="NFTDetail"
+          options={{
+            ...getTransitionConfig('detail'),
+            animation: 'slide_from_right',
+          }}
+        >
           {() => (
             <ScreenErrorBoundary name="NFTDetailScreen">
               <NFTDetailScreen />
@@ -119,36 +147,55 @@ export default function MainNavigator() {
           )}
         </Stack.Screen>
 
-        {/* Creator Screens */}
-        <Stack.Screen name="CreatorDashboard">
+        {/* Creator Screens with creator transition */}
+        <Stack.Screen 
+          name="CreatorDashboard"
+          options={getTransitionConfig('creator')}
+        >
           {() => (
             <ScreenErrorBoundary name="CreatorDashboardScreen">
               <CreatorDashboardScreen />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
-        <Stack.Screen name="MyNFTs">
+        
+        <Stack.Screen 
+          name="MyNFTs"
+          options={getTransitionConfig('creator')}
+        >
           {() => (
             <ScreenErrorBoundary name="MyNFTsScreen">
               <MyNFTsScreen />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
-        <Stack.Screen name="MintNFT">
+        
+        <Stack.Screen 
+          name="MintNFT"
+          options={getTransitionConfig('modal')}
+        >
           {() => (
             <ScreenErrorBoundary name="MintNFTScreen">
               <MintNFTScreen />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
-        <Stack.Screen name="CreateCollection">
+        
+        <Stack.Screen 
+          name="CreateCollection"
+          options={getTransitionConfig('modal')}
+        >
           {() => (
             <ScreenErrorBoundary name="CreateCollectionScreen">
               <CreateCollectionScreen />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
-        <Stack.Screen name="Earnings">
+        
+        <Stack.Screen 
+          name="Earnings"
+          options={getTransitionConfig('creator')}
+        >
           {() => (
             <ScreenErrorBoundary name="EarningsScreen">
               <EarningsScreen />
@@ -156,15 +203,22 @@ export default function MainNavigator() {
           )}
         </Stack.Screen>
 
-        {/* Notification Screens */}
-        <Stack.Screen name="Notifications">
+        {/* Notification Screens with modal transition */}
+        <Stack.Screen 
+          name="Notifications"
+          options={getTransitionConfig('modal')}
+        >
           {() => (
             <ScreenErrorBoundary name="NotificationsScreen">
               <NotificationsScreen />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
-        <Stack.Screen name="NotificationSettings">
+        
+        <Stack.Screen 
+          name="NotificationSettings"
+          options={getTransitionConfig('modal')}
+        >
           {() => (
             <ScreenErrorBoundary name="NotificationSettingsScreen">
               <NotificationSettingsScreen />

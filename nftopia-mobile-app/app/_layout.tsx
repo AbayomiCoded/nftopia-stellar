@@ -12,6 +12,8 @@ import { useOfflineStore } from '@/stores/offlineStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useCreatorStore } from '@/stores/creatorStore';
 import { persistenceManager } from '@/src/utils/persistence.manager';
+import { ToastContainer } from '@/src/components/Toast';
+import { AlertContainer } from '@/src/components/Alert';
 import { Notification } from '@/types';
 
 // WebSocket URL for real-time notifications
@@ -227,6 +229,8 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         onConsentGiven={handleConsentGiven}
         onConsentDenied={handleConsentDenied}
       />
+      <ToastContainer />
+      <AlertContainer />
     </>
   );
 }
