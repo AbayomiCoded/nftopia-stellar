@@ -44,6 +44,15 @@ jest.mock('expo-crypto', () => ({
   digestStringAsync: jest.fn().mockResolvedValue('mockedhash'),
 }));
 
+jest.mock('@/src/services/deepLink.service', () => ({
+  deepLinkService: {
+    setAuthenticated: jest.fn(),
+    getPendingDeepLink: jest.fn(() => null),
+    processDeepLink: jest.fn(),
+    clearPendingDeepLink: jest.fn(),
+  },
+}));
+
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
 import { useAuthStore } from '../authStore';

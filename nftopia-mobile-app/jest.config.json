@@ -4,13 +4,22 @@
     "^.+\\.tsx?$": ["ts-jest", { "tsconfig": { "strict": false } }]
   },
   "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json"],
-  "testMatch": ["**/src/services/auth/__tests__/**/*.test.ts"],
+  "testMatch": ["**/__tests__/**/*.test.ts", "**/*.test.ts"],
+  "testPathIgnorePatterns": ["/node_modules/"],
   "collectCoverageFrom": [
     "src/services/auth/**/*.ts",
     "!src/services/auth/__tests__/**"
   ],
   "moduleNameMapper": {
-    "^expo-secure-store$": "<rootDir>/src/services/auth/__mocks__/expo-secure-store.ts"
+    "^expo-secure-store$": "<rootDir>/src/services/auth/__mocks__/expo-secure-store.ts",
+    "^@/components/(.*)$": "<rootDir>/components/$1",
+    "^@/screens/(.*)$": "<rootDir>/screens/$1",
+    "^@/navigation/(.*)$": "<rootDir>/navigation/$1",
+    "^@/stores/(.*)$": "<rootDir>/stores/$1",
+    "^@/types/(.*)$": "<rootDir>/types/$1",
+    "^@/lib/(.*)$": "<rootDir>/lib/$1",
+    "^@/services/(.*)$": "<rootDir>/src/services/$1",
+    "^@/(.*)$": "<rootDir>/$1"
   },
   "transformIgnorePatterns": [
     "node_modules/(?!(stellar-hd-wallet)/)"

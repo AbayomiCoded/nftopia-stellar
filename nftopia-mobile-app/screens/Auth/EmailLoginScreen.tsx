@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } fr
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '@/navigation/AuthNavigator';
 import { useAuthStore } from '@/stores/authStore';
+import { useAnalytics } from '@/src/hooks/useAnalytics';
+import { ANALYTICS_EVENTS } from '@/src/analytics/config';
 import FormInput from './components/FormInput';
 import { validateEmail, validatePassword } from './utils/validation';
 
@@ -15,20 +17,18 @@ export default function EmailLoginScreen({ navigation }: Props) {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { setUser, setError: setAuthError } = useAuthStore();
+  const { track, trackError, identify } = useAnalytics();
 
   const validateForm = (): boolean => {
-    // Clear previous errors
     setEmailError(null);
     setPasswordError(null);
 
-    // Validate email
     const emailValidation = validateEmail(email);
     if (!emailValidation.isValid) {
       setEmailError(emailValidation.error);
       return false;
     }
 
-    // Validate password
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.isValid) {
       setPasswordError(passwordValidation.error);
@@ -43,29 +43,49 @@ export default function EmailLoginScreen({ navigation }: Props) {
       return;
     }
 
+    track(ANALYTICS_EVENTS.LOGIN_START, { email });
+
     try {
       setIsLoading(true);
       setAuthError(null);
-      
-      // TODO: Implement actual login logic with backend
-      // For now, just simulate login
+
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Simulate user data
-      setUser({
+
+      const userData = {
         id: Date.now().toString(),
         email: email,
         createdAt: new Date(),
+      };
+
+      setUser(userData);
+      
+      // Identify user for analytics
+      identify(userData.id, {
+        email: userData.email,
+        createdAt: userData.createdAt,
+      });
+
+      track(ANALYTICS_EVENTS.LOGIN_SUCCESS, {
+        userId: userData.id,
+        email: userData.email,
       });
 
       Alert.alert('Success', 'Logged in successfully!');
       
-      // Navigate to main app (to be implemented)
-      // navigation.reset({ routes: [{ name: 'Main' }] });
     } catch (error) {
       console.error('Login error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to login';
       setAuthError(errorMessage);
+      
+      trackError(error as Error, {
+        email,
+        action: 'login',
+      });
+      
+      track(ANALYTICS_EVENTS.LOGIN_FAILURE, {
+        error: errorMessage,
+      });
+      
       Alert.alert('Error', errorMessage);
     } finally {
       setIsLoading(false);
@@ -114,7 +134,10 @@ export default function EmailLoginScreen({ navigation }: Props) {
 
           <TouchableOpacity 
             style={styles.forgotPassword}
-            onPress={() => Alert.alert('Feature coming soon!', 'Password reset will be implemented in the next update.')}
+            onPress={() => {
+              track('password_reset_clicked');
+              Alert.alert('Feature coming soon!', 'Password reset will be implemented in the next update.');
+            }}
             disabled={isLoading}
           >
             <Text style={[styles.forgotPasswordText, isLoading && styles.disabledLink]}>
@@ -140,14 +163,20 @@ export default function EmailLoginScreen({ navigation }: Props) {
 
         <View style={styles.row}>
           <Text style={styles.footerText}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('EmailRegister')}>
+          <TouchableOpacity onPress={() => {
+            track('register_navigation');
+            navigation.navigate('EmailRegister');
+          }}>
             <Text style={styles.linkText}>Sign Up</Text>
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            track('back_navigation');
+            navigation.goBack();
+          }}
           disabled={isLoading}
         >
           <Text style={styles.backButtonText}>← Back</Text>
@@ -180,23 +209,6 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 20,
-  },
-  inputGroup: {
-    gap: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-  },
-  input: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
   },
   forgotPassword: {
     alignItems: 'flex-end',
