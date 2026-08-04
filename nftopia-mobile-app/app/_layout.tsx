@@ -7,6 +7,7 @@ import { errorLogger } from '@/src/errors/logger';
 import { analyticsService } from '@/src/analytics/analytics.service';
 import { ANALYTICS_EVENTS } from '@/src/analytics/config';
 import { ConsentManager } from '@/src/components/ConsentManager';
+import { usePushNotifications } from '@/src/hooks/usePushNotifications';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useCreatorStore } from '@/stores/creatorStore';
@@ -23,6 +24,9 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appState = useRef(AppState.currentState);
   const [showConsent, setShowConsent] = useState(false);
+
+  // Initialize push notifications
+  const { isInitialized: pushInitialized } = usePushNotifications();
 
   // Initialize analytics
   useEffect(() => {
@@ -175,7 +179,6 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       await analyticsService.destroy();
     };
 
-    // Note: This is a simplified cleanup, real apps would use AppState for this
     return () => {
       cleanup();
     };

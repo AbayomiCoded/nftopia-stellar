@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, PersistOptions } from 'zustand/middleware';
 import { Notification, NotificationPreferences } from '@/types';
 import apiClient from '@/lib/api/sample';
+import { pushNotificationService } from '@/src/services/pushNotification.service';
 
 interface NotificationStore {
   notifications: Notification[];
@@ -17,6 +18,7 @@ interface NotificationStore {
   fetchPreferences: () => Promise<void>;
   updatePreferences: (prefs: Partial<NotificationPreferences>) => Promise<void>;
   addNotification: (notification: Notification) => void;
+  resetBadgeCount: () => Promise<void>;
 }
 
 const defaultPreferences: NotificationPreferences = {
@@ -45,6 +47,11 @@ export const useNotificationStore = create<NotificationStore>()(
         try {
           const notifications = await apiClient.getNotifications();
           set({ notifications, loading: false });
+          
+          // Update badge count based on unread notifications
+          const unreadCount = notifications.filter(n => !n.read).length;
+          await pushNotificationService.updateBadgeCount(unreadCount);
+          set({ unreadCount });
         } catch (error: any) {
           set({ error: error.message, loading: false });
         }
@@ -54,6 +61,7 @@ export const useNotificationStore = create<NotificationStore>()(
         try {
           const { count } = await apiClient.getUnreadCount();
           set({ unreadCount: count });
+          await pushNotificationService.updateBadgeCount(count);
         } catch {
           // Silently fail
         }
@@ -62,12 +70,18 @@ export const useNotificationStore = create<NotificationStore>()(
       markAsRead: async (id: string) => {
         try {
           await apiClient.markNotificationRead(id);
-          set((state) => ({
-            notifications: state.notifications.map((n) =>
+          set((state) => {
+            const newNotifications = state.notifications.map((n) =>
               n.id === id ? { ...n, read: true } : n
-            ),
-            unreadCount: Math.max(0, state.unreadCount - 1),
-          }));
+            );
+            const newUnreadCount = newNotifications.filter(n => !n.read).length;
+            // Update badge count
+            pushNotificationService.updateBadgeCount(newUnreadCount);
+            return {
+              notifications: newNotifications,
+              unreadCount: newUnreadCount,
+            };
+          });
         } catch (error: any) {
           console.error('Failed to mark notification as read:', error.message);
         }
@@ -80,6 +94,8 @@ export const useNotificationStore = create<NotificationStore>()(
             notifications: state.notifications.map((n) => ({ ...n, read: true })),
             unreadCount: 0,
           }));
+          // Reset badge count
+          await pushNotificationService.resetBadgeCount();
         } catch (error: any) {
           console.error('Failed to mark all as read:', error.message);
         }
@@ -104,10 +120,21 @@ export const useNotificationStore = create<NotificationStore>()(
       },
 
       addNotification: (notification: Notification) => {
-        set((state) => ({
-          notifications: [notification, ...state.notifications],
-          unreadCount: state.unreadCount + 1,
-        }));
+        set((state) => {
+          const newNotifications = [notification, ...state.notifications];
+          const newUnreadCount = newNotifications.filter(n => !n.read).length;
+          // Update badge count
+          pushNotificationService.updateBadgeCount(newUnreadCount);
+          return {
+            notifications: newNotifications,
+            unreadCount: newUnreadCount,
+          };
+        });
+      },
+
+      resetBadgeCount: async () => {
+        await pushNotificationService.resetBadgeCount();
+        set({ unreadCount: 0 });
       },
     }),
     {
