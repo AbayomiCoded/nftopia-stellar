@@ -1,5 +1,5 @@
 import React from 'react';
-import { SharedElement as RNSharedElement } from 'react-navigation-shared-element';
+import { SharedElement as RNSharedElement } from 'react-native-shared-element';
 import { View, StyleSheet } from 'react-native';
 
 interface SharedElementProps {
@@ -14,7 +14,7 @@ export const SharedElement: React.FC<SharedElementProps> = ({
   style,
 }) => {
   return (
-    <RNSharedElement id={id} style={[styles.container, style]}>
+    <RNSharedElement onNode={() => {}} style={[styles.container, style]}>
       {children}
     </RNSharedElement>
   );

@@ -31,7 +31,9 @@ function MarketplaceContent() {
     isInCooldown,
     cooldownRemaining,
   } = usePullToRefresh({
-    onRefresh: refetch,
+    onRefresh: async () => {
+      await refetch();
+    },
     cooldown: 2000,
     hapticFeedback: true,
     trackAnalytics: true,
@@ -133,33 +135,32 @@ function MarketplaceContent() {
       {isRefreshingState && nfts.length === 0 ? (
         <MarketplaceCardSkeleton count={3} animated={true} />
       ) : (
-        <FlatList
-          data={nfts}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          onEndReached={() => {
-            track('marketplace_load_more', { currentCount: nfts.length });
-            loadMore();
-          }}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={renderFooter}
-          refreshControl={
-            <PullToRefresh
-              refreshing={isRefreshing}
-              onRefresh={handleRefresh}
-              loading={loading}
-              error={refreshError}
-              onRetry={handleRefresh}
-              lastUpdated={lastUpdated}
-              getLastUpdatedText={getLastUpdatedText}
-              cooldownRemaining={cooldownRemaining}
-              tintColor="#6C5CE7"
-              title="Pull to refresh marketplace"
-            />
-          }
-        />
+        <PullToRefresh
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          loading={loading}
+          error={refreshError}
+          onRetry={handleRefresh}
+          lastUpdated={lastUpdated}
+          getLastUpdatedText={getLastUpdatedText}
+          cooldownRemaining={cooldownRemaining}
+          tintColor="#6C5CE7"
+          title="Pull to refresh marketplace"
+        >
+          <FlatList
+            data={nfts}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            onEndReached={() => {
+              track('marketplace_load_more', { currentCount: nfts.length });
+              loadMore();
+            }}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={renderFooter}
+          />
+        </PullToRefresh>
       )}
     </View>
   );

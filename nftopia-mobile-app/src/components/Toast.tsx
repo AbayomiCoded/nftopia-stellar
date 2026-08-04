@@ -8,6 +8,7 @@ import {
   Dimensions,
   PanResponder,
   Platform,
+  DimensionValue,
 } from 'react-native';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { Toast as ToastType, ToastPosition, useToastStore } from '@/stores/toastStore';
@@ -126,7 +127,7 @@ function ToastItem({ toast, onDismiss }: ToastItemProps) {
     })
   ).current;
 
-  const getPositionStyle = (): { top?: number; bottom?: number } => {
+  const getPositionStyle = (): { top?: DimensionValue; bottom?: DimensionValue } => {
     switch (toast.position) {
       case 'bottom':
         return { bottom: 80 };

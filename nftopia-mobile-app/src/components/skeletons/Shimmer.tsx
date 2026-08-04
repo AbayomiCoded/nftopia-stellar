@@ -16,7 +16,7 @@ export interface ShimmerProps {
   borderRadius?: number;
   style?: StyleProp<ViewStyle>;
   duration?: number;
-  gradientColors?: string[];
+  gradientColors?: readonly [string, string, ...string[]];
   shimmerWidth?: number;
   children?: React.ReactNode;
 }

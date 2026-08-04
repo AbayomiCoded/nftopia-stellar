@@ -101,8 +101,8 @@ export function PullToRefresh({
 
   // For FlatList
   if (React.isValidElement(children) && children.type === FlatList) {
-    const flatListProps = children.props;
-    return React.cloneElement(children, {
+    const flatListProps = children.props as any;
+    return React.cloneElement(children as React.ReactElement<any>, {
       refreshControl: renderRefreshControl(),
       ListHeaderComponent: (
         <>
@@ -121,8 +121,8 @@ export function PullToRefresh({
 
   // For ScrollView
   if (React.isValidElement(children) && children.type === ScrollView) {
-    const scrollViewProps = children.props;
-    return React.cloneElement(children, {
+    const scrollViewProps = children.props as any;
+    return React.cloneElement(children as React.ReactElement<any>, {
       refreshControl: renderRefreshControl(),
       ref: scrollViewRef,
       children: (

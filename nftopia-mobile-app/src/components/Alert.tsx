@@ -11,13 +11,12 @@ import {
   Platform,
 } from 'react-native';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
-import { useToastStore } from '@/stores/toastStore';
-import { BlurView } from 'expo-blur';
+import { useToastStore, Alert as AlertData } from '@/stores/toastStore';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 interface AlertItemProps {
-  alert: any;
+  alert: AlertData;
   onDismiss: (id: string) => void;
 }
 
@@ -111,7 +110,7 @@ function AlertItem({ alert, onDismiss }: AlertItemProps) {
             <Text style={styles.message}>{alert.message}</Text>
 
             <View style={styles.actions}>
-              {alert.actions.map((action: any, index: number) => {
+              {alert.actions.map((action: AlertData['actions'][number], index: number) => {
                 const isDestructive = action.style === 'destructive';
                 const isCancel = action.style === 'cancel';
                 const isPrimary = !isDestructive && !isCancel;

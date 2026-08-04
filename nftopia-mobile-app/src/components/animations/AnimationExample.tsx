@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { FadeIn, SlideIn, ScaleIn, Stagger, Pulse } from './TransitionAnimations';
 import { LottieAnimation, LoadingAnimation, SuccessAnimation, ErrorAnimation } from './LottieAnimation';
-import { colors, spacing, borderRadius } from '@/constants/theme';
+import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 
 export const AnimationExample: React.FC = () => {
   const [showSuccess, setShowSuccess] = useState(false);

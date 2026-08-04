@@ -28,10 +28,7 @@ export const createStaggeredSkeletons = (
     items.push(
       <View
         key={`skeleton-${i}`}
-        style={[
-          styles.staggeredItem,
-          { animationDelay: `${delay}ms` },
-        ]}
+        style={styles.staggeredItem}
       >
         {renderItem(i)}
       </View>

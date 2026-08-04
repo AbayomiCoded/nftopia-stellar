@@ -125,7 +125,6 @@ export const ScaleIn: React.FC<ScaleInProps> = ({
   useEffect(() => {
     Animated.spring(scaleAnim, {
       toValue: 1,
-      duration: duration,
       delay: delay,
       useNativeDriver: true,
       stiffness: 200,
