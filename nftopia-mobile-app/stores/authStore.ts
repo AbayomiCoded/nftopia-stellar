@@ -1,138 +1,139 @@
-import { create } from 'zustand';
-import { persist, PersistOptions } from 'zustand/middleware';
-import type { AuthStore, User } from '@/types/auth';
-import * as SecureStore from 'expo-secure-store';
+import { createStore } from '@/src/utils/store.factory';
+import { AuthStore, User } from '@/types/auth';
 
-const USER_STORAGE_KEY = 'nftopia_user';
+export const VERSION = 2;
 
-// Initial state
-const initialState = {
+// Migrations for auth store
+const migrations = [
+  {
+    version: 1,
+    up: (state: any) => {
+      // Add isCreator field if missing
+      return {
+        ...state,
+        isCreator: state.user?.isCreator || false,
+      };
+    },
+  },
+  {
+    version: 2,
+    up: (state: any) => {
+      // Add lastLogin field
+      return {
+        ...state,
+        lastLogin: state.lastLogin || new Date().toISOString(),
+      };
+    },
+  },
+];
+
+const initialState: AuthStore = {
   user: null,
   loading: false,
   isAuthenticated: false,
   isCreator: false,
   error: null,
   isCheckingAuth: true,
+  lastLogin: null,
+
+  setUser: () => {},
+  setLoading: () => {},
+  setError: () => {},
+  clearError: () => {},
+  setIsCheckingAuth: () => {},
+  setIsCreator: () => {},
+  initializeAuth: async () => {},
+  logout: async () => {},
+  navigateToScreen: () => {},
+  goBack: () => {},
+  resetToScreen: () => {},
 };
 
-// Create the store with persistence and devtools
-export const useAuthStore = create<AuthStore>()(
-  persist(
-    (set, get) => ({
-      ...initialState,
+export const useAuthStore = createStore<AuthStore>({
+  name: 'auth-store',
+  initialState,
+  actions: (set, get) => ({
+    ...initialState,
 
-      // State Management Actions
-      setUser: (user: User | null) =>
-        set((state) => ({
-          ...state,
-          user,
-          isAuthenticated: !!user,
-          isCreator: user?.isCreator || false,
-        })),
-
-      setLoading: (loading: boolean) =>
-        set((state) => ({ ...state, loading })),
-
-      setError: (error: string | null) =>
-        set((state) => ({ ...state, error })),
-
-      clearError: () => set((state) => ({ ...state, error: null })),
-
-      setIsCheckingAuth: (isChecking: boolean) =>
-        set((state) => ({ ...state, isCheckingAuth: isChecking })),
-
-      setIsCreator: (isCreator: boolean) =>
-        set((state) => ({ ...state, isCreator })),
-
-      // Authentication Actions
-      initializeAuth: async () => {
-        try {
-          set({ isCheckingAuth: true, loading: true });
-          
-          // Check if user exists in secure storage
-          const storedUser = await SecureStore.getItemAsync(USER_STORAGE_KEY);
-          
-          if (storedUser) {
-            const user = JSON.parse(storedUser) as User;
-            set({
-              user,
-              isAuthenticated: true,
-              isCheckingAuth: false,
-              loading: false,
-            });
-          } else {
-            set({ isCheckingAuth: false, loading: false });
-          }
-        } catch (error) {
-          console.error('Auth initialization error:', error);
-          set({
-            error: error instanceof Error ? error.message : 'Failed to initialize auth',
-            isCheckingAuth: false,
-            loading: false,
-          });
-        }
-      },
-
-      logout: async () => {
-        try {
-          set({ loading: true });
-          
-          // Clear user data from storage
-          await SecureStore.deleteItemAsync(USER_STORAGE_KEY);
-          
-          // Reset state
-          set({
-            user: null,
-            isAuthenticated: false,
-            isCreator: false,
-            loading: false,
-            error: null,
-          });
-        } catch (error) {
-          console.error('Logout error:', error);
-          set({
-            error: error instanceof Error ? error.message : 'Failed to logout',
-            loading: false,
-          });
-        }
-      },
-
-      // Navigation Actions (to be called by navigator)
-      navigateToScreen: (_screen: string) => {
-        // This will be handled by React Navigation
-        // Placeholder for future navigation logic
-      },
-
-      goBack: () => {
-        // This will be handled by React Navigation
-        // Placeholder for future navigation logic
-      },
-
-      resetToScreen: (_screen: string) => {
-        // This will be handled by React Navigation
-        // Placeholder for future navigation logic
-      },
-    }),
-    {
-      name: 'auth-storage',
-      partialize: (state: AuthStore) => ({
-        user: state.user,
-        isAuthenticated: state.isAuthenticated,
+    // State Management Actions
+    setUser: (user: User | null) =>
+      set({
+        user,
+        isAuthenticated: !!user,
+        isCreator: user?.isCreator || false,
+        lastLogin: user ? new Date().toISOString() : get().lastLogin,
       }),
-      storage: {
-        getItem: async (name: string) => {
-          return await SecureStore.getItemAsync(name);
-        },
-        setItem: async (name: string, value: string) => {
-          await SecureStore.setItemAsync(name, value);
-        },
-        removeItem: async (name: string) => {
-          await SecureStore.deleteItemAsync(name);
-        },
-      },
-    } as unknown as PersistOptions<AuthStore>
-  )
-);
+
+    setLoading: (loading: boolean) => set({ loading }),
+    setError: (error: string | null) => set({ error }),
+    clearError: () => set({ error: null }),
+    setIsCheckingAuth: (isChecking: boolean) => set({ isCheckingAuth: isChecking }),
+    setIsCreator: (isCreator: boolean) => set({ isCreator }),
+
+    // Authentication Actions
+    initializeAuth: async () => {
+      set({ isCheckingAuth: true, loading: true });
+      // Auth initialization will be handled by the store's persistence
+      set({ isCheckingAuth: false, loading: false });
+    },
+
+    logout: async () => {
+      try {
+        set({ loading: true });
+        set({
+          user: null,
+          isAuthenticated: false,
+          isCreator: false,
+          loading: false,
+          error: null,
+        });
+      } catch (error) {
+        set({
+          error: error instanceof Error ? error.message : 'Failed to logout',
+          loading: false,
+        });
+      }
+    },
+
+    // Navigation Actions
+    navigateToScreen: (_screen: string) => {
+      // Will be handled by React Navigation
+    },
+
+    goBack: () => {
+      // Will be handled by React Navigation
+    },
+
+    resetToScreen: (_screen: string) => {
+      // Will be handled by React Navigation
+    },
+  }),
+  persist: {
+    enabled: true,
+    name: 'auth-storage',
+    version: VERSION,
+    migrate: async (state: any, version: number) => {
+      let migratedState = state;
+      for (const migration of migrations) {
+        if (migration.version > version) {
+          migratedState = await migration.up(migratedState);
+        }
+      }
+      return migratedState;
+    },
+    partialize: (state: AuthStore) => ({
+      user: state.user,
+      isAuthenticated: state.isAuthenticated,
+      isCreator: state.isCreator,
+      lastLogin: state.lastLogin,
+    }),
+    storage: 'secure', // Use secure storage for auth
+  },
+  devtools: {
+    enabled: __DEV__,
+    name: 'AuthStore',
+  },
+});
 
 // Hook for using auth state
 export const useAuth = () =>

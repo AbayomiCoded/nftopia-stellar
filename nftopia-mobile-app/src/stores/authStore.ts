@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Wallet } from '../services/stellar/types';
 import { SecureStorage } from '../services/stellar/secureStorage';
 import { AuthState, User } from './types';
+import { deepLinkService } from '@/src/services/deepLink.service';
 
 const secureStorage = new SecureStorage();
 
@@ -36,6 +37,14 @@ export const useAuthStore = create<AuthState>()(
           // const { user, token } = await authService.loginWithEmail(email, password);
           // await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
           // set({ user, isAuthenticated: true });
+          // Notify deep link service
+          // deepLinkService.setAuthenticated(true);
+          // Check for pending deep link
+          // const pendingLink = deepLinkService.getPendingDeepLink();
+          // if (pendingLink) {
+          //   deepLinkService.processDeepLink(pendingLink);
+          //   deepLinkService.clearPendingDeepLink();
+          // }
           throw new Error('Email login not yet implemented');
         } catch (err) {
           set({ error: (err as Error).message });
@@ -51,6 +60,16 @@ export const useAuthStore = create<AuthState>()(
         try {
           await secureStorage.saveWallet(wallet);
           set({ wallet, isAuthenticated: true });
+          
+          // Notify deep link service
+          deepLinkService.setAuthenticated(true);
+          
+          // Check for pending deep link
+          const pendingLink = deepLinkService.getPendingDeepLink();
+          if (pendingLink) {
+            deepLinkService.processDeepLink(pendingLink);
+            deepLinkService.clearPendingDeepLink();
+          }
         } catch (err) {
           set({ error: (err as Error).message });
         } finally {
@@ -67,6 +86,13 @@ export const useAuthStore = create<AuthState>()(
           // const { user, token } = await authService.register(email, password, username);
           // await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
           // set({ user, isAuthenticated: true });
+          // Notify deep link service
+          // deepLinkService.setAuthenticated(true);
+          // const pendingLink = deepLinkService.getPendingDeepLink();
+          // if (pendingLink) {
+          //   deepLinkService.processDeepLink(pendingLink);
+          //   deepLinkService.clearPendingDeepLink();
+          // }
           throw new Error('Email registration not yet implemented');
         } catch (err) {
           set({ error: (err as Error).message });
@@ -81,6 +107,10 @@ export const useAuthStore = create<AuthState>()(
         try {
           await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
           await secureStorage.deleteWallet();
+          
+          // Notify deep link service
+          deepLinkService.setAuthenticated(false);
+          deepLinkService.clearPendingDeepLink();
         } catch {
           // Ignore storage errors on logout to ensure state is always cleared
         } finally {
@@ -98,6 +128,17 @@ export const useAuthStore = create<AuthState>()(
             // const user = await authService.validateToken(token);
             // set({ user, isAuthenticated: true });
             set({ isAuthenticated: true });
+            
+            // Notify deep link service
+            deepLinkService.setAuthenticated(true);
+            
+            // Check for pending deep link
+            const pendingLink = deepLinkService.getPendingDeepLink();
+            if (pendingLink) {
+              deepLinkService.processDeepLink(pendingLink);
+              deepLinkService.clearPendingDeepLink();
+            }
+            
             return true;
           }
 
@@ -105,13 +146,29 @@ export const useAuthStore = create<AuthState>()(
           if (hasWallet) {
             const wallet = await secureStorage.getWallet();
             set({ wallet, isAuthenticated: true });
+            
+            // Notify deep link service
+            deepLinkService.setAuthenticated(true);
+            
+            // Check for pending deep link
+            const pendingLink = deepLinkService.getPendingDeepLink();
+            if (pendingLink) {
+              deepLinkService.processDeepLink(pendingLink);
+              deepLinkService.clearPendingDeepLink();
+            }
+            
             return true;
           }
 
           set({ isAuthenticated: false });
+          // Notify deep link service
+          deepLinkService.setAuthenticated(false);
+          
           return false;
         } catch (err) {
           set({ error: (err as Error).message, isAuthenticated: false });
+          // Notify deep link service
+          deepLinkService.setAuthenticated(false);
           return false;
         } finally {
           set({ isLoading: false });

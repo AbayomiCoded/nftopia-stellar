@@ -23,7 +23,8 @@ export interface AuthStore {
   isCreator: boolean;
   error: string | null;
   isCheckingAuth: boolean;
-  
+  lastLogin: string | null;
+
   // Actions - State Management
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
