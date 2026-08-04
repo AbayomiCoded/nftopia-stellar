@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '@/navigation/MainNavigator';
@@ -10,15 +10,33 @@ import { OptimizedImage } from '@/src/components/OptimizedImage';
 import { ErrorFallback } from '@/src/components/ErrorFallback';
 import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
 import { useAnalytics } from '@/src/hooks/useAnalytics';
+import { usePullToRefresh } from '@/src/hooks/usePullToRefresh';
+import { MarketplaceCardSkeleton } from '@/src/components/skeletons';
+import { PullToRefresh } from '@/src/components/PullToRefresh';
 import { ANALYTICS_EVENTS } from '@/src/analytics/config';
 import { analyticsService } from '@/src/analytics/analytics.service';
 import { errorLogger } from '@/src/errors/logger';
-import { MarketplaceCardSkeleton } from '@/src/components/skeletons';
 
 function MarketplaceContent() {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const { nfts, loading, error, loadMore, refetch } = useNFTs();
   const { track, trackScreenView, trackPerformance } = useAnalytics();
+
+  const {
+    isRefreshing,
+    error: refreshError,
+    lastUpdated,
+    handleRefresh,
+    getLastUpdatedText,
+    isInCooldown,
+    cooldownRemaining,
+  } = usePullToRefresh({
+    onRefresh: refetch,
+    cooldown: 2000,
+    hapticFeedback: true,
+    trackAnalytics: true,
+    analyticsEvent: 'marketplace_refresh',
+  });
 
   useEffect(() => {
     trackScreenView('Marketplace');
@@ -88,12 +106,14 @@ function MarketplaceContent() {
         error={error}
         onRetry={() => {
           track('marketplace_refresh');
-          refetch();
+          handleRefresh();
         }}
         customMessage="Failed to load NFTs. Please check your connection and try again."
       />
     );
   }
+
+  const isRefreshingState = isRefreshing || (loading && nfts.length === 0);
 
   return (
     <View style={styles.container}>
@@ -109,7 +129,8 @@ function MarketplaceContent() {
         </TouchableOpacity>
         <Text style={styles.title}>Marketplace</Text>
       </View>
-      {loading && nfts.length === 0 ? (
+      
+      {isRefreshingState && nfts.length === 0 ? (
         <MarketplaceCardSkeleton count={3} animated={true} />
       ) : (
         <FlatList
@@ -125,12 +146,17 @@ function MarketplaceContent() {
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
           refreshControl={
-            <RefreshControl 
-              refreshing={loading && nfts.length > 0} 
-              onRefresh={() => {
-                track('marketplace_refresh');
-                refetch();
-              }}
+            <PullToRefresh
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              loading={loading}
+              error={refreshError}
+              onRetry={handleRefresh}
+              lastUpdated={lastUpdated}
+              getLastUpdatedText={getLastUpdatedText}
+              cooldownRemaining={cooldownRemaining}
+              tintColor="#6C5CE7"
+              title="Pull to refresh marketplace"
             />
           }
         />
