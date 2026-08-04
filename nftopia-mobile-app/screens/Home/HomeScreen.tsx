@@ -1,11 +1,25 @@
 import React, { useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useTranslation } from 'react-i18next';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { useWalletConnect } from '@/hooks/useWalletConnect';
 import { useWalletStore } from '@/stores/walletStore';
+import { useAuthStore } from '@/stores/authStore';
 import BalanceDisplay from '@/components/wallet/BalanceDisplay';
+import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
+import { errorLogger } from '@/src/errors/logger';
+import { ErrorFallback } from '@/src/components/ErrorFallback';
+import { HomeSkeleton } from '@/src/components/skeletons';
+import { usePullToRefresh } from '@/src/hooks/usePullToRefresh';
+import { PullToRefresh } from '@/src/components/PullToRefresh';
 
-export default function HomeScreen() {
+function HomeContent() {
+  const { t } = useTranslation();
+  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
+  const { user } = useAuthStore();
   const {
     activeWallet,
     activePublicKey,
@@ -16,72 +30,134 @@ export default function HomeScreen() {
   } = useWalletConnect();
   const network = useWalletStore((s) => s.network);
 
-  const onRefresh = useCallback(() => {
-    if (activePublicKey) {
-      fetchBalances(activePublicKey);
-    }
-  }, [activePublicKey, fetchBalances]);
+  const {
+    isRefreshing,
+    error: refreshError,
+    lastUpdated,
+    handleRefresh,
+    getLastUpdatedText,
+    cooldownRemaining,
+  } = usePullToRefresh({
+    onRefresh: async () => {
+      if (activePublicKey) {
+        await fetchBalances(activePublicKey);
+      }
+    },
+    cooldown: 2000,
+    hapticFeedback: true,
+    trackAnalytics: true,
+    analyticsEvent: 'home_refresh',
+  });
 
   useEffect(() => {
     if (activePublicKey) {
       fetchBalances(activePublicKey);
     }
-  }, [activePublicKey]);
+  }, [activePublicKey, fetchBalances]);
+
+  // Show skeleton while loading
+  if (isLoading && !activeWallet) {
+    return <HomeSkeleton />;
+  }
 
   if (!activeWallet) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>No Wallet Active</Text>
-        <Text style={styles.emptySubtitle}>
-          Import or create a wallet to get started
-        </Text>
+        <Text style={styles.emptyTitle}>{t('home.noWallet')}</Text>
+        <Text style={styles.emptySubtitle}>{t('home.noWalletSubtitle')}</Text>
       </View>
     );
   }
 
-  return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={isLoading} onRefresh={onRefresh} />
-      }
-    >
-      <View style={styles.header}>
-        <Text style={styles.greeting}>Your Wallet</Text>
-        <View style={styles.networkBadge}>
-          <Text style={styles.networkBadgeText}>
-            {network === 'testnet' ? 'Testnet' : 'Mainnet'}
-          </Text>
-        </View>
-      </View>
-
-      <BalanceDisplay
-        xlmBalance={activeBalance?.xlm ?? null}
-        tokenBalances={activeBalance?.tokens ?? []}
-        isLoading={isLoading}
-        error={error}
-        onRefresh={onRefresh}
-        publicKey={activePublicKey ?? undefined}
+  if (error) {
+    return (
+      <ErrorFallback
+        error={error ? new Error(error) : null}
+        onRetry={handleRefresh}
+        customMessage="Failed to load wallet data. Please try again."
       />
+    );
+  }
 
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionCard}>
-          <Text style={styles.actionIcon}>📤</Text>
-          <Text style={styles.actionLabel}>Send</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionCard}>
-          <Text style={styles.actionIcon}>📥</Text>
-          <Text style={styles.actionLabel}>Receive</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionCard}>
-          <Text style={styles.actionIcon}>🔄</Text>
-          <Text style={styles.actionLabel}>Swap</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+  const greetingName = user?.email?.split('@')[0] || t('home.greetingDefault');
+
+  return (
+    <PullToRefresh
+      refreshing={isRefreshing}
+      onRefresh={handleRefresh}
+      loading={isLoading}
+      error={refreshError}
+      onRetry={handleRefresh}
+      lastUpdated={lastUpdated}
+      getLastUpdatedText={getLastUpdatedText}
+      cooldownRemaining={cooldownRemaining}
+      tintColor="#6C5CE7"
+      title="Pull to refresh wallet"
+    >
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>{t('home.greeting', { name: greetingName })}</Text>
+            <Text style={styles.subGreeting}>{t('home.title')}</Text>
+          </View>
+          <View style={styles.networkBadge}>
+            <Text style={styles.networkBadgeText}>
+              {network === 'testnet' ? t('home.testnet') : t('home.mainnet')}
+            </Text>
+          </View>
+        </View>
+
+        <BalanceDisplay
+          xlmBalance={activeBalance?.xlm ?? null}
+          tokenBalances={activeBalance?.tokens ?? []}
+          isLoading={isLoading}
+          error={error}
+          onRefresh={handleRefresh}
+          publicKey={activePublicKey ?? undefined}
+        />
+
+        <View style={styles.actions}>
+          <TouchableOpacity 
+            style={styles.actionCard} 
+            onPress={() => navigation.navigate('Marketplace')}
+          >
+            <Text style={styles.actionIcon}>🛍️</Text>
+            <Text style={styles.actionLabel}>{t('home.actions.marketplace')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>📤</Text>
+            <Text style={styles.actionLabel}>{t('home.actions.send')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>📥</Text>
+            <Text style={styles.actionLabel}>{t('home.actions.receive')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>🔄</Text>
+            <Text style={styles.actionLabel}>{t('home.actions.swap')}</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </PullToRefresh>
   );
 }
+
+const HomeScreen = withErrorBoundary(HomeContent, {
+  name: 'HomeScreen',
+  onError: (error, errorInfo) => {
+    errorLogger.log(
+      error,
+      'HomeScreen',
+      undefined,
+      { componentStack: errorInfo.componentStack }
+    );
+  },
+});
+
+export default HomeScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -96,12 +172,17 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   greeting: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: colors.text,
+  },
+  subGreeting: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
   networkBadge: {
     backgroundColor: colors.surface,
