@@ -17,6 +17,7 @@ import { errorTrackingService } from '@/src/services/errorTracking.service';
 import { ToastContainer } from '@/src/components/Toast';
 import { AlertContainer } from '@/src/components/Alert';
 import { configManager, config, isFeatureEnabled } from '@/src/config';
+import { ThemeProvider } from '@/src/theme/ThemeContext';
 import { Notification } from '@/types';
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
@@ -347,9 +348,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }
       }}
     >
-      <AppLayoutContent>
-        {children}
-      </AppLayoutContent>
+      <ThemeProvider>
+        <AppLayoutContent>
+          {children}
+        </AppLayoutContent>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

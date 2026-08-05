@@ -3,14 +3,15 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'rea
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '@/navigation/MainNavigator';
-import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { useWalletConnect } from '@/hooks/useWalletConnect';
 import { useAuthStore } from '@/stores/authStore';
 import { useLanguageStore } from '@/src/stores/languageStore';
 import NetworkSwitcher from '@/components/wallet/NetworkSwitcher';
 import { LanguageSwitcher } from '@/src/components/LanguageSwitcher';
+import { ThemeToggle } from '@/src/components/ThemeToggle';
 import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
 import { errorLogger } from '@/src/errors/logger';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Profile'>;
 
@@ -19,6 +20,7 @@ function ProfileContent({ navigation }: Props) {
   const { activeWallet, network, switchNetwork, wallets } = useWalletConnect();
   const { user, logout } = useAuthStore();
   const { language } = useLanguageStore();
+  const { colors, isDark } = useTheme();
 
   const handleSignOut = () => {
     Alert.alert(
@@ -42,6 +44,102 @@ function ProfileContent({ navigation }: Props) {
       ]
     );
   };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      padding: 16,
+      paddingTop: 60,
+      gap: 16,
+    },
+    title: {
+      fontSize: 28,
+      fontWeight: 'bold',
+      color: colors.text,
+      marginBottom: 8,
+    },
+    card: {
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: 12,
+      padding: 16,
+      shadowColor: colors.shadowColor,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    cardTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 16,
+    },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    rowLabel: {
+      fontSize: 15,
+      color: colors.textSecondary,
+    },
+    rowValue: {
+      fontSize: 15,
+      color: colors.text,
+      fontWeight: '500',
+    },
+    rowValueMono: {
+      fontSize: 13,
+      fontFamily: 'monospace',
+      color: colors.text,
+      maxWidth: 180,
+    },
+    noWalletText: {
+      fontSize: 15,
+      color: colors.textTertiary,
+      marginBottom: 8,
+    },
+    linkRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 8,
+      marginTop: 4,
+    },
+    linkText: {
+      fontSize: 15,
+      color: colors.info,
+      fontWeight: '500',
+    },
+    arrow: {
+      fontSize: 18,
+      color: colors.textTertiary,
+    },
+    logoutButton: {
+      backgroundColor: colors.errorBackground,
+      borderRadius: 12,
+      paddingVertical: 16,
+      alignItems: 'center',
+      marginTop: 16,
+    },
+    logoutText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.error,
+    },
+    themeRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 4,
+    },
+  });
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -79,6 +177,14 @@ function ProfileContent({ navigation }: Props) {
       </View>
 
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t('profile.settings')}</Text>
+        <View style={styles.themeRow}>
+          <Text style={styles.rowLabel}>{t('profile.theme')}</Text>
+          <ThemeToggle variant="switch" showLabel={false} />
+        </View>
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.cardTitle}>{t('profile.language')}</Text>
         <LanguageSwitcher variant="full" />
       </View>
@@ -108,89 +214,3 @@ const ProfileScreen = withErrorBoundary(ProfileContent, {
 });
 
 export default ProfileScreen;
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: spacing.lg,
-    paddingTop: 60,
-    gap: spacing.md,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  card: {
-    backgroundColor: colors.surfaceElevated,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    ...shadows.sm,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  rowLabel: {
-    fontSize: 15,
-    color: colors.textSecondary,
-  },
-  rowValue: {
-    fontSize: 15,
-    color: colors.text,
-    fontWeight: '500',
-  },
-  rowValueMono: {
-    fontSize: 13,
-    fontFamily: 'monospace',
-    color: colors.text,
-    maxWidth: 180,
-  },
-  noWalletText: {
-    fontSize: 15,
-    color: colors.textTertiary,
-    marginBottom: spacing.sm,
-  },
-  linkRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  linkText: {
-    fontSize: 15,
-    color: colors.info,
-    fontWeight: '500',
-  },
-  arrow: {
-    fontSize: 18,
-    color: colors.textTertiary,
-  },
-  logoutButton: {
-    backgroundColor: colors.errorBackground,
-    borderRadius: borderRadius.md,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: spacing.md,
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.error,
-  },
-});
