@@ -1,13 +1,29 @@
-import { NFT, Collection, DashboardStats, ActivityEvent, Transaction, Notification, NotificationPreferences, MintFormData, SearchResult, SearchFilters, CreatorProfile, Auction, Bid, AuctionFormData } from '@/types';
-
-const API_BASE_URL = 'https://api.nftopia.io/v1';
+import { config } from '@/src/config';
+import {
+  NFT,
+  Collection,
+  DashboardStats,
+  ActivityEvent,
+  Transaction,
+  Notification,
+  NotificationPreferences,
+  MintFormData,
+  SearchResult,
+  SearchFilters,
+  CreatorProfile,
+  Auction,
+  Bid,
+  AuctionFormData,
+} from '@/types';
 
 class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
+  private timeout: number;
 
-  constructor(baseUrl: string) {
+  constructor(baseUrl: string, timeout: number = 30000) {
     this.baseUrl = baseUrl;
+    this.timeout = timeout;
   }
 
   setToken(token: string | null) {
@@ -16,28 +32,42 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: any = {}
+    options: RequestInit = {}
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(options.headers || {}),
+      ...(options.headers as Record<string, string> || {}),
     };
 
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Network error' }));
-      throw new Error(error.message || `HTTP ${response.status}`);
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        ...options,
+        headers,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Network error' }));
+        throw new Error(error.message || `HTTP ${response.status}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout');
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   // Dashboard API
@@ -85,7 +115,7 @@ class ApiClient {
     });
   }
 
-  // Search API (#410)
+  // Search API
   async search(query: string, filters: SearchFilters): Promise<SearchResult> {
     const params = new URLSearchParams({ q: query, type: filters.type });
     if (filters.category) params.append('category', filters.category);
@@ -95,7 +125,7 @@ class ApiClient {
     return this.request<SearchResult>(`/search?${params.toString()}`);
   }
 
-  // Collection API (#409)
+  // Collection API
   async getCollections(page: number = 1, limit: number = 20, search?: string): Promise<Collection[]> {
     let endpoint = `/collections?page=${page}&limit=${limit}`;
     if (search) endpoint += `&search=${encodeURIComponent(search)}`;
@@ -157,7 +187,7 @@ class ApiClient {
     await this.request(`/collections/${id}/like`, { method: 'DELETE' });
   }
 
-  // Creator Profile API (#408)
+  // Creator Profile API
   async getCreatorProfile(userId: string): Promise<CreatorProfile> {
     return this.request<CreatorProfile>(`/users/${userId}/profile`);
   }
@@ -189,7 +219,7 @@ class ApiClient {
     });
   }
 
-  // Auction API (#407)
+  // Auction API
   async getAuctions(page: number = 1, limit: number = 20, filters?: any): Promise<Auction[]> {
     let endpoint = `/auctions?page=${page}&limit=${limit}`;
     if (filters?.category) endpoint += `&category=${filters.category}`;
@@ -287,5 +317,6 @@ class ApiClient {
   }
 }
 
-export const apiClient = new ApiClient(API_BASE_URL);
+// Use config for API base URL and timeout
+export const apiClient = new ApiClient(config.api.baseUrl, config.api.timeout);
 export default apiClient;

@@ -12,12 +12,13 @@ import { useOfflineStore } from '@/stores/offlineStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useCreatorStore } from '@/stores/creatorStore';
 import { persistenceManager } from '@/src/utils/persistence.manager';
+import { performanceService } from '@/src/services/performance.service';
+import { errorTrackingService } from '@/src/services/errorTracking.service';
 import { ToastContainer } from '@/src/components/Toast';
 import { AlertContainer } from '@/src/components/Alert';
+import { configManager, config, isFeatureEnabled } from '@/src/config';
+import { ThemeProvider } from '@/src/theme/ThemeContext';
 import { Notification } from '@/types';
-
-// WebSocket URL for real-time notifications
-const WS_URL = 'wss://api.nftopia.io/ws/notifications';
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { setOnlineStatus, processQueue, isOnline } = useOfflineStore();
@@ -32,28 +33,69 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   // Initialize push notifications
   const { isInitialized: pushInitialized } = usePushNotifications();
 
-  // Initialize app (persistence, analytics, etc.)
+  // Initialize app (persistence, analytics, performance, error tracking, etc.)
   useEffect(() => {
     const initApp = async () => {
       try {
+        // Initialize config
+        configManager.initialize();
+        console.log('[App] Config initialized:', config.app.environment);
+
+        // Initialize error tracking (Sentry) if enabled
+        if (isFeatureEnabled('errorTracking') && config.errorTracking.sentryDsn) {
+          errorTrackingService.initialize({
+            dsn: config.errorTracking.sentryDsn,
+            environment: config.app.environment,
+            release: config.app.version,
+            enableInDevelopment: true,
+            tracesSampleRate: 0.2,
+            profilesSampleRate: 0.1,
+          });
+          console.log('[App] Error tracking initialized');
+        }
+
         // Initialize persistence first
         await persistenceManager.initialize();
         console.log('[App] Persistence initialized');
 
-        // Initialize analytics
-        const hasConsent = analyticsService.hasConsent();
-        if (hasConsent) {
-          await analyticsService.initialize();
-          analyticsService.track(ANALYTICS_EVENTS.APP_OPEN);
-        } else {
-          setShowConsent(true);
+        // Initialize analytics if enabled
+        if (isFeatureEnabled('analytics') && config.analytics.posthogApiKey) {
+          const hasConsent = analyticsService.hasConsent();
+          if (hasConsent) {
+            await analyticsService.initialize();
+            analyticsService.track(ANALYTICS_EVENTS.APP_OPEN);
+          } else {
+            setShowConsent(true);
+          }
+        }
+
+        // Start performance monitoring if enabled
+        if (isFeatureEnabled('performanceMonitoring')) {
+          performanceService.startFrameTracking();
+
+          // Track memory periodically
+          setInterval(() => {
+            performanceService.trackMemory();
+          }, 30000); // Every 30 seconds
         }
 
         setAppInitialized(true);
         console.log('[App] App initialized successfully');
+
+        // Track app startup performance
+        performanceService.trackMetric('app_startup_complete', performance.now(), 'ms', {
+          environment: config.app.environment,
+          platform: 'mobile',
+        });
       } catch (error) {
         console.error('[App] Initialization failed:', error);
         errorLogger.log(error as Error, 'AppInitialization');
+        if (isFeatureEnabled('errorTracking')) {
+          errorTrackingService.captureException(error as Error, {
+            componentName: 'AppInitialization',
+            extra: { context: 'app_startup' },
+          });
+        }
         // Still set initialized to true to prevent infinite loading
         setAppInitialized(true);
       }
@@ -81,8 +123,15 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   // Network status monitoring
   useEffect(() => {
     const checkConnection = () => {
-      fetch('https://api.nftopia.io/health', { method: 'HEAD' })
-        .then(() => {
+      const startTime = Date.now();
+      fetch(config.api.baseUrl.replace('/v1', '/health'), { method: 'HEAD' })
+        .then((response) => {
+          const duration = Date.now() - startTime;
+          performanceService.trackMetric('network_health_check', duration, 'ms', {
+            status: response.status,
+            online: true,
+          });
+
           if (!isOnline) {
             setOnlineStatus(true);
             processQueue();
@@ -93,6 +142,12 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
           }
         })
         .catch(() => {
+          const duration = Date.now() - startTime;
+          performanceService.trackMetric('network_health_check', duration, 'ms', {
+            online: false,
+            error: true,
+          });
+
           if (isOnline) {
             setOnlineStatus(false);
             analyticsService.track(ANALYTICS_EVENTS.OFFLINE_MODE);
@@ -108,10 +163,15 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
 
   // WebSocket connection for real-time notifications
   const connectWebSocket = useCallback(() => {
+    const startTime = Date.now();
     try {
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(config.websocket.url);
 
       ws.onopen = () => {
+        const duration = Date.now() - startTime;
+        performanceService.trackMetric('websocket_connection', duration, 'ms', {
+          status: 'connected',
+        });
         console.log('WebSocket connected');
         analyticsService.track('websocket_connected');
       };
@@ -138,6 +198,12 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
             event: 'ws_message',
             payload: event.data,
           });
+          if (isFeatureEnabled('errorTracking')) {
+            errorTrackingService.captureException(error as Error, {
+              componentName: 'WebSocketMessageHandler',
+              extra: { event: 'ws_message' },
+            });
+          }
         }
       };
 
@@ -146,11 +212,20 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
           connectWebSocket();
         }, 5000);
         analyticsService.track('websocket_closed');
+        performanceService.trackMetric('websocket_connection', Date.now() - startTime, 'ms', {
+          status: 'closed',
+        });
       };
 
       ws.onerror = (error) => {
         errorLogger.log(error as unknown as Error, 'WebSocketConnection');
         analyticsService.trackError(error as unknown as Error, { event: 'ws_error' });
+        if (isFeatureEnabled('errorTracking')) {
+          errorTrackingService.captureException(error as unknown as Error, {
+            componentName: 'WebSocketConnection',
+            extra: { event: 'ws_error' },
+          });
+        }
         ws.close();
       };
 
@@ -158,6 +233,12 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
     } catch (error) {
       errorLogger.log(error as Error, 'WebSocketConnection');
       analyticsService.trackError(error as Error, { event: 'ws_connect_failed' });
+      if (isFeatureEnabled('errorTracking')) {
+        errorTrackingService.captureException(error as Error, {
+          componentName: 'WebSocketConnection',
+          extra: { event: 'ws_connect_failed' },
+        });
+      }
     }
   }, [addNotification, fetchUnreadCount]);
 
@@ -181,8 +262,10 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         refreshAll();
         fetchUnreadCount();
         analyticsService.track(ANALYTICS_EVENTS.APP_FOREGROUND);
+        performanceService.trackMetric('app_foreground', Date.now(), 'ms');
       } else if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
         analyticsService.track(ANALYTICS_EVENTS.APP_BACKGROUND);
+        performanceService.trackMetric('app_background', Date.now(), 'ms');
       }
       appState.current = nextAppState;
     });
@@ -196,7 +279,16 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const cleanup = async () => {
       analyticsService.track(ANALYTICS_EVENTS.APP_CLOSE);
+      performanceService.stopFrameTracking();
+      
+      // Generate performance report
+      const report = performanceService.generateReport();
+      console.log('[Performance] App shutdown report:', report);
+      
       await analyticsService.destroy();
+      if (isFeatureEnabled('errorTracking')) {
+        await errorTrackingService.flush(2000);
+      }
     };
 
     return () => {
@@ -242,14 +334,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       onError={(error, errorInfo) => {
         errorLogger.log(error, 'AppRoot', undefined, { componentStack: errorInfo.componentStack });
         analyticsService.trackError(error, { componentStack: errorInfo.componentStack });
+        if (isFeatureEnabled('errorTracking')) {
+          errorTrackingService.captureException(error, {
+            componentName: 'AppRoot',
+            extra: { componentStack: errorInfo.componentStack },
+          });
+        }
       }}
       onReset={() => {
         console.log('App reset after error');
+        if (isFeatureEnabled('errorTracking')) {
+          errorTrackingService.addBreadcrumb('App reset after error', 'navigation', 'info');
+        }
       }}
     >
-      <AppLayoutContent>
-        {children}
-      </AppLayoutContent>
+      <ThemeProvider>
+        <AppLayoutContent>
+          {children}
+        </AppLayoutContent>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

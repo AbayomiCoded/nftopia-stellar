@@ -1,4 +1,6 @@
 import { AppError, ErrorSeverity } from './types';
+import { errorTrackingService } from '@/src/services/errorTracking.service';
+import * as Device from 'expo-device';
 
 interface ErrorLogEntry {
   timestamp: number;
@@ -34,12 +36,12 @@ class ErrorLogger {
     return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   }
 
-  log(
+  async log(
     error: Error | AppError,
     componentName?: string,
     userId?: string,
     context?: Record<string, any>
-  ): void {
+  ): Promise<void> {
     const appError: AppError = {
       ...error,
       code: (error as AppError).code || 'ERR_UNKNOWN',
@@ -56,7 +58,7 @@ class ErrorLogger {
       componentName,
       userId,
       sessionId: this.sessionId,
-      deviceInfo: this.getDeviceInfo(),
+      deviceInfo: await this.getDeviceInfo(),
     };
 
     this.logs.push(entry);
@@ -75,22 +77,40 @@ class ErrorLogger {
       });
     }
 
-    // Report to analytics/telemetry
+    // Report to Sentry for critical errors
+    if (appError.severity === 'critical' || appError.severity === 'high') {
+      errorTrackingService.captureException(error, {
+        componentName,
+        userId,
+        extra: context,
+        tags: {
+          severity: appError.severity,
+          code: appError.code || 'ERR_UNKNOWN',
+        },
+      });
+    }
+
+    // Report to analytics
     this.reportToAnalytics(appError, componentName);
   }
 
-  private getDeviceInfo() {
-    // In a real app, you'd get this from DeviceInfo or expo-device
-    return {
-      platform: 'react-native',
-      version: '1.0.0',
-      model: 'unknown',
-    };
+  private async getDeviceInfo() {
+    try {
+      return {
+        platform: 'react-native',
+        version: '1.0.0',
+        model: Device.modelName || 'unknown',
+      };
+    } catch {
+      return {
+        platform: 'react-native',
+        version: '1.0.0',
+        model: 'unknown',
+      };
+    }
   }
 
   private reportToAnalytics(error: AppError, componentName?: string): void {
-    // This would integrate with your analytics service (e.g., Sentry, Firebase Crashlytics)
-    // For now, we'll just log
     if (__DEV__) {
       console.log('[Analytics] Error reported:', {
         error: error.message,
@@ -122,7 +142,6 @@ class ErrorLogger {
     return this.sessionId;
   }
 
-  // Format error for user display
   formatUserMessage(error: AppError): string {
     if (error.userMessage) return error.userMessage;
     return error.message || 'Something went wrong. Please try again.';

@@ -1,7 +1,9 @@
 import { createStore } from '@/src/utils/store.factory';
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 export interface PreferencesState {
-  theme: 'light' | 'dark' | 'system';
+  theme: ThemeMode;
   language: string;
   currency: string;
   notificationsEnabled: boolean;
@@ -29,7 +31,7 @@ const initialState: PreferencesState = {
 };
 
 interface PreferencesStore extends PreferencesState {
-  setTheme: (theme: PreferencesState['theme']) => void;
+  setTheme: (theme: ThemeMode) => void;
   setLanguage: (language: string) => void;
   setCurrency: (currency: string) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
@@ -50,7 +52,7 @@ export const usePreferencesStore = createStore<PreferencesStore>({
   actions: (set, get) => ({
     ...initialState,
 
-    setTheme: (theme: PreferencesState['theme']) => {
+    setTheme: (theme: ThemeMode) => {
       set({ theme, lastUpdated: new Date().toISOString() });
     },
 
@@ -98,7 +100,6 @@ export const usePreferencesStore = createStore<PreferencesStore>({
     enabled: true,
     name: 'preferences-storage',
     version: VERSION,
-    // Persist all preferences except lastUpdated (we'll manage that separately)
     partialize: (state: PreferencesStore) => ({
       theme: state.theme,
       language: state.language,
