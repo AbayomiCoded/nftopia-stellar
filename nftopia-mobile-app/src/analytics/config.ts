@@ -1,8 +1,10 @@
+import { config, isFeatureEnabled } from '@/src/config';
+
 export const ANALYTICS_CONFIG = {
   // PostHog configuration
   posthog: {
-    apiKey: process.env.EXPO_PUBLIC_POSTHOG_API_KEY || 'phc_test_key',
-    host: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://app.posthog.com',
+    apiKey: config.analytics.posthogApiKey,
+    host: config.analytics.posthogHost,
     debug: __DEV__,
     captureApplicationLifecycleEvents: true,
     captureScreenViews: true,
@@ -12,9 +14,9 @@ export const ANALYTICS_CONFIG = {
 
   // Feature flags
   features: {
-    enableAnalytics: true,
-    enablePerformanceMonitoring: true,
-    enableErrorTracking: true,
+    enableAnalytics: isFeatureEnabled('analytics'),
+    enablePerformanceMonitoring: isFeatureEnabled('performanceMonitoring'),
+    enableErrorTracking: isFeatureEnabled('errorTracking'),
     enableSessionReplay: false,
     enableConsentManagement: true,
   },
@@ -39,7 +41,7 @@ export const ANALYTICS_CONFIG = {
   // GDPR/CCPR consent
   consent: {
     required: true,
-    cookieDomain: 'nftopia.io',
+    cookieDomain: config.deepLinking.host,
     cookieLifetime: 365, // days
   },
 

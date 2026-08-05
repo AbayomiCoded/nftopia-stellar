@@ -16,14 +16,8 @@ import { performanceService } from '@/src/services/performance.service';
 import { errorTrackingService } from '@/src/services/errorTracking.service';
 import { ToastContainer } from '@/src/components/Toast';
 import { AlertContainer } from '@/src/components/Alert';
+import { configManager, config, isFeatureEnabled } from '@/src/config';
 import { Notification } from '@/types';
-
-const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN || '';
-const APP_ENVIRONMENT = process.env.EXPO_PUBLIC_APP_ENVIRONMENT || 'development';
-const APP_VERSION = '1.0.0';
-
-// WebSocket URL for real-time notifications
-const WS_URL = 'wss://api.nftopia.io/ws/notifications';
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { setOnlineStatus, processQueue, isOnline } = useOfflineStore();
@@ -42,12 +36,16 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initApp = async () => {
       try {
-        // Initialize error tracking (Sentry)
-        if (SENTRY_DSN) {
+        // Initialize config
+        configManager.initialize();
+        console.log('[App] Config initialized:', config.app.environment);
+
+        // Initialize error tracking (Sentry) if enabled
+        if (isFeatureEnabled('errorTracking') && config.errorTracking.sentryDsn) {
           errorTrackingService.initialize({
-            dsn: SENTRY_DSN,
-            environment: APP_ENVIRONMENT,
-            release: APP_VERSION,
+            dsn: config.errorTracking.sentryDsn,
+            environment: config.app.environment,
+            release: config.app.version,
             enableInDevelopment: true,
             tracesSampleRate: 0.2,
             profilesSampleRate: 0.1,
@@ -59,38 +57,44 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         await persistenceManager.initialize();
         console.log('[App] Persistence initialized');
 
-        // Initialize analytics
-        const hasConsent = analyticsService.hasConsent();
-        if (hasConsent) {
-          await analyticsService.initialize();
-          analyticsService.track(ANALYTICS_EVENTS.APP_OPEN);
-        } else {
-          setShowConsent(true);
+        // Initialize analytics if enabled
+        if (isFeatureEnabled('analytics') && config.analytics.posthogApiKey) {
+          const hasConsent = analyticsService.hasConsent();
+          if (hasConsent) {
+            await analyticsService.initialize();
+            analyticsService.track(ANALYTICS_EVENTS.APP_OPEN);
+          } else {
+            setShowConsent(true);
+          }
         }
 
-        // Start performance monitoring
-        performanceService.startFrameTracking();
+        // Start performance monitoring if enabled
+        if (isFeatureEnabled('performanceMonitoring')) {
+          performanceService.startFrameTracking();
 
-        // Track memory periodically
-        setInterval(() => {
-          performanceService.trackMemory();
-        }, 30000); // Every 30 seconds
+          // Track memory periodically
+          setInterval(() => {
+            performanceService.trackMemory();
+          }, 30000); // Every 30 seconds
+        }
 
         setAppInitialized(true);
         console.log('[App] App initialized successfully');
 
         // Track app startup performance
         performanceService.trackMetric('app_startup_complete', performance.now(), 'ms', {
-          environment: APP_ENVIRONMENT,
+          environment: config.app.environment,
           platform: 'mobile',
         });
       } catch (error) {
         console.error('[App] Initialization failed:', error);
         errorLogger.log(error as Error, 'AppInitialization');
-        errorTrackingService.captureException(error as Error, {
-          componentName: 'AppInitialization',
-          extra: { context: 'app_startup' },
-        });
+        if (isFeatureEnabled('errorTracking')) {
+          errorTrackingService.captureException(error as Error, {
+            componentName: 'AppInitialization',
+            extra: { context: 'app_startup' },
+          });
+        }
         // Still set initialized to true to prevent infinite loading
         setAppInitialized(true);
       }
@@ -119,7 +123,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkConnection = () => {
       const startTime = Date.now();
-      fetch('https://api.nftopia.io/health', { method: 'HEAD' })
+      fetch(config.api.baseUrl.replace('/v1', '/health'), { method: 'HEAD' })
         .then((response) => {
           const duration = Date.now() - startTime;
           performanceService.trackMetric('network_health_check', duration, 'ms', {
@@ -160,7 +164,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const connectWebSocket = useCallback(() => {
     const startTime = Date.now();
     try {
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(config.websocket.url);
 
       ws.onopen = () => {
         const duration = Date.now() - startTime;
@@ -193,10 +197,12 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
             event: 'ws_message',
             payload: event.data,
           });
-          errorTrackingService.captureException(error as Error, {
-            componentName: 'WebSocketMessageHandler',
-            extra: { event: 'ws_message' },
-          });
+          if (isFeatureEnabled('errorTracking')) {
+            errorTrackingService.captureException(error as Error, {
+              componentName: 'WebSocketMessageHandler',
+              extra: { event: 'ws_message' },
+            });
+          }
         }
       };
 
@@ -213,10 +219,12 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       ws.onerror = (error) => {
         errorLogger.log(error as unknown as Error, 'WebSocketConnection');
         analyticsService.trackError(error as unknown as Error, { event: 'ws_error' });
-        errorTrackingService.captureException(error as Error, {
-          componentName: 'WebSocketConnection',
-          extra: { event: 'ws_error' },
-        });
+        if (isFeatureEnabled('errorTracking')) {
+          errorTrackingService.captureException(error as Error, {
+            componentName: 'WebSocketConnection',
+            extra: { event: 'ws_error' },
+          });
+        }
         ws.close();
       };
 
@@ -224,10 +232,12 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
     } catch (error) {
       errorLogger.log(error as Error, 'WebSocketConnection');
       analyticsService.trackError(error as Error, { event: 'ws_connect_failed' });
-      errorTrackingService.captureException(error as Error, {
-        componentName: 'WebSocketConnection',
-        extra: { event: 'ws_connect_failed' },
-      });
+      if (isFeatureEnabled('errorTracking')) {
+        errorTrackingService.captureException(error as Error, {
+          componentName: 'WebSocketConnection',
+          extra: { event: 'ws_connect_failed' },
+        });
+      }
     }
   }, [addNotification, fetchUnreadCount]);
 
@@ -275,7 +285,9 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       console.log('[Performance] App shutdown report:', report);
       
       await analyticsService.destroy();
-      await errorTrackingService.flush(2000);
+      if (isFeatureEnabled('errorTracking')) {
+        await errorTrackingService.flush(2000);
+      }
     };
 
     return () => {
@@ -321,14 +333,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       onError={(error, errorInfo) => {
         errorLogger.log(error, 'AppRoot', undefined, { componentStack: errorInfo.componentStack });
         analyticsService.trackError(error, { componentStack: errorInfo.componentStack });
-        errorTrackingService.captureException(error, {
-          componentName: 'AppRoot',
-          extra: { componentStack: errorInfo.componentStack },
-        });
+        if (isFeatureEnabled('errorTracking')) {
+          errorTrackingService.captureException(error, {
+            componentName: 'AppRoot',
+            extra: { componentStack: errorInfo.componentStack },
+          });
+        }
       }}
       onReset={() => {
         console.log('App reset after error');
-        errorTrackingService.addBreadcrumb('App reset after error', 'navigation', 'info');
+        if (isFeatureEnabled('errorTracking')) {
+          errorTrackingService.addBreadcrumb('App reset after error', 'navigation', 'info');
+        }
       }}
     >
       <AppLayoutContent>
