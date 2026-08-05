@@ -1,5 +1,6 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
+import React, { useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Animated } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 
 interface ConfirmationDialogProps {
@@ -23,6 +24,37 @@ export default function ConfirmationDialog({
   onCancel,
   destructive = false,
 }: ConfirmationDialogProps) {
+  const confirmScale = useRef(new Animated.Value(1)).current;
+  const cancelScale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = (scale: Animated.Value) => {
+    Animated.spring(scale, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 5,
+    }).start();
+  };
+
+  const handlePressOut = (scale: Animated.Value) => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 5,
+    }).start();
+  };
+
+  const handleConfirm = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onConfirm();
+  };
+
+  const handleCancel = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onCancel();
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.overlay}>
@@ -30,18 +62,31 @@ export default function ConfirmationDialog({
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.message}>{message}</Text>
           <View style={styles.buttons}>
-            <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
-              <Text style={styles.cancelText}>{cancelLabel}</Text>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={handleCancel}
+              onPressIn={() => handlePressIn(cancelScale)}
+              onPressOut={() => handlePressOut(cancelScale)}
+              activeOpacity={1}
+            >
+              <Animated.View style={{ transform: [{ scale: cancelScale }] }}>
+                <Text style={styles.cancelText}>{cancelLabel}</Text>
+              </Animated.View>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.confirmButton, destructive && styles.confirmDestructive]}
-              onPress={onConfirm}
+              onPress={handleConfirm}
+              onPressIn={() => handlePressIn(confirmScale)}
+              onPressOut={() => handlePressOut(confirmScale)}
+              activeOpacity={1}
             >
-              <Text
-                style={[styles.confirmText, destructive && styles.confirmTextDestructive]}
-              >
-                {confirmLabel}
-              </Text>
+              <Animated.View style={{ transform: [{ scale: confirmScale }] }}>
+                <Text
+                  style={[styles.confirmText, destructive && styles.confirmTextDestructive]}
+                >
+                  {confirmLabel}
+                </Text>
+              </Animated.View>
             </TouchableOpacity>
           </View>
         </View>

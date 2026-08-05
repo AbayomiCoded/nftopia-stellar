@@ -1,5 +1,15 @@
-import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ViewStyle, TextStyle, GestureResponderEvent } from 'react-native';
+import React, { useRef } from 'react';
+import {
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ViewStyle,
+  TextStyle,
+  GestureResponderEvent,
+  ActivityIndicator,
+  Animated,
+} from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 interface AuthButtonProps {
   title: string;
@@ -9,6 +19,8 @@ interface AuthButtonProps {
   icon?: React.ReactNode;
   variant?: 'primary' | 'secondary';
   disabled?: boolean;
+  loading?: boolean;
+  haptic?: boolean;
 }
 
 export default function AuthButton({
@@ -19,33 +31,81 @@ export default function AuthButton({
   icon,
   variant = 'primary',
   disabled = false,
+  loading = false,
+  haptic = true,
 }: AuthButtonProps) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (haptic) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    Animated.spring(scaleAnim, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 5,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 5,
+    }).start();
+  };
+
+  const isDisabled = disabled || loading;
+
   return (
     <TouchableOpacity
       style={[
         styles.button,
         variant === 'primary' ? styles.primary : styles.secondary,
+        isDisabled && styles.disabled,
         style,
-        disabled && styles.disabled,
       ]}
       onPress={onPress}
-      activeOpacity={0.8}
-      disabled={disabled}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={1}
+      disabled={isDisabled}
     >
-      {icon && <>{icon}</>}
-      <Text style={[styles.text, textStyle]}>{title}</Text>
+      <Animated.View
+        style={[
+          styles.content,
+          {
+            transform: [{ scale: scaleAnim }],
+          },
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator color={variant === 'primary' ? '#fff' : '#000'} size="small" />
+        ) : (
+          <>
+            {icon && <>{icon}</>}
+            <Text style={[styles.text, textStyle]}>{title}</Text>
+          </>
+        )}
+      </Animated.View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     borderRadius: 12,
     paddingVertical: 16,
     marginVertical: 4,
+    overflow: 'hidden',
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   primary: {
     backgroundColor: '#000',
