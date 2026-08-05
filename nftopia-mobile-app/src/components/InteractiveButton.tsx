@@ -7,6 +7,7 @@ import {
   View,
   ViewStyle,
   TextStyle,
+  StyleProp,
   Animated,
   GestureResponderEvent,
 } from 'react-native';
@@ -178,7 +179,7 @@ export function InteractiveButton({
 
   const isDisabled = disabled || loading;
 
-  const buttonStyles: ViewStyle[] = [
+  const buttonStyles: StyleProp<ViewStyle>[] = [
     styles.button,
     {
       backgroundColor: variantStyles.backgroundColor,
@@ -193,7 +194,7 @@ export function InteractiveButton({
     style,
   ];
 
-  const textStyles: TextStyle[] = [
+  const textStyles: StyleProp<TextStyle>[] = [
     styles.text,
     {
       color: variantStyles.textColor,

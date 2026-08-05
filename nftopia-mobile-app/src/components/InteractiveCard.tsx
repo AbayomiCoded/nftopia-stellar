@@ -3,6 +3,7 @@ import {
   TouchableOpacity,
   View,
   ViewStyle,
+  StyleProp,
   StyleSheet,
   Animated,
   GestureResponderEvent,
@@ -89,7 +90,7 @@ export function InteractiveCard({
     }
   };
 
-  const cardStyles: ViewStyle[] = [
+  const cardStyles: StyleProp<ViewStyle>[] = [
     styles.card,
     getElevationStyles(),
     {

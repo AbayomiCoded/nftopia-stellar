@@ -42,16 +42,10 @@ class ErrorTrackingService {
         dsn: config.dsn,
         environment: config.environment,
         release: config.release,
-        enableInExpoDevelopment: true,
         debug: __DEV__,
         tracesSampleRate: config.tracesSampleRate || 0.2,
         profilesSampleRate: config.profilesSampleRate || 0.1,
-        integrations: [
-          new Sentry.ReactNativeTracing({
-            enableStallTracking: true,
-            stallTimeoutMs: 3000,
-          }),
-        ],
+        integrations: [Sentry.reactNativeTracingIntegration()],
         beforeSend: (event, hint) => {
           // Filter out non-critical errors in development
           if (__DEV__) {
@@ -74,11 +68,11 @@ class ErrorTrackingService {
       const deviceInfo = {
         platform: Platform.OS,
         platformVersion: Platform.Version,
-        deviceName: await Device.getDeviceNameAsync(),
-        modelName: await Device.getModelNameAsync(),
-        osName: await Device.getOsNameAsync(),
-        osVersion: await Device.getOsVersionAsync(),
-        isDevice: await Device.isDeviceAsync(),
+        deviceName: Device.deviceName,
+        modelName: Device.modelName,
+        osName: Device.osName,
+        osVersion: Device.osVersion,
+        isDevice: Device.isDevice,
       };
 
       Sentry.setContext('device', deviceInfo);
@@ -223,26 +217,26 @@ class ErrorTrackingService {
     op: string,
     tags?: Record<string, string>
   ): any {
-    return Sentry.startTransaction({
+    return Sentry.startInactiveSpan({
       name,
       op,
-      tags,
+      attributes: tags,
     });
   }
 
   // End performance transaction
   endTransaction(transaction: any): void {
     if (transaction) {
-      transaction.finish();
+      transaction.end();
     }
   }
 
   // Set user feedback
   setUserFeedback(eventId: string, comments: string, email?: string): void {
-    Sentry.captureUserFeedback({
-      eventId,
-      comments,
-      email: email,
+    Sentry.captureFeedback({
+      message: comments,
+      associatedEventId: eventId,
+      email,
     });
   }
 
@@ -252,8 +246,8 @@ class ErrorTrackingService {
   }
 
   // Flush events
-  async flush(timeout?: number): Promise<void> {
-    await Sentry.flush(timeout);
+  async flush(_timeout?: number): Promise<void> {
+    await Sentry.flush();
   }
 
   // Close SDK
@@ -264,12 +258,12 @@ class ErrorTrackingService {
 
   // Get current session ID
   getSessionId(): string | null {
-    return Sentry.getCurrentHub().getScope()?.getSession()?.sid || null;
+    return Sentry.getCurrentScope().getSession()?.sid || null;
   }
 
   // Get last event ID
   getLastEventId(): string {
-    return Sentry.getLastEventId() || '';
+    return Sentry.lastEventId() || '';
   }
 }
 

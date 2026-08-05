@@ -221,7 +221,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         errorLogger.log(error as unknown as Error, 'WebSocketConnection');
         analyticsService.trackError(error as unknown as Error, { event: 'ws_error' });
         if (isFeatureEnabled('errorTracking')) {
-          errorTrackingService.captureException(error as Error, {
+          errorTrackingService.captureException(error as unknown as Error, {
             componentName: 'WebSocketConnection',
             extra: { event: 'ws_error' },
           });

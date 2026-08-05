@@ -39,7 +39,7 @@ class PerformanceService {
   private metrics: PerformanceMetric[] = [];
   private maxMetrics = 1000;
   private isEnabled = true;
-  private performanceObserver: PerformanceObserver | null = null;
+  private performanceObserver: InstanceType<typeof PerformanceObserver> | null = null;
   private screenStartTimes: Map<string, number> = new Map();
   private apiStartTimes: Map<string, number> = new Map();
   private coldStartTime: number | null = null;
@@ -68,22 +68,21 @@ class PerformanceService {
           }
         });
 
-        // Start observing navigation and resource timing
+        // Start observing resource and custom timing entries
         this.performanceObserver.observe({
-          entryTypes: ['navigation', 'resource', 'mark', 'measure'],
+          entryTypes: ['resource', 'mark', 'measure', 'metric', 'react-native-mark'],
         });
       }
     } catch (error) {
       console.warn('PerformanceObserver not available:', error);
     }
+
+    this.trackColdStart();
   }
 
   private handlePerformanceEntry(entry: PerformanceEntry): void {
     try {
       switch (entry.entryType) {
-        case 'navigation':
-          this.trackNavigationTiming(entry);
-          break;
         case 'resource':
           this.trackResourceTiming(entry);
           break;
@@ -99,22 +98,12 @@ class PerformanceService {
     }
   }
 
-  private trackNavigationTiming(entry: PerformanceEntry): void {
-    const navigationEntry = entry as any;
-    const loadTime = navigationEntry.loadEventEnd - navigationEntry.fetchStart;
-    
-    this.trackMetric('app_load_time', loadTime, 'ms', {
-      type: 'navigation',
-      domComplete: navigationEntry.domComplete,
+  private trackColdStart(): void {
+    if (this.coldStartTime) return;
+    this.coldStartTime = Date.now();
+    this.trackMetric('cold_start_time', performance.now(), 'ms', {
+      platform: Platform.OS,
     });
-
-    // Track cold start if this is the first navigation
-    if (!this.coldStartTime) {
-      this.coldStartTime = Date.now();
-      this.trackMetric('cold_start_time', performance.now(), 'ms', {
-        platform: Platform.OS,
-      });
-    }
   }
 
   private trackResourceTiming(entry: PerformanceEntry): void {

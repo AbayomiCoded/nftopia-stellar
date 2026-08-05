@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { configManager, config, getEnvironment, isProduction, reloadConfig } from '@/src/config';
-import { colors, spacing, borderRadius } from '@/constants/theme';
+import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 
 export default function ConfigDebugScreen() {
   const [loading, setLoading] = useState(false);

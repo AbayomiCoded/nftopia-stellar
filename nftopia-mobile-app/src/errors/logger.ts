@@ -85,7 +85,7 @@ class ErrorLogger {
         extra: context,
         tags: {
           severity: appError.severity,
-          code: appError.code,
+          code: appError.code || 'ERR_UNKNOWN',
         },
       });
     }
@@ -99,7 +99,7 @@ class ErrorLogger {
       return {
         platform: 'react-native',
         version: '1.0.0',
-        model: await Device.getModelNameAsync() || 'unknown',
+        model: Device.modelName || 'unknown',
       };
     } catch {
       return {

@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { performanceService } from '@/src/services/performance.service';
 import { errorTrackingService } from '@/src/services/errorTracking.service';
-import { colors, spacing, borderRadius } from '@/constants/theme';
+import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 
 interface MetricCardProps {
   title: string;
