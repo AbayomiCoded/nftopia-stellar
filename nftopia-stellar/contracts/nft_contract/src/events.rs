@@ -145,11 +145,17 @@ pub fn emit_supply_cap_updated(env: &Env, old_cap: u64, new_cap: u64) {
 }
 
 pub fn emit_supply_approaching_cap(env: &Env, remaining: u64, total_cap: u64) {
-    let payload = SupplyApproachingCap { remaining, total_cap };
+    let payload = SupplyApproachingCap {
+        remaining,
+        total_cap,
+    };
     payload.publish(env);
 }
 
 pub fn emit_supply_cap_reached(env: &Env, total_supply: u64, max_supply: u64) {
-    let payload = SupplyCapReached { total_supply, max_supply };
+    let payload = SupplyCapReached {
+        total_supply,
+        max_supply,
+    };
     payload.publish(env);
 }

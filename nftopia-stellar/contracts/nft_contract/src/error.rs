@@ -67,8 +67,4 @@ pub enum ContractError {
 
     /// max_supply exceeds MAX_SUPPLY_HARD_CAP during initialization.
     MaxSupplyExceedsHardCap = 34,
-
-    /// Supply limit exceeded during mint or batch mint operation.
-    /// This is the primary error returned when minting would exceed the cap.
-    SupplyLimitExceeded = 35,
 }

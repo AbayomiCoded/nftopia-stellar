@@ -7,7 +7,7 @@ fn make_config(env: &Env) -> CollectionConfig {
         name: String::from_str(env, "NFTopia"),
         symbol: String::from_str(env, "NFTP"),
         base_uri: String::from_str(env, ""),
-        max_supply: Some(1000),
+        max_supply: 1000,
         mint_price: None,
         is_revealed: true,
         metadata_is_frozen: false,
@@ -258,7 +258,7 @@ fn test_supply_limit() {
         name: String::from_str(&env, "Limited"),
         symbol: String::from_str(&env, "LTD"),
         base_uri: String::from_str(&env, ""),
-        max_supply: Some(2),
+        max_supply: 2,
         mint_price: None,
         is_revealed: true,
         metadata_is_frozen: false,
@@ -760,7 +760,7 @@ fn test_initialize_with_valid_supply_cap() {
     };
 
     client.initialize(&admin, &config, &None);
-    assert_eq!(client.get_max_supply().unwrap(), 100);
+    assert_eq!(client.get_max_supply(), 100);
 }
 
 #[test]
@@ -835,13 +835,7 @@ fn test_mint_at_exact_cap_succeeds() {
 
     // Mint exactly 3 tokens (at the cap)
     for _ in 0..3u32 {
-        client.mint(
-            &admin,
-            &user,
-            &uri,
-            &Vec::new(&env),
-            &None,
-        );
+        client.mint(&admin, &user, &uri, &Vec::new(&env), &None);
     }
 
     assert_eq!(client.total_supply(), 3);
@@ -874,25 +868,13 @@ fn test_mint_exceeding_cap_fails() {
 
     // Mint 2 tokens (at the cap)
     for _ in 0..2u32 {
-        client.mint(
-            &admin,
-            &user,
-            &uri,
-            &Vec::new(&env),
-            &None,
-        );
+        client.mint(&admin, &user, &uri, &Vec::new(&env), &None);
     }
 
     assert_eq!(client.total_supply(), 2);
 
     // Third mint should fail
-    let result = client.try_mint(
-        &admin,
-        &user,
-        &uri,
-        &Vec::new(&env),
-        &None,
-    );
+    let result = client.try_mint(&admin, &user, &uri, &Vec::new(&env), &None);
     assert!(result.is_err());
 }
 
@@ -1001,7 +983,7 @@ fn test_update_max_supply_downward_succeeds() {
 
     // Update cap to 500 (>= current supply)
     client.update_max_supply(&admin, &500);
-    assert_eq!(client.get_max_supply().unwrap(), 500);
+    assert_eq!(client.get_max_supply(), 500);
     assert_eq!(client.remaining_supply(), 400);
 }
 
@@ -1038,7 +1020,7 @@ fn test_update_max_supply_below_current_supply_fails() {
     // Update cap to 50 (< current supply) - should fail
     let result = client.try_update_max_supply(&admin, &50);
     assert!(result.is_err());
-    assert_eq!(client.get_max_supply().unwrap(), 1000);
+    assert_eq!(client.get_max_supply(), 1000);
 }
 
 #[test]
@@ -1065,7 +1047,7 @@ fn test_update_max_supply_by_non_admin_fails() {
     let non_admin = Address::generate(&env);
     let result = client.try_update_max_supply(&non_admin, &500);
     assert!(result.is_err());
-    assert_eq!(client.get_max_supply().unwrap(), 1000);
+    assert_eq!(client.get_max_supply(), 1000);
 }
 
 #[test]
@@ -1096,7 +1078,7 @@ fn test_remaining_supply_accurate() {
 
     for i in 0..50u32 {
         client.mint(&admin, &user, &uri, &Vec::new(&env), &None);
-        assert_eq!(client.remaining_supply(), 100 - (i + 1));
+        assert_eq!(client.remaining_supply(), (100 - (i + 1)) as u64);
     }
 
     assert_eq!(client.remaining_supply(), 50);
@@ -1125,7 +1107,7 @@ fn test_update_max_supply_to_zero_fails() {
 
     let result = client.try_update_max_supply(&admin, &0);
     assert!(result.is_err());
-    assert_eq!(client.get_max_supply().unwrap(), 100);
+    assert_eq!(client.get_max_supply(), 100);
 }
 
 #[test]
@@ -1151,5 +1133,5 @@ fn test_update_max_supply_above_hard_cap_fails() {
 
     let result = client.try_update_max_supply(&admin, &2_000_000);
     assert!(result.is_err());
-    assert_eq!(client.get_max_supply().unwrap(), 100);
+    assert_eq!(client.get_max_supply(), 100);
 }

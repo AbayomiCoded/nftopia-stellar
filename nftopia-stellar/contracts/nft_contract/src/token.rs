@@ -2,8 +2,7 @@ use crate::access_control;
 use crate::error::ContractError;
 use crate::events;
 use crate::storage::{
-    DataKey, MAX_BATCH_SIZE, MAX_SUPPLY_HARD_CAP, MIN_SUPPLY_CAP, validate_supply_cap,
-    would_exceed_supply_cap,
+    DataKey, MAX_BATCH_SIZE, MAX_SUPPLY_HARD_CAP, validate_supply_cap, would_exceed_supply_cap,
 };
 use crate::transfer;
 use crate::types::{CollectionConfig, RoyaltyInfo, TokenAttribute, TokenData};
@@ -94,6 +93,7 @@ fn check_batch_supply(env: &Env, n: u32) -> Result<(), ContractError> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn mint_one(
     env: &Env,
     caller: &Address,
@@ -239,7 +239,7 @@ pub fn batch_mint(
     }
 
     // Check total supply headroom up front using the improved check
-    check_batch_supply(env, n as u32)?;
+    check_batch_supply(env, n)?;
 
     let mut ids: Vec<u64> = Vec::new(env);
     for i in 0..n {
@@ -504,13 +504,7 @@ pub fn get_remaining_supply(env: &Env) -> u64 {
         .unwrap_or(0);
 
     match config {
-        Ok(config) => {
-            if total >= config.max_supply {
-                0
-            } else {
-                config.max_supply - total
-            }
-        }
+        Ok(config) => config.max_supply.saturating_sub(total),
         Err(_) => 0,
     }
 }

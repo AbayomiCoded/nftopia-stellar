@@ -53,7 +53,7 @@ pub const MIN_SUPPLY_CAP: u64 = 1;
 /// * `true` if the cap is valid (>= MIN_SUPPLY_CAP and <= MAX_SUPPLY_HARD_CAP)
 /// * `false` otherwise
 pub fn is_valid_supply_cap(cap: u64) -> bool {
-    cap >= MIN_SUPPLY_CAP && cap <= MAX_SUPPLY_HARD_CAP
+    (MIN_SUPPLY_CAP..=MAX_SUPPLY_HARD_CAP).contains(&cap)
 }
 
 /// Validates a supply cap, returning an error if invalid.
@@ -85,7 +85,9 @@ pub fn validate_supply_cap(cap: u64) -> Result<(), crate::error::ContractError> 
 /// * `true` if the mint would exceed the cap
 /// * `false` otherwise
 pub fn would_exceed_supply_cap(total_supply: u64, amount: u64, max_supply: u64) -> bool {
-    total_supply.checked_add(amount).map_or(true, |new_total| new_total > max_supply)
+    total_supply
+        .checked_add(amount)
+        .is_none_or(|new_total| new_total > max_supply)
 }
 
 /// Checks if a supply cap update is valid (cannot be below current supply).

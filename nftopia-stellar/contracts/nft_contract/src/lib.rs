@@ -339,11 +339,7 @@ impl NftContract {
     /// - `SupplyCapTooLow` if cap < MIN_SUPPLY_CAP
     /// - `SupplyCapTooHigh` if cap > MAX_SUPPLY_HARD_CAP
     /// - `SupplyCapBelowCurrentSupply` if cap < current total supply
-    pub fn update_max_supply(
-        env: Env,
-        caller: Address,
-        new_cap: u64,
-    ) -> Result<(), ContractError> {
+    pub fn update_max_supply(env: Env, caller: Address, new_cap: u64) -> Result<(), ContractError> {
         caller.require_auth();
         token::update_max_supply(&env, &caller, new_cap)
     }
