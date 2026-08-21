@@ -59,6 +59,31 @@ pub struct RoyaltyUpdate {
     pub percentage: u32,
 }
 
+/// Emitted when the supply cap is updated by the admin.
+#[contractevent(topics = ["supply_cap_updated"])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SupplyCapUpdated {
+    pub old_cap: u64,
+    pub new_cap: u64,
+    pub updated_at: u64,
+}
+
+/// Emitted when the remaining supply drops to or below 10 tokens.
+#[contractevent(topics = ["supply_approaching_cap"])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SupplyApproachingCap {
+    pub remaining: u64,
+    pub total_cap: u64,
+}
+
+/// Emitted when the supply cap is reached (remaining supply = 0).
+#[contractevent(topics = ["supply_cap_reached"])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SupplyCapReached {
+    pub total_supply: u64,
+    pub max_supply: u64,
+}
+
 pub fn emit_mint(env: &Env, to: Address, token_id: u64) {
     Mint { to, token_id }.publish(env);
 }
@@ -108,4 +133,29 @@ pub fn emit_royalty_update(env: &Env, recipient: Address, percentage: u32) {
         percentage,
     }
     .publish(env);
+}
+
+pub fn emit_supply_cap_updated(env: &Env, old_cap: u64, new_cap: u64) {
+    let payload = SupplyCapUpdated {
+        old_cap,
+        new_cap,
+        updated_at: env.ledger().timestamp(),
+    };
+    payload.publish(env);
+}
+
+pub fn emit_supply_approaching_cap(env: &Env, remaining: u64, total_cap: u64) {
+    let payload = SupplyApproachingCap {
+        remaining,
+        total_cap,
+    };
+    payload.publish(env);
+}
+
+pub fn emit_supply_cap_reached(env: &Env, total_supply: u64, max_supply: u64) {
+    let payload = SupplyCapReached {
+        total_supply,
+        max_supply,
+    };
+    payload.publish(env);
 }
