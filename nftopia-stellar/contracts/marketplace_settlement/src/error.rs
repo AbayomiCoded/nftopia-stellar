@@ -42,6 +42,8 @@ pub enum SettlementError {
     RoyaltyCalculationFailed = 400,
     InvalidRoyaltyPercentage = 401,
     RoyaltyDistributionFailed = 402,
+    /// Royalty percentage exceeds the admin-configured maximum cap
+    RoyaltyExceedsMaxCap = 403,
 
     // Dispute errors
     DisputeNotFound = 500,
