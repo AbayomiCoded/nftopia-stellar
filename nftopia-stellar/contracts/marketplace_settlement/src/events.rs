@@ -381,8 +381,8 @@ pub struct AddressUnblockedEvent {
 }
 
 /// Emitted when the admin updates the max royalty cap.
-#[contractevent(topics = ["royalty_cap_updated"])]
-#[derive(Clone, Debug, PartialEq)]
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoyaltyCapUpdated {
     pub old_cap: u64,
     pub new_cap: u64,
@@ -626,11 +626,13 @@ pub fn emit_address_unblocked(env: &Env, event: AddressUnblockedEvent) {
 }
 
 /// Emit royalty cap updated event.
+#[allow(deprecated)]
 pub fn emit_royalty_cap_updated(env: &Env, old_cap: u64, new_cap: u64) {
     let payload = RoyaltyCapUpdated {
         old_cap,
         new_cap,
         updated_at: env.ledger().timestamp(),
     };
-    payload.publish(env);
+    env.events()
+        .publish(("MarketplaceSettlement", symbol_short!("roy_cap")), payload);
 }

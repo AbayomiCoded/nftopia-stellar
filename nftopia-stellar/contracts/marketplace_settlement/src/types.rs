@@ -1,4 +1,29 @@
+use crate::error::SettlementError;
 use soroban_sdk::{contracttype, Address, Bytes, Map, Symbol, Vec};
+
+/// Hard cap on royalty percentage in basis points (50%). No royalty may ever
+/// exceed this, regardless of the admin-configured cap.
+pub const MAX_ROYALTY_BPS: u64 = 5000;
+
+/// Default max royalty percentage used when no `AdminConfig` has been stored yet.
+pub const DEFAULT_MAX_ROYALTY_PERCENTAGE: u64 = MAX_ROYALTY_BPS;
+
+/// Validate a royalty percentage against both the hard cap and the
+/// admin-configured cap.
+///
+/// # Returns
+/// * `Err(SettlementError::InvalidRoyaltyPercentage)` if `percentage` exceeds the hard cap
+/// * `Err(SettlementError::RoyaltyExceedsMaxCap)` if `percentage` exceeds `admin_cap`
+/// * `Ok(())` otherwise
+pub fn validate_royalty_percentage(percentage: u64, admin_cap: u64) -> Result<(), SettlementError> {
+    if percentage > MAX_ROYALTY_BPS {
+        return Err(SettlementError::InvalidRoyaltyPercentage);
+    }
+    if percentage > admin_cap {
+        return Err(SettlementError::RoyaltyExceedsMaxCap);
+    }
+    Ok(())
+}
 
 // Transaction state enum
 #[contracttype]

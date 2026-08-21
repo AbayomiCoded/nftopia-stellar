@@ -887,16 +887,12 @@ fn test_set_royalty_below_caps_succeeds() {
 
         // Set royalty at 25% (2500 bps) - below both caps
         let result = crate::royalty_distributor::RoyaltyDistributor::set_royalty_info(
-            &env,
-            &nft,
-            1,
-            &creator,
-            2500,
-            &creator,
+            &env, &nft, 1, &creator, 2500, &creator,
         );
         assert!(result.is_ok());
 
-        let info = crate::royalty_distributor::RoyaltyDistributor::get_royalty_info(&env, &nft, 1).unwrap();
+        let info = crate::royalty_distributor::RoyaltyDistributor::get_royalty_info(&env, &nft, 1)
+            .unwrap();
         assert_eq!(info.royalty_percentage, 2500);
     });
 }
@@ -925,12 +921,7 @@ fn test_set_royalty_above_hard_cap_fails() {
 
         // Set royalty at 60% (6000 bps) - exceeds hard cap
         let result = crate::royalty_distributor::RoyaltyDistributor::set_royalty_info(
-            &env,
-            &nft,
-            1,
-            &creator,
-            6000,
-            &creator,
+            &env, &nft, 1, &creator, 6000, &creator,
         );
         assert_eq!(result, Err(SettlementError::InvalidRoyaltyPercentage));
     });
@@ -960,12 +951,7 @@ fn test_set_royalty_above_admin_cap_fails() {
 
         // Set royalty at 30% (3000 bps) - below hard cap but above admin cap
         let result = crate::royalty_distributor::RoyaltyDistributor::set_royalty_info(
-            &env,
-            &nft,
-            1,
-            &creator,
-            3000,
-            &creator,
+            &env, &nft, 1, &creator, 3000, &creator,
         );
         assert_eq!(result, Err(SettlementError::RoyaltyExceedsMaxCap));
     });
@@ -995,21 +981,12 @@ fn test_update_royalty_above_admin_cap_fails() {
 
         // Set initial royalty at 10%
         let _ = crate::royalty_distributor::RoyaltyDistributor::set_royalty_info(
-            &env,
-            &nft,
-            1,
-            &creator,
-            1000,
-            &creator,
+            &env, &nft, 1, &creator, 1000, &creator,
         );
 
         // Update to 30% - below hard cap but above admin cap
         let result = crate::royalty_distributor::RoyaltyDistributor::update_royalty_percentage(
-            &env,
-            &nft,
-            1,
-            3000,
-            &creator,
+            &env, &nft, 1, 3000, &creator,
         );
         assert_eq!(result, Err(SettlementError::RoyaltyExceedsMaxCap));
     });
@@ -1043,18 +1020,14 @@ fn test_bulk_set_royalties_with_invalid_percentage_fails() {
 
         // Try to bulk set at 30% - exceeds admin cap
         let result = crate::royalty_distributor::RoyaltyDistributor::bulk_set_royalties(
-            &env,
-            &nft,
-            &token_ids,
-            &creator,
-            3000,
-            &creator,
+            &env, &nft, &token_ids, &creator, 3000, &creator,
         );
         assert_eq!(result, Err(SettlementError::RoyaltyExceedsMaxCap));
 
         // Verify no royalties were set (atomicity)
         for id in token_ids.iter() {
-            let result = crate::royalty_distributor::RoyaltyDistributor::get_royalty_info(&env, &nft, id);
+            let result =
+                crate::royalty_distributor::RoyaltyDistributor::get_royalty_info(&env, &nft, id);
             assert!(result.is_err());
         }
     });
@@ -1082,9 +1055,7 @@ fn test_admin_update_max_royalty_downward_succeeds() {
 
         // Update cap down to 30%
         let result = crate::royalty_distributor::RoyaltyDistributor::update_max_royalty_percentage(
-            &env,
-            &_admin,
-            3000,
+            &env, &_admin, 3000,
         );
         assert!(result.is_ok());
 
@@ -1119,9 +1090,7 @@ fn test_admin_update_max_royalty_upward_succeeds() {
 
         // Update cap up to 40% (still below hard cap)
         let result = crate::royalty_distributor::RoyaltyDistributor::update_max_royalty_percentage(
-            &env,
-            &_admin,
-            4000,
+            &env, &_admin, 4000,
         );
         assert!(result.is_ok());
 
@@ -1156,9 +1125,7 @@ fn test_admin_update_max_royalty_above_hard_cap_fails() {
 
         // Try to update cap to 60% (exceeds hard cap)
         let result = crate::royalty_distributor::RoyaltyDistributor::update_max_royalty_percentage(
-            &env,
-            &_admin,
-            6000,
+            &env, &_admin, 6000,
         );
         assert_eq!(result, Err(SettlementError::InvalidRoyaltyPercentage));
     });
@@ -1187,9 +1154,7 @@ fn test_non_admin_update_max_royalty_fails() {
 
         // Attacker tries to update cap
         let result = crate::royalty_distributor::RoyaltyDistributor::update_max_royalty_percentage(
-            &env,
-            &attacker,
-            3000,
+            &env, &attacker, 3000,
         );
         assert_eq!(result, Err(SettlementError::NotAdmin));
     });
@@ -1219,33 +1184,23 @@ fn test_existing_royalty_cannot_be_updated_above_new_cap() {
 
         // Set royalty at 40%
         let _ = crate::royalty_distributor::RoyaltyDistributor::set_royalty_info(
-            &env,
-            &nft,
-            1,
-            &creator,
-            4000,
-            &creator,
+            &env, &nft, 1, &creator, 4000, &creator,
         );
 
         // Update admin cap down to 30%
         let _ = crate::royalty_distributor::RoyaltyDistributor::update_max_royalty_percentage(
-            &env,
-            &_admin,
-            3000,
+            &env, &_admin, 3000,
         );
 
         // Try to update royalty to 35% (above new cap)
         let result = crate::royalty_distributor::RoyaltyDistributor::update_royalty_percentage(
-            &env,
-            &nft,
-            1,
-            3500,
-            &creator,
+            &env, &nft, 1, 3500, &creator,
         );
         assert_eq!(result, Err(SettlementError::RoyaltyExceedsMaxCap));
 
         // Existing royalty at 40% should still be intact
-        let info = crate::royalty_distributor::RoyaltyDistributor::get_royalty_info(&env, &nft, 1).unwrap();
+        let info = crate::royalty_distributor::RoyaltyDistributor::get_royalty_info(&env, &nft, 1)
+            .unwrap();
         assert_eq!(info.royalty_percentage, 4000);
     });
 }
@@ -1274,21 +1229,14 @@ fn test_calculate_minimum_price_respects_max_cap() {
 
         // Set royalty at 25%
         let _ = crate::royalty_distributor::RoyaltyDistributor::set_royalty_info(
-            &env,
-            &nft,
-            1,
-            &creator,
-            2500,
-            &creator,
+            &env, &nft, 1, &creator, 2500, &creator,
         );
 
         // Calculate minimum price for desired net amount of 1000
         let min_price = crate::royalty_distributor::RoyaltyEnforcer::calculate_minimum_price(
-            &env,
-            &nft,
-            1,
-            1000,
-        ).unwrap();
+            &env, &nft, 1, 1000,
+        )
+        .unwrap();
 
         // With 25% royalty, price = 1000 / (1 - 0.25) = 1333.33...
         assert_eq!(min_price, 1333);
@@ -1303,8 +1251,6 @@ fn test_complex_royalties_respect_caps() {
     let nft2 = Address::generate(&env);
     let creator1 = Address::generate(&env);
     let creator2 = Address::generate(&env);
-    let seller = Address::generate(&env);
-    let platform = Address::generate(&env);
 
     env.as_contract(&cid, || {
         let admin_config = crate::royalty_distributor::AdminConfig {
@@ -1323,22 +1269,12 @@ fn test_complex_royalties_respect_caps() {
 
         // Set royalty at 15% (below admin cap)
         let _ = crate::royalty_distributor::RoyaltyDistributor::set_royalty_info(
-            &env,
-            &nft1,
-            1,
-            &creator1,
-            1500,
-            &creator1,
+            &env, &nft1, 1, &creator1, 1500, &creator1,
         );
 
         // Set royalty at 25% (exceeds admin cap) - this should fail
         let result = crate::royalty_distributor::RoyaltyDistributor::set_royalty_info(
-            &env,
-            &nft2,
-            1,
-            &creator2,
-            2500,
-            &creator2,
+            &env, &nft2, 1, &creator2, 2500, &creator2,
         );
         assert_eq!(result, Err(SettlementError::RoyaltyExceedsMaxCap));
     });

@@ -1,13 +1,17 @@
 use crate::error::SettlementError;
-use crate::events::{emit_royalties_distributed, RoyaltiesDistributedEvent};
-use crate::types::{validate_royalty_percentage, Asset, DistributionResult, RoyaltyDistribution, MAX_ROYALTY_BPS};
+use crate::events::{
+    emit_royalties_distributed, emit_royalty_cap_updated, RoyaltiesDistributedEvent,
+};
+use crate::types::{
+    validate_royalty_percentage, Asset, DistributionResult, RoyaltyDistribution, MAX_ROYALTY_BPS,
+};
 use crate::utils::asset_utils;
 use crate::utils::math_utils;
 use soroban_sdk::{contracttype, symbol_short, Address, Bytes, Env, Map, Symbol, Vec};
 
 // Storage keys
 const ROYALTY_CONFIGS: Symbol = symbol_short!("roy_cfgs");
-const ADMIN_CONFIG_KEY: Symbol = symbol_short!("admin_cfg");
+pub(crate) const ADMIN_CONFIG_KEY: Symbol = symbol_short!("admin_cfg");
 
 // Type alias for royalty key
 type RoyaltyKey = Bytes;
@@ -446,12 +450,10 @@ impl RoyaltyDistributor {
         config.max_royalty_percentage = new_cap;
 
         // Store updated config
-        env.storage()
-            .instance()
-            .set(&ADMIN_CONFIG_KEY, &config);
+        env.storage().instance().set(&ADMIN_CONFIG_KEY, &config);
 
         // Emit event for the cap update
-        events::emit_royalty_cap_updated(env, old_cap, new_cap);
+        emit_royalty_cap_updated(env, old_cap, new_cap);
 
         Ok(())
     }
@@ -560,25 +562,4 @@ impl RoyaltyEnforcer {
 
         Ok(price)
     }
-}
-
-// ─── Events ──────────────────────────────────────────────────────────────────
-
-/// Emitted when the admin updates the max royalty cap.
-#[contractevent(topics = ["royalty_cap_updated"])]
-#[derive(Clone, Debug, PartialEq)]
-pub struct RoyaltyCapUpdated {
-    pub old_cap: u64,
-    pub new_cap: u64,
-    pub updated_at: u64,
-}
-
-/// Emit royalty cap updated event.
-pub fn emit_royalty_cap_updated(env: &Env, old_cap: u64, new_cap: u64) {
-    let payload = RoyaltyCapUpdated {
-        old_cap,
-        new_cap,
-        updated_at: env.ledger().timestamp(),
-    };
-    payload.publish(env);
 }
