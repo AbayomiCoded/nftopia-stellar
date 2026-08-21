@@ -1,7 +1,10 @@
 use crate::access_control;
 use crate::error::ContractError;
 use crate::events;
-use crate::storage::{DataKey, MAX_BATCH_SIZE, MAX_SUPPLY_HARD_CAP};
+use crate::storage::{
+    DataKey, MAX_BATCH_SIZE, MAX_SUPPLY_HARD_CAP, MIN_SUPPLY_CAP, validate_supply_cap,
+    would_exceed_supply_cap,
+};
 use crate::transfer;
 use crate::types::{CollectionConfig, RoyaltyInfo, TokenAttribute, TokenData};
 use soroban_sdk::{Address, Env, String, Vec};
@@ -18,6 +21,17 @@ fn next_token_id(env: &Env) -> u64 {
     id
 }
 
+/// Checks if minting is allowed based on the supply cap.
+///
+/// # Validation
+/// - Requires CollectionConfig to exist (NotFound if missing)
+/// - Requires max_supply to be set (mandatory)
+/// - Validates that total_supply + 1 <= max_supply
+///
+/// # Returns
+/// * `Ok(())` if minting is allowed
+/// * `Err(ContractError::NotFound)` if CollectionConfig not found
+/// * `Err(ContractError::SupplyLimitExceeded)` if supply cap would be exceeded
 fn check_supply(env: &Env) -> Result<(), ContractError> {
     let config: CollectionConfig = env
         .storage()
@@ -31,11 +45,52 @@ fn check_supply(env: &Env) -> Result<(), ContractError> {
         .get(&DataKey::TotalSupply)
         .unwrap_or(0);
 
-    if let Some(max) = config.max_supply
-        && total >= max
-    {
+    // max_supply is now mandatory (u64, not Option)
+    if total >= config.max_supply {
         return Err(ContractError::SupplyLimitExceeded);
     }
+
+    // Additional safety: ensure we never exceed the hard cap even if config is misconfigured
+    if total >= MAX_SUPPLY_HARD_CAP {
+        return Err(ContractError::SupplyLimitExceeded);
+    }
+
+    Ok(())
+}
+
+/// Checks if a batch mint of size n would exceed the supply cap.
+///
+/// # Validation
+/// - Requires CollectionConfig to exist
+/// - Validates that total_supply + n <= max_supply
+/// - Validates that total_supply + n <= MAX_SUPPLY_HARD_CAP
+///
+/// # Returns
+/// * `Ok(())` if the batch fits within the supply cap
+/// * `Err(ContractError::SupplyLimitExceeded)` if the batch would exceed the cap
+fn check_batch_supply(env: &Env, n: u32) -> Result<(), ContractError> {
+    let config: CollectionConfig = env
+        .storage()
+        .instance()
+        .get(&DataKey::CollectionConfig)
+        .ok_or(ContractError::NotFound)?;
+
+    let total: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::TotalSupply)
+        .unwrap_or(0);
+
+    // Check against collection max supply
+    if would_exceed_supply_cap(total, n as u64, config.max_supply) {
+        return Err(ContractError::SupplyLimitExceeded);
+    }
+
+    // Check against hard cap
+    if would_exceed_supply_cap(total, n as u64, MAX_SUPPLY_HARD_CAP) {
+        return Err(ContractError::SupplyLimitExceeded);
+    }
+
     Ok(())
 }
 
@@ -46,6 +101,8 @@ fn mint_one(
     metadata_uri: String,
     attributes: Vec<TokenAttribute>,
     royalty_override: Option<RoyaltyInfo>,
+    edition_number: Option<u32>,
+    total_editions: Option<u32>,
 ) -> Result<u64, ContractError> {
     check_supply(env)?;
 
@@ -70,8 +127,8 @@ fn mint_one(
         royalty_percentage: royalty.percentage,
         royalty_recipient: royalty.recipient,
         attributes,
-        edition_number: None,
-        total_editions: None,
+        edition_number,
+        total_editions,
     };
 
     env.storage()
@@ -95,11 +152,32 @@ fn mint_one(
         .instance()
         .get(&DataKey::TotalSupply)
         .unwrap_or(0);
+    let new_total = total + 1;
     env.storage()
         .instance()
-        .set(&DataKey::TotalSupply, &(total + 1));
+        .set(&DataKey::TotalSupply, &new_total);
 
+    // Get config for supply events
+    let config: CollectionConfig = env
+        .storage()
+        .instance()
+        .get(&DataKey::CollectionConfig)
+        .ok_or(ContractError::NotFound)?;
+
+    // Emit mint event
     events::emit_mint(env, to.clone(), token_id);
+
+    // Emit supply status event when approaching the cap
+    let remaining = get_remaining_supply(env);
+    if remaining <= 10 && remaining > 0 {
+        events::emit_supply_approaching_cap(env, remaining, config.max_supply);
+    }
+
+    // Emit cap reached event when supply hits the cap
+    if new_total == config.max_supply {
+        events::emit_supply_cap_reached(env, new_total, config.max_supply);
+    }
+
     Ok(token_id)
 }
 
@@ -122,7 +200,16 @@ pub fn mint(
         return Err(ContractError::ContractPaused);
     }
 
-    mint_one(env, caller, &to, metadata_uri, attributes, royalty_override)
+    mint_one(
+        env,
+        caller,
+        &to,
+        metadata_uri,
+        attributes,
+        royalty_override,
+        None,
+        None,
+    )
 }
 
 pub fn batch_mint(
@@ -151,25 +238,8 @@ pub fn batch_mint(
         return Err(ContractError::BatchTooLarge);
     }
 
-    // Check total supply headroom up front
-    let config: CollectionConfig = env
-        .storage()
-        .instance()
-        .get(&DataKey::CollectionConfig)
-        .ok_or(ContractError::NotFound)?;
-    let total: u64 = env
-        .storage()
-        .instance()
-        .get(&DataKey::TotalSupply)
-        .unwrap_or(0);
-    if let Some(max) = config.max_supply
-        && total + n as u64 > max
-    {
-        return Err(ContractError::SupplyLimitExceeded);
-    }
-    if total + n as u64 > MAX_SUPPLY_HARD_CAP {
-        return Err(ContractError::SupplyLimitExceeded);
-    }
+    // Check total supply headroom up front using the improved check
+    check_batch_supply(env, n as u32)?;
 
     let mut ids: Vec<u64> = Vec::new(env);
     for i in 0..n {
@@ -179,6 +249,8 @@ pub fn batch_mint(
             &recipients.get(i).unwrap(),
             metadata_uris.get(i).unwrap(),
             attributes.get(i).unwrap(),
+            None,
+            None,
             None,
         )?;
         ids.push_back(id);
@@ -252,11 +324,6 @@ pub fn burn(env: &Env, caller: &Address, token_id: u64) -> Result<(), ContractEr
     env.storage()
         .persistent()
         .remove(&DataKey::TokenApproved(token_id));
-
-    // Remove any approval-for-all entries that reference this token
-    // Note: We need to iterate through all operators or use a different approach
-    // For now, we remove the token-specific approval. Approval-for-all is per-owner,
-    // not per-token, so it doesn't need to be cleaned up for individual burns.
 
     // 5. Remove token data and ownership
     env.storage()
@@ -416,4 +483,104 @@ pub fn total_supply(env: &Env) -> u64 {
         .instance()
         .get(&DataKey::TotalSupply)
         .unwrap_or(0)
+}
+
+/// Gets the remaining supply available for minting.
+///
+/// # Returns
+/// * The number of tokens that can still be minted before reaching the cap
+/// * 0 if the cap has been reached or exceeded
+pub fn get_remaining_supply(env: &Env) -> u64 {
+    let config: Result<CollectionConfig, _> = env
+        .storage()
+        .instance()
+        .get(&DataKey::CollectionConfig)
+        .ok_or(ContractError::NotFound);
+
+    let total: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::TotalSupply)
+        .unwrap_or(0);
+
+    match config {
+        Ok(config) => {
+            if total >= config.max_supply {
+                0
+            } else {
+                config.max_supply - total
+            }
+        }
+        Err(_) => 0,
+    }
+}
+
+/// Updates the maximum supply cap for the collection.
+///
+/// # Authorization
+/// Only the contract admin can call this function.
+///
+/// # Validation
+/// - New cap must be >= MIN_SUPPLY_CAP
+/// - New cap must be <= MAX_SUPPLY_HARD_CAP
+/// - New cap must be >= current total supply (cannot reduce below existing supply)
+///
+/// # Returns
+/// * `Ok(())` if the cap was successfully updated
+/// * `Err(ContractError::NotAuthorized)` if caller is not admin
+/// * `Err(ContractError::SupplyCapTooLow)` if cap < MIN_SUPPLY_CAP
+/// * `Err(ContractError::SupplyCapTooHigh)` if cap > MAX_SUPPLY_HARD_CAP
+/// * `Err(ContractError::SupplyCapBelowCurrentSupply)` if cap < current total supply
+pub fn update_max_supply(env: &Env, caller: &Address, new_cap: u64) -> Result<(), ContractError> {
+    // Authorization: only admin can update the cap
+    if !access_control::has_role(env, caller, crate::types::role::ADMIN) {
+        return Err(ContractError::NotAuthorized);
+    }
+
+    // Validate the new cap
+    validate_supply_cap(new_cap)?;
+
+    // Ensure new cap is not below current supply
+    let current_supply: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::TotalSupply)
+        .unwrap_or(0);
+
+    if new_cap < current_supply {
+        return Err(ContractError::SupplyCapBelowCurrentSupply);
+    }
+
+    // Update the collection config
+    let mut config: CollectionConfig = env
+        .storage()
+        .instance()
+        .get(&DataKey::CollectionConfig)
+        .ok_or(ContractError::NotFound)?;
+
+    let old_cap = config.max_supply;
+    config.max_supply = new_cap;
+
+    env.storage()
+        .instance()
+        .set(&DataKey::CollectionConfig, &config);
+
+    // Emit event for the cap update
+    events::emit_supply_cap_updated(env, old_cap, new_cap);
+
+    Ok(())
+}
+
+/// Gets the current supply cap.
+///
+/// # Returns
+/// * The current max_supply from CollectionConfig
+/// * `Err(ContractError::NotFound)` if CollectionConfig not found
+pub fn get_max_supply(env: &Env) -> Result<u64, ContractError> {
+    let config: CollectionConfig = env
+        .storage()
+        .instance()
+        .get(&DataKey::CollectionConfig)
+        .ok_or(ContractError::NotFound)?;
+    Ok(config.max_supply)
 }

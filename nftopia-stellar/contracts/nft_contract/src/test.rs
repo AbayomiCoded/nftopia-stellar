@@ -737,3 +737,419 @@ fn test_batch_burn_with_non_existent_token_fails() {
     assert_eq!(client.total_supply(), 1);
     assert_eq!(client.owner_of(&id1), owner);
 }
+
+// ─── Supply Cap Tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_initialize_with_valid_supply_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Test Collection"),
+        symbol: String::from_str(&env, "TEST"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 100, // Valid: > 0 and <= 1,000,000
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+    assert_eq!(client.get_max_supply().unwrap(), 100);
+}
+
+#[test]
+fn test_initialize_with_zero_supply_cap_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Test Collection"),
+        symbol: String::from_str(&env, "TEST"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 0, // Invalid: must be > 0
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    let result = client.try_initialize(&admin, &config, &None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_initialize_with_excessive_supply_cap_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Test Collection"),
+        symbol: String::from_str(&env, "TEST"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 2_000_000, // Invalid: > MAX_SUPPLY_HARD_CAP (1,000,000)
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    let result = client.try_initialize(&admin, &config, &None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_mint_at_exact_cap_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Limited"),
+        symbol: String::from_str(&env, "LTD"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 3,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    let user = Address::generate(&env);
+    let uri = String::from_str(&env, "ipfs://hash");
+
+    // Mint exactly 3 tokens (at the cap)
+    for _ in 0..3u32 {
+        client.mint(
+            &admin,
+            &user,
+            &uri,
+            &Vec::new(&env),
+            &None,
+        );
+    }
+
+    assert_eq!(client.total_supply(), 3);
+    assert_eq!(client.remaining_supply(), 0);
+}
+
+#[test]
+fn test_mint_exceeding_cap_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Limited"),
+        symbol: String::from_str(&env, "LTD"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 2,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    let user = Address::generate(&env);
+    let uri = String::from_str(&env, "ipfs://hash");
+
+    // Mint 2 tokens (at the cap)
+    for _ in 0..2u32 {
+        client.mint(
+            &admin,
+            &user,
+            &uri,
+            &Vec::new(&env),
+            &None,
+        );
+    }
+
+    assert_eq!(client.total_supply(), 2);
+
+    // Third mint should fail
+    let result = client.try_mint(
+        &admin,
+        &user,
+        &uri,
+        &Vec::new(&env),
+        &None,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_batch_mint_at_exact_cap_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Limited"),
+        symbol: String::from_str(&env, "LTD"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 5,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    let mut recipients: Vec<Address> = Vec::new(&env);
+    let mut uris: Vec<String> = Vec::new(&env);
+    let mut all_attrs: Vec<Vec<TokenAttribute>> = Vec::new(&env);
+
+    for _ in 0..5u32 {
+        recipients.push_back(Address::generate(&env));
+        uris.push_back(String::from_str(&env, "ipfs://hash"));
+        all_attrs.push_back(Vec::new(&env));
+    }
+
+    let ids = client.batch_mint(&admin, &recipients, &uris, &all_attrs);
+    assert_eq!(ids.len(), 5);
+    assert_eq!(client.total_supply(), 5);
+    assert_eq!(client.remaining_supply(), 0);
+}
+
+#[test]
+fn test_batch_mint_exceeding_cap_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Limited"),
+        symbol: String::from_str(&env, "LTD"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 3,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    let mut recipients: Vec<Address> = Vec::new(&env);
+    let mut uris: Vec<String> = Vec::new(&env);
+    let mut all_attrs: Vec<Vec<TokenAttribute>> = Vec::new(&env);
+
+    for _ in 0..4u32 {
+        recipients.push_back(Address::generate(&env));
+        uris.push_back(String::from_str(&env, "ipfs://hash"));
+        all_attrs.push_back(Vec::new(&env));
+    }
+
+    let result = client.try_batch_mint(&admin, &recipients, &uris, &all_attrs);
+    assert!(result.is_err());
+    assert_eq!(client.total_supply(), 0);
+}
+
+#[test]
+fn test_update_max_supply_downward_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Test"),
+        symbol: String::from_str(&env, "TST"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 1000,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    // Mint 100 tokens
+    let user = Address::generate(&env);
+    let uri = String::from_str(&env, "ipfs://hash");
+    for _ in 0..100u32 {
+        client.mint(&admin, &user, &uri, &Vec::new(&env), &None);
+    }
+
+    assert_eq!(client.total_supply(), 100);
+
+    // Update cap to 500 (>= current supply)
+    client.update_max_supply(&admin, &500);
+    assert_eq!(client.get_max_supply().unwrap(), 500);
+    assert_eq!(client.remaining_supply(), 400);
+}
+
+#[test]
+fn test_update_max_supply_below_current_supply_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Test"),
+        symbol: String::from_str(&env, "TST"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 1000,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    // Mint 100 tokens
+    let user = Address::generate(&env);
+    let uri = String::from_str(&env, "ipfs://hash");
+    for _ in 0..100u32 {
+        client.mint(&admin, &user, &uri, &Vec::new(&env), &None);
+    }
+
+    assert_eq!(client.total_supply(), 100);
+
+    // Update cap to 50 (< current supply) - should fail
+    let result = client.try_update_max_supply(&admin, &50);
+    assert!(result.is_err());
+    assert_eq!(client.get_max_supply().unwrap(), 1000);
+}
+
+#[test]
+fn test_update_max_supply_by_non_admin_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Test"),
+        symbol: String::from_str(&env, "TST"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 1000,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    let non_admin = Address::generate(&env);
+    let result = client.try_update_max_supply(&non_admin, &500);
+    assert!(result.is_err());
+    assert_eq!(client.get_max_supply().unwrap(), 1000);
+}
+
+#[test]
+fn test_remaining_supply_accurate() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Test"),
+        symbol: String::from_str(&env, "TST"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 100,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    assert_eq!(client.remaining_supply(), 100);
+
+    let user = Address::generate(&env);
+    let uri = String::from_str(&env, "ipfs://hash");
+
+    for i in 0..50u32 {
+        client.mint(&admin, &user, &uri, &Vec::new(&env), &None);
+        assert_eq!(client.remaining_supply(), 100 - (i + 1));
+    }
+
+    assert_eq!(client.remaining_supply(), 50);
+}
+
+#[test]
+fn test_update_max_supply_to_zero_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Test"),
+        symbol: String::from_str(&env, "TST"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 100,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    let result = client.try_update_max_supply(&admin, &0);
+    assert!(result.is_err());
+    assert_eq!(client.get_max_supply().unwrap(), 100);
+}
+
+#[test]
+fn test_update_max_supply_above_hard_cap_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NftContract, ());
+    let client = NftContractClient::new(&env, &contract_id);
+
+    let config = CollectionConfig {
+        name: String::from_str(&env, "Test"),
+        symbol: String::from_str(&env, "TST"),
+        base_uri: String::from_str(&env, ""),
+        max_supply: 100,
+        mint_price: None,
+        is_revealed: true,
+        metadata_is_frozen: false,
+    };
+
+    client.initialize(&admin, &config, &None);
+
+    let result = client.try_update_max_supply(&admin, &2_000_000);
+    assert!(result.is_err());
+    assert_eq!(client.get_max_supply().unwrap(), 100);
+}
