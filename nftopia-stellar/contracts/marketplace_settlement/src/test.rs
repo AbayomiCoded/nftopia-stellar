@@ -949,7 +949,10 @@ fn test_initialize_swap_rejects_duration_over_max() {
             SALE_PRICE,
             cfg.max_swap_duration + 1,
         );
-        assert_eq!(res.err(), Some(SwapTimeoutError::InvalidSwapDuration.into()));
+        assert_eq!(
+            res.err(),
+            Some(SwapTimeoutError::InvalidSwapDuration.into())
+        );
     });
 }
 
@@ -1189,7 +1192,10 @@ fn test_cancel_swap_after_expiry_still_refunds() {
     assert_eq!(client.get_atomic_swap(&txid).state, SwapState::Failed);
 
     let res = env.as_contract(&cid, || AtomicSwapEngine::cancel_swap(&env, txid, &seller));
-    assert_eq!(res.err(), Some(SwapTimeoutError::SwapAlreadyFinalized.into()));
+    assert_eq!(
+        res.err(),
+        Some(SwapTimeoutError::SwapAlreadyFinalized.into())
+    );
 }
 
 #[test]
@@ -1299,6 +1305,36 @@ fn test_swap_timeout_defaults_applied_without_initialization() {
         client.get_swap_timeout_config(),
         SwapTimeoutConfig::defaults()
     );
+}
+
+#[test]
+fn test_pause_halts_cleanup_but_not_the_escrow_backstop() {
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+    let backstop = swap.seller_escrow.get(0).unwrap().escrow_expires_at;
+    let admin = stored_admin(&env, &cid);
+    let anyone = Address::generate(&env);
+
+    confirm_expiry(&env, swap.expires_at, swap.expires_at_ledger, &cfg);
+    client.pause_contract(&admin, &None, &None);
+
+    // Routine timeout processing stops with the circuit breaker.
+    assert_contract_err(
+        client.try_cleanup_expired_swaps(&anyone, &0u32),
+        SettlementError::ContractPaused,
+    );
+    assert_contract_err(
+        client.try_expire_swap(&txid, &anyone),
+        SettlementError::ContractPaused,
+    );
+
+    // The last-resort backstop does not, or a paused contract could hold deposits
+    // past every deadline.
+    env.ledger().set_timestamp(backstop + 1);
+    assert_eq!(client.reclaim_expired_escrow(&txid, &anyone), 2);
+    assert_eq!(client.get_atomic_swap(&txid).state, SwapState::Failed);
 }
 
 // ─── Time Math ───────────────────────────────────────────────────────────────

@@ -70,7 +70,8 @@ This contract implements a secure, efficient marketplace settlement system with 
 - `get_swap_timeout_config()`: Read the timeout policy in force
 
 ### Administration
-- `initialize()`: Initialize the contract, optionally with a swap timeout policy
+- `initialize()`: Initialize the contract with a fee config and, optionally, a swap
+  timeout policy
 - `update_fee_config()`: Update fee configuration
 - `update_swap_timeout_config()`: Update the swap timeout policy (admin only)
 - `emergency_withdraw()`: Emergency withdrawal (admin only)
@@ -168,6 +169,18 @@ emergency) can be called in any order without paying a holder twice.
 
 `SwapExpired` and `SwapAutoRefunded` events are emitted for off-chain monitoring of
 timeout-driven refunds.
+
+`cleanup_expired_swaps` and `expire_swap` respect the pause circuit breaker, like
+`cancel_transaction`. `reclaim_expired_escrow` deliberately does not: it is a
+last-resort recovery path like `emergency_withdraw`, and gating it would let a paused
+contract hold deposits past every deadline.
+
+Timeout error codes live in a separate `SwapTimeoutError` enum (`SwapExpired`,
+`NotYetExpired`, `SwapAlreadyFinalized`, `InvalidSwapDuration`,
+`InvalidTimeoutConfig`) because `SettlementError` is at the 50-case spec limit. They
+are converted into `SettlementError` at the contract boundary — `SwapExpired` surfaces
+as `TransactionExpired`, `NotYetExpired` as `InvalidState`, `SwapAlreadyFinalized` as
+`InvalidTransactionState`, `InvalidSwapDuration` as `InvalidAmount`.
 
 The policy is set by `SwapTimeoutConfig`, supplied at `initialize()` or updated by the
 admin via `update_swap_timeout_config()`:
