@@ -210,6 +210,42 @@ pub struct DutchAuctionData {
     pub last_price_update: u64,
 }
 
+// Atomic swap timeout configuration.
+//
+// Mainnet ledger close intervals are variable (typically ~5s, occasionally longer)
+// and `env.ledger().timestamp()` reports the close time of the current ledger rather
+// than a real-world clock. Every field here exists to absorb that variability:
+//
+// * `grace_period_seconds` keeps a transaction that was submitted just before a
+//   deadline from being rejected because it landed in a later-than-expected ledger.
+// * `ledger_tolerance_blocks` requires a number of ledgers to close past the
+//   projected expiry ledger before an expiry is treated as confirmed, so a single
+//   drifting timestamp cannot force an irreversible refund on its own.
+// * `escrow_buffer_seconds` gives every escrow holding a hard backstop after which
+//   it is unconditionally reclaimable, so funds can never be locked forever.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SwapTimeoutConfig {
+    pub max_swap_duration: u64,     // Upper bound accepted for a swap lifetime
+    pub default_swap_duration: u64, // Applied when a caller passes 0
+    pub grace_period_seconds: u64,  // Tolerance added to `expires_at` before rejecting
+    pub ledger_tolerance_blocks: u32, // Ledgers that must close past projected expiry
+    pub escrow_buffer_seconds: u64, // Added to swap expiry for the escrow backstop
+}
+
+impl SwapTimeoutConfig {
+    /// Conservative mainnet defaults, applied until an admin overrides them.
+    pub fn defaults() -> Self {
+        Self {
+            max_swap_duration: 2_592_000, // 30 days, matches max_transaction_duration
+            default_swap_duration: 604_800, // 7 days
+            grace_period_seconds: 300,    // 5 minutes of ledger latency
+            ledger_tolerance_blocks: 5,   // ~25s of ledger closes at 5s/ledger
+            escrow_buffer_seconds: 86_400, // 1 day after swap expiry
+        }
+    }
+}
+
 // Admin configuration
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

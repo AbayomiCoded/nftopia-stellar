@@ -1,5 +1,8 @@
 use soroban_sdk::{contracterror, contracttype};
 
+// NOTE: the contract spec XDR caps an error enum at 50 cases and this enum is at
+// that limit. Adding a variant without removing one fails the build with a
+// `LengthExceedsMax` panic from the `contracterror` macro.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum SettlementError {
@@ -19,6 +22,15 @@ pub enum SettlementError {
     TransactionCancelled = 103,
     TransactionDisputed = 104,
     InvalidTransactionState = 105,
+
+    // Atomic swap / escrow timeout errors
+    SwapExpired = 110,
+    /// A timeout-triggered action was attempted before its deadline passed.
+    /// Covers both the swap deadline and the per-holding escrow backstop.
+    NotYetExpired = 111,
+    SwapAlreadyFinalized = 112,
+    InvalidSwapDuration = 113,
+    InvalidTimeoutConfig = 114,
 
     // Auction errors
     AuctionNotFound = 200,

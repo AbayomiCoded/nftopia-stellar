@@ -12,7 +12,7 @@ use crate::storage::{
 };
 use crate::types::{
     AdminConfig, Asset, AuctionTransaction, AuctionType, BundleTransaction, ExecutionResult,
-    FeeConfig, SaleTransaction, TradeTransaction, VolumeTier,
+    FeeConfig, SaleTransaction, SwapTimeoutConfig, TradeTransaction, VolumeTier,
 };
 use crate::utils::{asset_utils, time_utils};
 use soroban_sdk::{contract, contractimpl, symbol_short, Address, Bytes, Env, Symbol, Vec};
@@ -26,7 +26,16 @@ pub struct MarketplaceSettlement;
 #[contractimpl]
 impl MarketplaceSettlement {
     /// Initialize the contract with admin configuration
-    pub fn initialize(env: Env, admin: Address) -> Result<(), SettlementError> {
+    ///
+    /// `swap_timeout_config` sets the atomic swap timeout policy up front; passing
+    /// `None` applies the conservative mainnet defaults from
+    /// [`SwapTimeoutConfig::defaults`], which an admin can change later via
+    /// `update_swap_timeout_config`.
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        swap_timeout_config: Option<SwapTimeoutConfig>,
+    ) -> Result<(), SettlementError> {
         // Set default configurations
         let admin_config = AdminConfig {
             admin: admin.clone(),
@@ -73,6 +82,10 @@ impl MarketplaceSettlement {
         // Set default dispute config
         let dispute_config = crate::dispute_resolution::DisputeConfig::default();
         DisputeResolutionManager::update_dispute_config(&env, &dispute_config, &admin)?;
+
+        // Set atomic swap timeout policy
+        let swap_config = swap_timeout_config.unwrap_or_else(SwapTimeoutConfig::defaults);
+        AtomicSwapEngine::set_timeout_config(&env, &swap_config, &admin)?;
 
         Ok(())
     }
@@ -135,7 +148,7 @@ impl MarketplaceSettlement {
 
             SaleTransactionStore::put(&env, &sale)?;
 
-            // Initialize atomic swap
+            // Initialize atomic swap, expiring in step with the sale itself
             AtomicSwapEngine::initialize_swap(
                 &env,
                 transaction_id,
@@ -145,6 +158,7 @@ impl MarketplaceSettlement {
                 token_id,
                 &currency,
                 price,
+                duration_seconds,
             )?;
 
             Ok(transaction_id)
@@ -640,6 +654,93 @@ impl MarketplaceSettlement {
     /// Cleanup expired commitments
     pub fn cleanup_expired_commitments(env: Env) -> Result<(), SettlementError> {
         AuctionEngine::cleanup_expired_commitments(&env)
+    }
+
+    /// Sweep expired atomic swaps, marking them failed and refunding escrow
+    ///
+    /// Callable by anyone: the only thing it can do is return escrowed assets to the
+    /// parties that deposited them. `limit` bounds how many swaps a single call
+    /// expires (0 applies the built-in default); repeat until it returns 0.
+    pub fn cleanup_expired_swaps(
+        env: Env,
+        caller: Address,
+        limit: u32,
+    ) -> Result<u32, SettlementError> {
+        caller.require_auth();
+        ReentrancyGuard::execute(&env, &caller.clone(), "cleanup_expired_swaps", || {
+            AtomicSwapEngine::cleanup_expired_swaps(&env, &caller, limit)
+        })
+    }
+
+    /// Expire one atomic swap by transaction id, refunding its escrow
+    ///
+    /// Callable by anyone. Fails with `SwapNotExpired` until both the timestamp
+    /// deadline and the ledger-sequence tolerance have passed.
+    pub fn expire_swap(
+        env: Env,
+        transaction_id: u64,
+        caller: Address,
+    ) -> Result<u32, SettlementError> {
+        caller.require_auth();
+        ReentrancyGuard::execute(&env, &caller.clone(), "expire_swap", || {
+            AtomicSwapEngine::expire_swap(&env, transaction_id, &caller)
+        })
+    }
+
+    /// Reclaim escrow holdings that are past their own backstop deadline
+    ///
+    /// Callable by anyone; funds only ever return to the original depositor. This is
+    /// the guarantee that escrowed value cannot stay locked indefinitely even if a
+    /// swap is never completed, cancelled, or expired.
+    pub fn reclaim_expired_escrow(
+        env: Env,
+        transaction_id: u64,
+        caller: Address,
+    ) -> Result<u32, SettlementError> {
+        caller.require_auth();
+        ReentrancyGuard::execute(&env, &caller.clone(), "reclaim_expired_escrow", || {
+            AtomicSwapEngine::reclaim_expired_escrow(&env, transaction_id, &caller)
+        })
+    }
+
+    /// Update the atomic swap timeout policy (admin only)
+    pub fn update_swap_timeout_config(
+        env: Env,
+        new_config: SwapTimeoutConfig,
+        admin: Address,
+    ) -> Result<(), SettlementError> {
+        admin.require_auth();
+        ReentrancyGuard::execute(&env, &admin, "update_swap_timeout_config", || {
+            let admin_config: AdminConfig = env
+                .storage()
+                .instance()
+                .get(&symbol_short!("admin_cfg"))
+                .ok_or(SettlementError::Unauthorized)?;
+
+            if admin_config.admin != admin {
+                return Err(SettlementError::Unauthorized);
+            }
+
+            AtomicSwapEngine::set_timeout_config(&env, &new_config, &admin)
+        })
+    }
+
+    /// Get the atomic swap timeout policy currently in force
+    pub fn get_swap_timeout_config(env: Env) -> SwapTimeoutConfig {
+        AtomicSwapEngine::timeout_config(&env)
+    }
+
+    /// Get the atomic swap backing a transaction
+    pub fn get_atomic_swap(
+        env: Env,
+        transaction_id: u64,
+    ) -> Result<crate::atomic_swap::AtomicSwap, SettlementError> {
+        AtomicSwapEngine::get_swap_by_transaction(&env, transaction_id)
+    }
+
+    /// Seconds left before a swap's deadline (including grace); 0 once past it
+    pub fn get_swap_time_remaining(env: Env, transaction_id: u64) -> Result<u64, SettlementError> {
+        AtomicSwapEngine::time_remaining(&env, transaction_id)
     }
 
     /// Add allowed NFT contract (admin only)
