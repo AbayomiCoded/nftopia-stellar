@@ -1,4 +1,4 @@
-use crate::error::SettlementError;
+use crate::error::{SettlementError, SwapTimeoutError};
 use crate::events::{SwapAutoRefundedEvent, SwapExpiredEvent, SwapTimeoutConfigUpdatedEvent};
 use crate::security::reentrancy_guard::ReentrancyGuard;
 use crate::types::{Asset, ExecutionResult, SwapTimeoutConfig};
@@ -117,22 +117,25 @@ impl AtomicSwapEngine {
     /// Reject configurations that would disable expiry or overflow the time math.
     pub fn validate_timeout_config(config: &SwapTimeoutConfig) -> Result<(), SettlementError> {
         if config.max_swap_duration == 0 || config.default_swap_duration == 0 {
-            return Err(SettlementError::InvalidTimeoutConfig);
+            return Err(SwapTimeoutError::InvalidTimeoutConfig.into());
         }
         if config.default_swap_duration > config.max_swap_duration {
-            return Err(SettlementError::InvalidTimeoutConfig);
+            return Err(SwapTimeoutError::InvalidTimeoutConfig.into());
         }
         // A tolerance of zero would let a single ledger's timestamp confirm an
         // expiry, which is exactly the mainnet failure mode being guarded against.
         if config.ledger_tolerance_blocks == 0 {
-            return Err(SettlementError::InvalidTimeoutConfig);
+            return Err(SwapTimeoutError::InvalidTimeoutConfig.into());
         }
         // Guard the deadline arithmetic: expiry + grace + escrow buffer must fit.
-        config
+        let fits = config
             .max_swap_duration
             .checked_add(config.grace_period_seconds)
             .and_then(|v| v.checked_add(config.escrow_buffer_seconds))
-            .ok_or(SettlementError::InvalidTimeoutConfig)?;
+            .is_some();
+        if !fits {
+            return Err(SwapTimeoutError::InvalidTimeoutConfig.into());
+        }
         Ok(())
     }
 
@@ -322,7 +325,7 @@ impl AtomicSwapEngine {
         let config = Self::timeout_config(env);
 
         if swap.state.is_terminal() {
-            return Err(SettlementError::SwapAlreadyFinalized);
+            return Err(SwapTimeoutError::SwapAlreadyFinalized.into());
         }
 
         // Only seller or buyer can cancel
@@ -357,11 +360,11 @@ impl AtomicSwapEngine {
         let config = Self::timeout_config(env);
 
         if swap.state.is_terminal() {
-            return Err(SettlementError::SwapAlreadyFinalized);
+            return Err(SwapTimeoutError::SwapAlreadyFinalized.into());
         }
 
         if !Self::is_expiry_confirmed(env, &swap, &config)? {
-            return Err(SettlementError::NotYetExpired);
+            return Err(SwapTimeoutError::NotYetExpired.into());
         }
 
         let refunded = Self::finalize_expiry(env, &mut swap, &config)?;
@@ -440,7 +443,7 @@ impl AtomicSwapEngine {
 
         let refunded = Self::refund_holdings(env, &mut swap, true, true)?;
         if refunded == 0 {
-            return Err(SettlementError::NotYetExpired);
+            return Err(SwapTimeoutError::NotYetExpired.into());
         }
 
         // An executed swap keeps its state; anything else is now dead.
@@ -521,10 +524,10 @@ impl AtomicSwapEngine {
         config: &SwapTimeoutConfig,
     ) -> Result<(), SettlementError> {
         if swap.state.is_terminal() {
-            return Err(SettlementError::SwapAlreadyFinalized);
+            return Err(SwapTimeoutError::SwapAlreadyFinalized.into());
         }
         if Self::is_expired(env, swap, config)? {
-            return Err(SettlementError::SwapExpired);
+            return Err(SwapTimeoutError::SwapExpired.into());
         }
         Ok(())
     }

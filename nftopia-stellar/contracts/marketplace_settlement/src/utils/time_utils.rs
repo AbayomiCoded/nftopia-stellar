@@ -1,4 +1,4 @@
-use crate::error::SettlementError;
+use crate::error::{SettlementError, SwapTimeoutError};
 use soroban_sdk::Env;
 
 /// Nominal ledger close interval in seconds.
@@ -83,7 +83,7 @@ pub fn has_ledger_tolerance_passed(expiry_ledger: u32, tolerance_blocks: u32, en
 /// Validate a caller-supplied duration against a configured maximum.
 pub fn validate_duration(duration_seconds: u64, max_duration: u64) -> Result<(), SettlementError> {
     if duration_seconds == 0 || duration_seconds > max_duration {
-        return Err(SettlementError::InvalidSwapDuration);
+        return Err(SwapTimeoutError::InvalidSwapDuration.into());
     }
     Ok(())
 }

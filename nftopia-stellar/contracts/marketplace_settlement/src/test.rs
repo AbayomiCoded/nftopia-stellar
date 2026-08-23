@@ -125,7 +125,7 @@ fn test_reinitialize_fee_config_fails() {
     let (env, _cid, client, admin) = new_env();
     let fee_config = default_fee_config(&env, admin.clone());
     // A second initialize on the same contract must fail with FeeAlreadyInitialized.
-    let result = client.try_initialize(&admin, &fee_config);
+    let result = client.try_initialize(&admin, &fee_config, &None);
     assert!(result.is_err());
 }
 
