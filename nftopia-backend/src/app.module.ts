@@ -39,6 +39,7 @@ import { getLoggerConfig } from './config/logger.config';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { SocialModule } from './modules/social/social.module';
 import { PaymentModule } from './modules/payment/payment.module';
+import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
 // import { CorsConfig } from './config/cors.config';
 
 @Module({
@@ -162,6 +163,7 @@ import { PaymentModule } from './modules/payment/payment.module';
     MetricsModule,
     SocialModule,
     PaymentModule,
+    AiAgentModule,
   ],
   controllers: [AppController],
   providers: [
