@@ -26,7 +26,7 @@ import {
   CollectionStatsResult,
 } from './interfaces/collection.interface';
 
-@Controller('api/v1/collections')
+@Controller('collections')
 export class CollectionController {
   constructor(private readonly collectionService: CollectionService) {}
 

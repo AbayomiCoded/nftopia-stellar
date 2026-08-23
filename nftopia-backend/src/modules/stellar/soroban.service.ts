@@ -5,6 +5,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  type OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -21,6 +22,14 @@ import {
   StrKey,
 } from 'stellar-sdk';
 import { Server as SorobanServer, assembleTransaction } from 'stellar-sdk/rpc';
+import {
+  calculateExponentialBackoffDelayMs,
+  SorobanRpcService,
+} from '../../services/soroban-rpc.service';
+import {
+  getStellarConfig,
+  type StellarRuntimeConfig,
+} from '../../config/stellar.config';
 
 type SorobanArgType =
   | 'address'
@@ -57,10 +66,126 @@ export type InvokeContractResult = {
 };
 
 @Injectable()
-export class SorobanService {
+export class SorobanService implements OnModuleInit {
   private readonly logger = new Logger(SorobanService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly sorobanRpcService: SorobanRpcService,
+  ) {}
+
+  /**
+   * Validate the Soroban RPC configuration at startup and verify the endpoint
+   * is reachable. Invalid configuration (malformed URL, or a missing URL in
+   * production) throws here so the application fails fast with a clear error
+   * instead of failing later with cryptic runtime errors on the first call.
+   */
+  async onModuleInit(): Promise<void> {
+    let config: StellarRuntimeConfig;
+    try {
+      config = this.resolveStellarConfig();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Invalid Stellar configuration';
+      this.logger.error(`Stellar configuration is invalid: ${message}`);
+      throw error;
+    }
+
+    this.logger.log(
+      `Using Soroban RPC URL: ${config.sorobanRpcUrl} ` +
+        `(network=${config.network}${config.sorobanRpcUrlIsFallback ? ', built-in default' : ''})`,
+    );
+
+    const nodeEnv = this.resolveNodeEnv();
+    const looksLikeTestnet = config.sorobanRpcUrl.includes('testnet');
+
+    if (nodeEnv === 'production' && looksLikeTestnet) {
+      this.logger.warn(
+        'SOROBAN_RPC_URL appears to point at a testnet endpoint while NODE_ENV=production. ' +
+          'Verify this is intentional.',
+      );
+    }
+
+    if (config.network === 'mainnet' && looksLikeTestnet) {
+      this.logger.warn(
+        `STELLAR_NETWORK=mainnet but SOROBAN_RPC_URL (${config.sorobanRpcUrl}) ` +
+          'looks like a testnet endpoint.',
+      );
+    }
+
+    // Skip the network round-trip during tests to keep the suite hermetic.
+    if (nodeEnv === 'test') {
+      return;
+    }
+
+    await this.checkRpcHealth(config);
+  }
+
+  /**
+   * Probe the configured RPC endpoint so an unreachable URL is surfaced at
+   * startup rather than on the first contract call. A failed probe is logged
+   * but does not crash the app, since transient RPC outages should not make the
+   * whole service un-startable.
+   */
+  private async checkRpcHealth(config: StellarRuntimeConfig): Promise<void> {
+    const timeoutMs = config.defaultTimeoutMs;
+    try {
+      const server = new SorobanServer(config.sorobanRpcUrl);
+      const health = await this.withTimeout(
+        server.getHealth(),
+        timeoutMs,
+        'Soroban RPC health check',
+      );
+      this.logger.log(
+        `Soroban RPC health check passed: status=${health?.status ?? 'unknown'}`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      this.logger.error(
+        `Soroban RPC health check failed for ${config.sorobanRpcUrl}: ${message}. ` +
+          'Contract calls may fail until the endpoint is reachable.',
+      );
+    }
+  }
+
+  private withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    label: string,
+  ): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        ),
+      ),
+    ]);
+  }
+
+  private resolveNodeEnv(): string | undefined {
+    return this.configService.get<string>('NODE_ENV') ?? process.env.NODE_ENV;
+  }
+
+  /**
+   * Resolve the validated, normalized Stellar runtime config, preferring values
+   * from ConfigService and falling back to process.env.
+   */
+  private resolveStellarConfig(): StellarRuntimeConfig {
+    return getStellarConfig({
+      ...process.env,
+      NODE_ENV: this.resolveNodeEnv(),
+      STELLAR_NETWORK:
+        this.configService.get<string>('STELLAR_NETWORK') ??
+        process.env.STELLAR_NETWORK,
+      SOROBAN_RPC_URL:
+        this.configService.get<string>('SOROBAN_RPC_URL') ??
+        process.env.SOROBAN_RPC_URL,
+    });
+  }
 
   async invokeContract(
     contractId: string,
@@ -120,7 +245,9 @@ export class SorobanService {
     const timeoutSeconds = this.getTransactionTimeoutSeconds();
 
     try {
-      const account = await server.getAccount(source);
+      const account = await this.withRpcRetry('getAccount', () =>
+        server.getAccount(source),
+      );
       const contract = new Contract(contractId);
       const operation = contract.call(
         method,
@@ -135,7 +262,10 @@ export class SorobanService {
         .setTimeout(timeoutSeconds)
         .build();
 
-      const simulationResult = await server.simulateTransaction(tx);
+      const simulationResult = await this.withRpcRetry(
+        'simulateTransaction',
+        () => server.simulateTransaction(tx),
+      );
 
       if ('error' in (simulationResult as { error?: string })) {
         throw new BadRequestException(
@@ -168,57 +298,149 @@ export class SorobanService {
       );
     }
 
-    const maxAttempts = 3;
-    let lastError: unknown;
+    try {
+      const server = this.createRpcServer();
+      const networkPassphrase = this.getNetworkPassphrase();
+      const keypair = Keypair.fromSecret(signer);
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        const server = this.createRpcServer();
-        const networkPassphrase = this.getNetworkPassphrase();
-        const keypair = Keypair.fromSecret(signer);
+      const unsignedTx = TransactionBuilder.fromXDR(
+        tx.transactionXdr,
+        networkPassphrase,
+      ) as Transaction;
 
-        const unsignedTx = TransactionBuilder.fromXDR(
-          tx.transactionXdr,
-          networkPassphrase,
-        ) as Transaction;
+      const assembled = assembleTransaction(
+        unsignedTx,
+        tx.simulationResult as never,
+      ).build();
 
-        const assembled = assembleTransaction(
-          unsignedTx,
-          tx.simulationResult as never,
-        ).build();
+      assembled.sign(keypair);
+      const sendResult = await this.withRpcRetry('sendTransaction', () =>
+        server.sendTransaction(assembled),
+      );
 
-        assembled.sign(keypair);
-        const sendResult = await server.sendTransaction(assembled);
-
-        if (sendResult.status === 'ERROR') {
-          throw new BadRequestException(
-            `Soroban submission error: ${JSON.stringify(sendResult.errorResult ?? {})}`,
-          );
-        }
-
-        const finalized = await this.pollTransactionResult(
-          server,
-          sendResult.hash,
+      if (sendResult.status === 'ERROR') {
+        throw new BadRequestException(
+          `Soroban submission error: ${JSON.stringify(sendResult.errorResult ?? {})}`,
         );
-
-        this.logger.log(
-          `Audit tx submitted: hash=${sendResult.hash} status=${finalized.status}`,
-        );
-
-        return finalized;
-      } catch (error) {
-        lastError = error;
-
-        if (attempt === maxAttempts) {
-          break;
-        }
-
-        const backoffMs = 500 * Math.pow(2, attempt - 1);
-        await new Promise<void>((resolve) => setTimeout(resolve, backoffMs));
       }
-    }
 
-    throw this.mapSorobanError(lastError);
+      const finalized = await this.pollTransactionResult(
+        server,
+        sendResult.hash,
+      );
+
+      this.logger.log(
+        `Audit tx submitted: hash=${sendResult.hash} status=${finalized.status}`,
+      );
+
+      return finalized;
+    } catch (error) {
+      throw this.mapSorobanError(error);
+    }
+  }
+
+  /**
+   * Submit a transaction with queue-based retry support
+   * This method is called by the retry worker for async retries
+   * It takes a raw XDR string and submits it directly without requiring a BuildTransactionResult
+   */
+  async submitTransactionWithRetry(
+    txXdr: string,
+    signature?: string,
+  ): Promise<SubmitTransactionResult> {
+    this.logger.log(`Audit submitting transaction with retry support`);
+
+    try {
+      // Build a transaction object from XDR
+      const networkPassphrase = this.getNetworkPassphrase();
+      const unsignedTx = TransactionBuilder.fromXDR(
+        txXdr,
+        networkPassphrase,
+      ) as Transaction;
+
+      const server = this.createRpcServer();
+
+      // If no signature provided, use the operator secret
+      const signer =
+        signature || this.configService.get<string>('STELLAR_OPERATOR_SECRET');
+      if (!signer) {
+        throw new ServiceUnavailableException(
+          'No transaction signer provided for retry submission',
+        );
+      }
+
+      const keypair = Keypair.fromSecret(signer);
+      unsignedTx.sign(keypair);
+
+      // Submit the transaction
+      const sendResult = await this.withRpcRetry('sendTransaction', () =>
+        server.sendTransaction(unsignedTx),
+      );
+
+      if (sendResult.status === 'ERROR') {
+        throw new BadRequestException(
+          `Soroban submission error: ${JSON.stringify(sendResult.errorResult ?? {})}`,
+        );
+      }
+
+      // Poll for finalization
+      const finalized = await this.pollTransactionResult(
+        server,
+        sendResult.hash,
+      );
+
+      this.logger.log(
+        `Transaction submitted with hash=${sendResult.hash} status=${finalized.status}`,
+      );
+
+      return finalized;
+    } catch (error) {
+      throw this.mapSorobanError(error);
+    }
+  }
+
+  /**
+   * Get transaction data including XDR for retry
+   * This is a convenience method that can be extended to fetch transaction data
+   * from the contract client if needed
+   */
+  async getTransactionData(
+    contractTxId: number,
+  ): Promise<{ xdr: string; data: Record<string, unknown> }> {
+    try {
+      // Implementation would fetch the transaction data from the contract client
+      // This is a placeholder - actual implementation depends on TransactionContractClient
+      const txData = await this.getTransactionFromContract(contractTxId);
+      return {
+        xdr: txData.xdr || '',
+        data: txData,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to get transaction data for ${contractTxId}: ${error}`,
+      );
+      throw this.mapSorobanError(error);
+    }
+  }
+
+  /**
+   * Placeholder for getting transaction from contract
+   * This would be replaced with actual implementation that integrates with TransactionContractClient
+   *
+   * @param contractTxId - The contract transaction ID
+   * @returns Object containing the transaction XDR
+   */
+  private getTransactionFromContract(
+    contractTxId: number,
+  ): Promise<{ xdr: string }> {
+    // This should integrate with TransactionContractClient
+    // For now, return empty XDR
+    this.logger.warn(
+      `getTransactionFromContract not fully implemented for ${contractTxId}`,
+    );
+    // In a real implementation, you would fetch the transaction from the contract client
+    // Example: return { xdr: await this.txContract.getTransactionXdr(contractTxId) };
+    return Promise.resolve({ xdr: '' });
   }
 
   ensureValidAccountAddress(address: string): void {
@@ -244,11 +466,10 @@ export class SorobanService {
   }
 
   private createRpcServer(): SorobanServer {
-    const rpcUrl =
-      this.configService.get<string>('SOROBAN_RPC_URL') ||
-      'https://soroban-testnet.stellar.org';
-
-    return new SorobanServer(rpcUrl);
+    // Route through the validated config so the URL is checked and normalized
+    // (trailing slashes removed, protocol validated) before each use.
+    const { sorobanRpcUrl } = this.resolveStellarConfig();
+    return new SorobanServer(sorobanRpcUrl);
   }
 
   private getNetworkPassphrase(): string {
@@ -308,7 +529,7 @@ export class SorobanService {
       return nativeToScVal(Buffer.from(String(arg.value)), { type: 'bytes' });
     }
 
-    return nativeToScVal(arg.value as never);
+    return nativeToScVal(arg.value);
   }
 
   private extractSimulationReturnValue(simulationResult: unknown): unknown {
@@ -334,9 +555,23 @@ export class SorobanService {
     server: SorobanServer,
     hash: string,
   ): Promise<SubmitTransactionResult> {
-    for (let i = 0; i < 10; i += 1) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
-      const txResult = (await server.getTransaction(hash)) as {
+    const retryConfig = this.sorobanRpcService.getRuntimeConfig();
+    const maxPollAttempts = 10;
+
+    for (let i = 0; i < maxPollAttempts; i += 1) {
+      if (i > 0) {
+        const pollDelayMs = calculateExponentialBackoffDelayMs(
+          i,
+          retryConfig.sorobanRpcRetryDelayMs,
+          retryConfig.sorobanRpcRetryBackoffMultiplier,
+          retryConfig.sorobanRpcRetryMaxDelayMs,
+        );
+        await new Promise<void>((resolve) => setTimeout(resolve, pollDelayMs));
+      }
+
+      const txResult = (await this.withRpcRetry('getTransaction', () =>
+        server.getTransaction(hash),
+      )) as {
         status?: string;
         ledger?: number;
         returnValue?: unknown;
@@ -363,6 +598,13 @@ export class SorobanService {
     throw new GatewayTimeoutException(
       `Timed out waiting for transaction finalization: ${hash}`,
     );
+  }
+
+  private withRpcRetry<T>(
+    methodName: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.sorobanRpcService.retryRpcCall(operation, methodName);
   }
 
   private mapSorobanError(error: unknown): Error {

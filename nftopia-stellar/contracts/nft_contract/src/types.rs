@@ -36,7 +36,9 @@ pub struct CollectionConfig {
     pub name: String,
     pub symbol: String,
     pub base_uri: String,
-    pub max_supply: Option<u64>,
+    /// Maximum supply for this collection. Must be Some(n) where n > 0 and n <= MAX_SUPPLY_HARD_CAP.
+    /// This is now mandatory - None is no longer accepted.
+    pub max_supply: u64,
     pub mint_price: Option<i128>,
     pub is_revealed: bool,
     pub metadata_is_frozen: bool,

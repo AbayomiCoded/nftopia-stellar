@@ -4,9 +4,67 @@ import { Button } from "@/components/ui/button";
 import { Vault } from "@/components/Vault";
 import { useTranslation } from "@/hooks/useTranslation";
 import Link from "next/link";
+import { useExperimentVariant } from "@/hooks/useExperiment";
+import { useEffect, useRef } from "react";
+import { telemetry } from "@/lib/telemetry";
+import { sanitizeTelemetryPayload } from "@/lib/telemetry/sanitizer";
+import { EVENT_NAMES } from "@/lib/telemetry/events";
 
 export function MainHero() {
   const { t, locale } = useTranslation();
+  const heroCTAAssignment = useExperimentVariant(
+    "hero-cta-placement-2026-q2"
+  );
+  const exposureSentRef = useRef(false);
+  const exposureSessionIdRef = useRef<string | null>(null);
+  const exposureTimestampRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!heroCTAAssignment || exposureSentRef.current) return;
+    // Generate a session-unique exposure ID
+    const exposureSessionId = crypto.randomUUID();
+    exposureSessionIdRef.current = exposureSessionId;
+    exposureTimestampRef.current = Date.now();
+    telemetry.track(
+      EVENT_NAMES.experimentExposed,
+      sanitizeTelemetryPayload({
+        experiment_id: heroCTAAssignment.experiment_id,
+        experiment_name: "Hero CTA Placement Optimization",
+        variant_id: heroCTAAssignment.variant_id,
+        variant_name: heroCTAAssignment.variant_name,
+        variant_version: 1,
+        surface: "landing_hero",
+        placement_category: heroCTAAssignment.is_control ? "feature_hero" : "feature_hero",
+        cta_label: "Explore Collections",
+        assigned_at_timestamp_ms: heroCTAAssignment.assigned_at_timestamp_ms,
+        is_control: heroCTAAssignment.is_control,
+        target_user_segment: "all",
+        rollout_percentage: 50,
+        exposure_session_id: exposureSessionId,
+        experiment_session_id: "", // Optionally wire funnel session here
+      })
+    );
+    exposureSentRef.current = true;
+  }, [heroCTAAssignment]);
+
+  const handleRegisterClick = () => {
+    if (!heroCTAAssignment || !exposureSessionIdRef.current || !exposureTimestampRef.current) return;
+    telemetry.track(
+      EVENT_NAMES.experimentInteraction,
+      sanitizeTelemetryPayload({
+        experiment_id: heroCTAAssignment.experiment_id,
+        variant_id: heroCTAAssignment.variant_id,
+        interaction_type: "click",
+        interaction_timestamp_ms: Date.now(),
+        time_to_interaction_ms: Date.now() - exposureTimestampRef.current,
+        surface: "landing_hero",
+        placement_category: heroCTAAssignment.is_control ? "feature_hero" : "feature_hero",
+        is_control: heroCTAAssignment.is_control,
+        exposure_session_id: exposureSessionIdRef.current,
+        interaction_sequence: 1,
+      })
+    );
+  };
 
   return (
     <div className="flex flex-col  lg:flex-row gap-8 items-center py-8 sm:py-12 md:py-16 px-4 sm:px-8 lg:px-0 mt-8 sm:mt-12 md:mt-16">
@@ -31,6 +89,7 @@ export function MainHero() {
               variant="wallet"
               size="lg"
               className="rounded-full px-6 sm:px-8 text-sm sm:text-base font-semibold"
+              onClick={handleRegisterClick}
             >
               {t("homepage.hero.cta")}
             </Button>

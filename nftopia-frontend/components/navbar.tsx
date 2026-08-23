@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { emitNavItemClicked, NAV_ITEM_IDS, NAV_PLACEMENTS, normalizeRoute } from "@/lib/telemetry/navigation-instrumentation";
 import { OptimizedImage } from './image';
 import { ModernSearchInput } from "@/components/ui/modern-search-input";
 import {
@@ -19,6 +20,7 @@ import {
 import { useState, useEffect, useRef, useCallback } from "react";
 import { WalletConnector } from "@/components/wallet/WalletConnector";
 import { UserDropdown } from "./user-dropdown";
+import { AccountEntryMenu } from "./account-entry-menu";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageSwitcher, MobileLanguageSwitcher } from "./LanguageSwitcher";
@@ -93,6 +95,18 @@ export function Navbar() {
     wasMenuOpenRef.current = isMenuOpen;
   }, [isMenuOpen]);
 
+  // Helper for nav click
+  function handleNavClick(e: React.MouseEvent, nav_item_id: string, placement: string, destination: string, menu_state: string = "unknown") {
+    emitNavItemClicked({
+      nav_item_id,
+      placement,
+      destination_route: normalizeRoute(destination),
+      menu_state,
+      locale_source: locale,
+      authenticated: isAuthenticated,
+    }, e.nativeEvent);
+  }
+
   return (
     <header
       className={`sticky top-0 left-0 right-0 z-50 transition-all duration-300 
@@ -119,6 +133,7 @@ export function Navbar() {
             <Link
               href={`/${locale}/explore`}
               className="text-sm font-medium tracking-wide hover:text-purple-400 transition-colors flex items-center gap-1.5"
+              onClick={e => handleNavClick(e, NAV_ITEM_IDS.EXPLORE, NAV_PLACEMENTS.NAVBAR_DESKTOP, `/${locale}/explore`, "expanded")}
             >
               <Compass className="h-4 w-4" />
               {t("navigation.explore")}
@@ -126,6 +141,7 @@ export function Navbar() {
             <Link
               href={`/${locale}/marketplace`}
               className="text-sm font-medium tracking-wide hover:text-purple-400 transition-colors flex items-center gap-1.5"
+              onClick={e => handleNavClick(e, NAV_ITEM_IDS.MARKETPLACE, NAV_PLACEMENTS.NAVBAR_DESKTOP, `/${locale}/marketplace`, "expanded")}
             >
               <ShoppingBag className="h-4 w-4" />
               {t("navigation.marketplace")}
@@ -133,6 +149,7 @@ export function Navbar() {
             <Link
               href={`/${locale}/artists`}
               className="text-sm font-medium tracking-wide hover:text-purple-400 transition-colors flex items-center gap-1.5"
+              onClick={e => handleNavClick(e, NAV_ITEM_IDS.ARTISTS, NAV_PLACEMENTS.NAVBAR_DESKTOP, `/${locale}/artists`, "expanded")}
             >
               <Users className="h-4 w-4" />
               {t("navigation.artists")}
@@ -140,6 +157,7 @@ export function Navbar() {
             <Link
               href={`/${locale}/vault`}
               className="text-sm font-medium tracking-wide hover:text-purple-400 transition-colors flex items-center gap-1.5"
+              onClick={e => handleNavClick(e, NAV_ITEM_IDS.VAULT, NAV_PLACEMENTS.NAVBAR_DESKTOP, `/${locale}/vault`, "expanded")}
             >
               <Lock className="h-4 w-4" />
               {t("navigation.vault")}
@@ -159,11 +177,16 @@ export function Navbar() {
               <LanguageSwitcher />
             </div>
 
-            {/* Desktop: UserDropdown if logged in, WalletConnector if not */}
+            {/* Desktop: UserDropdown if logged in, WalletConnector + AccountEntryMenu if not */}
             {!loading && (
               isAuthenticated
                 ? <UserDropdown />
-                : <WalletConnector />
+                : (
+                  <div className="flex items-center gap-2">
+                    <WalletConnector />
+                    <AccountEntryMenu />
+                  </div>
+                )
             )}
 
             {/* Mobile hamburger */}
@@ -224,7 +247,7 @@ export function Navbar() {
                 <Link
                   href={`/${locale}`}
                   className="text-sm font-medium py-2.5 hover:text-purple-400 transition-colors flex items-center gap-2"
-                  onClick={closeMenu}
+                  onClick={e => { handleNavClick(e, NAV_ITEM_IDS.HOME, NAV_PLACEMENTS.NAVBAR_MOBILE_DRAWER, `/${locale}`, isMenuOpen ? "drawer_open" : "collapsed"); closeMenu(); }}
                 >
                   <House className="h-5 w-5" />
                   Home
@@ -232,7 +255,7 @@ export function Navbar() {
                 <Link
                   href={`/${locale}/explore`}
                   className="text-sm font-medium py-2.5 hover:text-purple-400 transition-colors flex items-center gap-2"
-                  onClick={closeMenu}
+                  onClick={e => { handleNavClick(e, NAV_ITEM_IDS.EXPLORE, NAV_PLACEMENTS.NAVBAR_MOBILE_DRAWER, `/${locale}/explore`, isMenuOpen ? "drawer_open" : "collapsed"); closeMenu(); }}
                 >
                   <Compass className="h-5 w-5" />
                   {t("navigation.explore")}
@@ -240,7 +263,7 @@ export function Navbar() {
                 <Link
                   href={`/${locale}/creator-dashboard/create-your-collection`}
                   className="text-sm font-medium py-2.5 hover:text-purple-400 transition-colors flex items-center gap-2"
-                  onClick={closeMenu}
+                  onClick={e => { handleNavClick(e, NAV_ITEM_IDS.CREATE, NAV_PLACEMENTS.NAVBAR_MOBILE_DRAWER, `/${locale}/creator-dashboard/create-your-collection`, isMenuOpen ? "drawer_open" : "collapsed"); closeMenu(); }}
                 >
                   <PlusSquare className="h-5 w-5" />
                   Create
@@ -248,7 +271,7 @@ export function Navbar() {
                 <Link
                   href={`/${locale}/creator-dashboard/collections`}
                   className="text-sm font-medium py-2.5 hover:text-purple-400 transition-colors flex items-center gap-2"
-                  onClick={closeMenu}
+                  onClick={e => { handleNavClick(e, NAV_ITEM_IDS.COLLECTIONS, NAV_PLACEMENTS.NAVBAR_MOBILE_DRAWER, `/${locale}/creator-dashboard/collections`, isMenuOpen ? "drawer_open" : "collapsed"); closeMenu(); }}
                 >
                   <Layers className="h-5 w-5" />
                   Collections
@@ -256,7 +279,7 @@ export function Navbar() {
                 <Link
                   href={`/${locale}/creator-dashboard/sales`}
                   className="text-sm font-medium py-2.5 hover:text-purple-400 transition-colors flex items-center gap-2"
-                  onClick={closeMenu}
+                  onClick={e => { handleNavClick(e, NAV_ITEM_IDS.ACTIVITY, NAV_PLACEMENTS.NAVBAR_MOBILE_DRAWER, `/${locale}/creator-dashboard/sales`, isMenuOpen ? "drawer_open" : "collapsed"); closeMenu(); }}
                 >
                   <Activity className="h-5 w-5" />
                   Activity
@@ -264,7 +287,7 @@ export function Navbar() {
                 <Link
                   href={`/${locale}/marketplace`}
                   className="text-sm font-medium py-2.5 hover:text-purple-400 transition-colors flex items-center gap-2"
-                  onClick={closeMenu}
+                  onClick={e => { handleNavClick(e, NAV_ITEM_IDS.MARKETPLACE, NAV_PLACEMENTS.NAVBAR_MOBILE_DRAWER, `/${locale}/marketplace`, isMenuOpen ? "drawer_open" : "collapsed"); closeMenu(); }}
                 >
                   <ShoppingBag className="h-5 w-5" />
                   {t("navigation.marketplace")}
@@ -272,7 +295,7 @@ export function Navbar() {
                 <Link
                   href={`/${locale}/artists`}
                   className="text-sm font-medium py-2.5 hover:text-purple-400 transition-colors flex items-center gap-2"
-                  onClick={closeMenu}
+                  onClick={e => { handleNavClick(e, NAV_ITEM_IDS.ARTISTS, NAV_PLACEMENTS.NAVBAR_MOBILE_DRAWER, `/${locale}/artists`, isMenuOpen ? "drawer_open" : "collapsed"); closeMenu(); }}
                 >
                   <Users className="h-5 w-5" />
                   {t("navigation.artists")}
@@ -280,7 +303,7 @@ export function Navbar() {
                 <Link
                   href={`/${locale}/vault`}
                   className="text-sm font-medium py-2.5 hover:text-purple-400 transition-colors flex items-center gap-2"
-                  onClick={closeMenu}
+                  onClick={e => { handleNavClick(e, NAV_ITEM_IDS.VAULT, NAV_PLACEMENTS.NAVBAR_MOBILE_DRAWER, `/${locale}/vault`, isMenuOpen ? "drawer_open" : "collapsed"); closeMenu(); }}
                 >
                   <Lock className="h-5 w-5" />
                   {t("navigation.vault")}

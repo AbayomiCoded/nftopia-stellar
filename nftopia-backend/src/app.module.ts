@@ -1,13 +1,14 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { BullModule } from '@nestjs/bull';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ContractEventIndexerJob, IndexerModule } from './jobs';
+import { IndexerModule } from './jobs';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { CollectionModule } from './modules/collection/collection.module';
@@ -31,6 +32,15 @@ import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { OfferModule } from './modules/offer/offer.module';
 import { TransactionModule } from './modules/transaction/transaction.module';
+import { TransactionRetryModule } from './modules/transaction/transaction-retry.module';
+import { AuditModule } from './common/audit/audit.module';
+import { MetricsModule } from './common/metrics/metrics.module';
+import { getLoggerConfig } from './config/logger.config';
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { SocialModule } from './modules/social/social.module';
+import { PaymentModule } from './modules/payment/payment.module';
+import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
+// import { CorsConfig } from './config/cors.config';
 
 @Module({
   imports: [
@@ -38,27 +48,7 @@ import { TransactionModule } from './modules/transaction/transaction.module';
     ScheduleModule.forRoot(),
     LoggerModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        pinoHttp: {
-          level: config.get('NODE_ENV') === 'production' ? 'info' : 'debug',
-          transport:
-            config.get('NODE_ENV') !== 'production'
-              ? {
-                  target: 'pino-pretty',
-                  options: {
-                    singleLine: true,
-                    colorize: true,
-                  },
-                }
-              : undefined,
-          redact: ['req.headers.authorization', 'req.headers.cookie'],
-          customLogLevel: (req, res) => {
-            if (res.statusCode >= 500) return 'error';
-            if (res.statusCode >= 400) return 'warn';
-            return 'info';
-          },
-        },
-      }),
+      useFactory: () => getLoggerConfig(process.env),
     }),
     ConfigModule.forRoot({ isGlobal: true }),
     EventEmitterModule.forRoot(),
@@ -72,6 +62,37 @@ import { TransactionModule } from './modules/transaction/transaction.module';
         password: config.get('REDIS_PASSWORD'),
         db: parseInt(config.get('REDIS_DB') || '0', 10),
         ttl: parseInt(config.get('CACHE_TTL') || '300', 10),
+      }),
+    }),
+
+    /**
+     * BullMQ configuration for job queues
+     * Used by TransactionRetryModule and other queue-based features
+     */
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        redis: {
+          host: config.get('REDIS_HOST') || 'localhost',
+          port: parseInt(config.get('REDIS_PORT') || '6379', 10),
+          password: config.get('REDIS_PASSWORD') || undefined,
+          db: parseInt(config.get('REDIS_DB') || '0', 10),
+        },
+        defaultJobOptions: {
+          attempts: 1, // We handle retries ourselves in the worker
+          backoff: {
+            type: 'exponential',
+            delay: 1000,
+          },
+          removeOnComplete: false, // Keep for DLQ handling
+          removeOnFail: false, // Keep for DLQ handling
+          timeout: 300000, // 5 minutes timeout for long-running jobs
+        },
+        // Optimize for transaction retry workloads
+        limiter: {
+          max: 100, // Max concurrent jobs
+          duration: 1000, // Per second
+        },
       }),
     }),
 
@@ -97,6 +118,27 @@ import { TransactionModule } from './modules/transaction/transaction.module';
               database: config.get<string>('DB_NAME') || process.env.DB_NAME,
               autoLoadEntities: true,
               synchronize: true,
+              logging: config.get('NODE_ENV') === 'development',
+              extra: {
+                max: parseInt(
+                  config.get('DB_POOL_SIZE') ||
+                    process.env.DB_POOL_SIZE ||
+                    '20',
+                  10,
+                ),
+                idleTimeoutMillis: parseInt(
+                  config.get('DB_IDLE_TIMEOUT_MS') ||
+                    process.env.DB_IDLE_TIMEOUT_MS ||
+                    '30000',
+                  10,
+                ),
+                connectionTimeoutMillis: parseInt(
+                  config.get('DB_CONNECTION_TIMEOUT_MS') ||
+                    process.env.DB_CONNECTION_TIMEOUT_MS ||
+                    '10000',
+                  10,
+                ),
+              },
             }),
           }),
           UsersModule,
@@ -110,16 +152,21 @@ import { TransactionModule } from './modules/transaction/transaction.module';
     OrderModule,
     OfferModule,
     TransactionModule,
+    TransactionRetryModule, // Add the transaction retry module
     StorageModule,
     SearchModule,
     CollectionFactoryModule,
     StellarModule,
     NotificationsModule,
     IndexerModule,
+    AuditModule,
+    MetricsModule,
+    SocialModule,
+    PaymentModule,
+    AiAgentModule,
   ],
   controllers: [AppController],
   providers: [
-    ContractEventIndexerJob,
     AppService,
     SorobanRpcService,
     StellarAccountService,
@@ -133,4 +180,8 @@ import { TransactionModule } from './modules/transaction/transaction.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}

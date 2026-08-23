@@ -9,7 +9,9 @@ import { CollectionStats } from './entities/collection-stats.entity';
 import { AnalyticsService } from './analytics.service';
 import { CollectionAnalyticsController } from './collection-analytics.controller';
 import { AnalyticsCronJob } from './analytics-cron.job';
+import { CollectionController } from './collection.controller';
 import { Order } from '../order/entities/order.entity';
+import { CollectionLike } from './entities/collection-like.entity';
 
 @Module({
   imports: [
@@ -20,10 +22,11 @@ import { Order } from '../order/entities/order.entity';
       Nft,
       User,
       VerificationRequest,
+      CollectionLike,
     ]),
   ],
   providers: [CollectionService, AnalyticsService, AnalyticsCronJob],
-  controllers: [CollectionAnalyticsController],
+  controllers: [CollectionController, CollectionAnalyticsController],
   exports: [CollectionService, AnalyticsService],
 })
 export class CollectionModule {}

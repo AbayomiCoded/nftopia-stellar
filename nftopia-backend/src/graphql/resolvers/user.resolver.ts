@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { GraphqlContext } from '../context/context.interface';
-import { GraphqlUserType } from '../types/user.types';
+import { DashboardStats, GraphqlUserType } from '../types/user.types';
 import type { User } from '../../users/user.entity';
 import { GqlAuthGuard } from '../../common/guards/gql-auth.guard';
 import { UsersService } from '../../users/users.service';
@@ -28,16 +28,13 @@ import {
   GraphqlListing,
   ListingStatus,
 } from '../types/listing.types';
-import {
-  AuctionConnection,
-  GraphqlAuction,
-  AuctionStatus,
-} from '../types/auction.types';
+import { AuctionConnection, GraphqlAuction } from '../types/auction.types';
 import { GraphqlOrder, OrderConnection } from '../types/order.types';
 import type { Nft } from '../../modules/nft/entities/nft.entity';
 import type { Listing } from '../../modules/listing/entities/listing.entity';
 import type { Auction } from '../../modules/auction/entities/auction.entity';
 import type { OrderInterface } from '../../modules/order/interfaces/order.interface';
+import type { OrderPaginatedResponseDto } from '../../modules/order/dto/order-paginated-response.dto';
 
 @Resolver(() => GraphqlUserType)
 export class UserResolver {
@@ -82,6 +79,37 @@ export class UserResolver {
     }
 
     return this.toGraphqlUser(user);
+  }
+
+  @Query(() => DashboardStats, {
+    name: 'dashboardStats',
+    description: 'Fetch dashboard stats for the authenticated user',
+  })
+  @UseGuards(GqlAuthGuard)
+  async dashboardStats(
+    @Context() context: GraphqlContext,
+  ): Promise<DashboardStats> {
+    const userId = context.user?.userId;
+    if (!userId) {
+      throw new UnauthorizedException('Authentication is required');
+    }
+
+    const [nfts, orders] = await Promise.all([
+      this.nftService.findByOwner(userId, {}),
+      this.orderService.findAll({ buyerId: userId }),
+    ]);
+
+    // Explicitly cast or stringify the enum status to safely evaluate against a string literal
+    const totalSales = orders
+      .filter((order) => String(order.status) === 'COMPLETED')
+      .reduce((sum, order) => sum + Number(order.price), 0);
+
+    return {
+      nftsCreated: nfts.total,
+      totalSales,
+      totalViews: 0,
+      followers: 0,
+    };
   }
 
   @Query(() => GraphqlUserType, {
@@ -199,7 +227,7 @@ export class UserResolver {
   ): Promise<OrderConnection> {
     const limit = pagination?.first ?? 20;
     const page = pagination?.after ? Number(pagination.after) || 1 : 1;
-    const orders = await this.orderService.findAll({
+    const result = await this.orderService.findAllWithCount({
       buyerId: user.id,
       page,
       limit,
@@ -207,7 +235,7 @@ export class UserResolver {
       sortOrder: 'DESC',
     });
 
-    return this.toOrderConnection(orders, page, limit);
+    return this.toOrderConnection(result);
   }
 
   @ResolveField(() => OrderConnection, {
@@ -222,7 +250,7 @@ export class UserResolver {
   ): Promise<OrderConnection> {
     const limit = pagination?.first ?? 20;
     const page = pagination?.after ? Number(pagination.after) || 1 : 1;
-    const orders = await this.orderService.findAll({
+    const result = await this.orderService.findAllWithCount({
       sellerId: user.id,
       page,
       limit,
@@ -230,7 +258,7 @@ export class UserResolver {
       sortOrder: 'DESC',
     });
 
-    return this.toOrderConnection(orders, page, limit);
+    return this.toOrderConnection(result);
   }
 
   private toGraphqlUser(user: User): GraphqlUserType {
@@ -308,11 +336,9 @@ export class UserResolver {
   }
 
   private toOrderConnection(
-    orders: OrderInterface[],
-    page: number,
-    limit: number,
+    result: OrderPaginatedResponseDto,
   ): OrderConnection {
-    const edges = orders.map((order) => ({
+    const edges = result.items.map((order) => ({
       node: this.toGraphqlOrder(order),
       cursor: order.id,
     }));
@@ -320,11 +346,11 @@ export class UserResolver {
     return {
       edges,
       pageInfo: {
-        hasNextPage: orders.length === limit,
+        hasNextPage: result.hasNextPage,
         startCursor: edges[0]?.cursor,
-        endCursor: String(page + 1),
+        endCursor: edges.at(-1)?.cursor,
       },
-      totalCount: orders.length,
+      totalCount: result.totalCount,
     };
   }
 
@@ -374,7 +400,7 @@ export class UserResolver {
       reservePrice: this.toDecimalString(auction.reservePrice),
       startTime: auction.startTime,
       endTime: auction.endTime,
-      status: auction.status as AuctionStatus,
+      status: auction.status,
       winnerId: auction.winnerId ?? null,
       bids: undefined,
     };

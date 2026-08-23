@@ -25,8 +25,9 @@ export class Collection {
     type: 'varchar',
     length: 56,
     unique: true,
+    nullable: true,
   })
-  contractAddress: string;
+  contractAddress?: string | null;
 
   @Column({ type: 'varchar', length: 255 })
   name: string;
@@ -78,6 +79,9 @@ export class Collection {
 
   @Column({ name: 'is_verified', type: 'boolean', default: false })
   isVerified: boolean;
+
+  @Column({ name: 'is_hidden', type: 'boolean', default: false })
+  isHidden: boolean;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;

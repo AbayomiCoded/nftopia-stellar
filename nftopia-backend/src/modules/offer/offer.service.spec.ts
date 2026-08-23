@@ -20,9 +20,7 @@ import { MarketplaceSettlementClient } from '../stellar/marketplace-settlement.c
 const mockOfferRepo = {
   findOne: jest.fn(),
   find: jest.fn(),
-  create: jest
-    .fn()
-    .mockImplementation((dto: Partial<Offer>) => dto as unknown as Offer),
+  create: jest.fn().mockImplementation((dto: Partial<Offer>) => dto),
   save: jest.fn().mockImplementation((o: Offer) => Promise.resolve(o)),
   createQueryBuilder: jest.fn(),
 };

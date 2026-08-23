@@ -6,6 +6,7 @@ import WalletCreateScreen from '../screens/Auth/WalletCreateScreen';
 import WalletImportScreen from '../screens/Auth/WalletImportScreen';
 import EmailLoginScreen from '../screens/Auth/EmailLoginScreen';
 import EmailRegisterScreen from '../screens/Auth/EmailRegisterScreen';
+import { getTransitionConfig } from '@/src/navigation/transition.config';
 
 export type AuthStackParamList = {
   Onboarding: undefined;
@@ -27,7 +28,7 @@ export default function AuthNavigator() {
       initialRouteName="Onboarding"
       screenOptions={{
         headerShown: false,
-        animation: 'slide_from_right',
+        ...getTransitionConfig('auth'),
         gestureEnabled: true,
         gestureDirection: 'horizontal',
       }}
@@ -37,6 +38,7 @@ export default function AuthNavigator() {
         component={OnboardingScreen}
         options={{
           title: 'Welcome',
+          ...getTransitionConfig('auth'),
         }}
       />
       <Stack.Screen 
@@ -44,6 +46,7 @@ export default function AuthNavigator() {
         component={WalletSelectionScreen}
         options={{
           title: 'Select Wallet',
+          ...getTransitionConfig('auth'),
         }}
       />
       <Stack.Screen 
@@ -51,6 +54,7 @@ export default function AuthNavigator() {
         component={WalletCreateScreen}
         options={{
           title: 'Create Wallet',
+          ...getTransitionConfig('auth'),
         }}
       />
       <Stack.Screen 
@@ -58,6 +62,7 @@ export default function AuthNavigator() {
         component={WalletImportScreen}
         options={{
           title: 'Import Wallet',
+          ...getTransitionConfig('auth'),
         }}
       />
       <Stack.Screen 
@@ -65,6 +70,7 @@ export default function AuthNavigator() {
         component={EmailLoginScreen}
         options={{
           title: 'Sign In',
+          ...getTransitionConfig('auth'),
         }}
       />
       <Stack.Screen 
@@ -72,6 +78,7 @@ export default function AuthNavigator() {
         component={EmailRegisterScreen}
         options={{
           title: 'Sign Up',
+          ...getTransitionConfig('auth'),
         }}
       />
     </Stack.Navigator>

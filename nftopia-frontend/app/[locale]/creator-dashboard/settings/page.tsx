@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, Link2, Link2Off, Wallet } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Link2,
+  Link2Off,
+  Wallet,
+} from "lucide-react";
 import { connectFreighter } from "@/lib/stellar/wallet/freighter";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useAuthContext } from "@/lib/context/AuthContext";
 import {
   LinkedWallet,
   fetchLinkedWallets,
@@ -12,16 +19,25 @@ import {
 } from "@/lib/services/profile";
 
 export default function SettingsPage() {
+  // Sync state cleanly with the global user stores from main branch
   const authUser = useAuthStore((state) => state.user);
   const setAuthUser = useAuthStore((state) => state.setUser);
   const getCurrentUser = useAuthStore((state) => state.getCurrentUser);
 
+  // Fallback engine check for structural environment context layers
+  const context = useAuthContext() || {};
+
+  // Local state orchestration tracking matching upstream branch expectation
   const [wallets, setWallets] = useState<LinkedWallet[]>([]);
   const [loading, setLoading] = useState(true);
   const [linking, setLinking] = useState(false);
   const [unlinkingAddress, setUnlinkingAddress] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
+  // Reactivity lifecycles for account synchronizers
   useEffect(() => {
     if (!authUser) {
       const storedUser = getCurrentUser();
@@ -43,7 +59,10 @@ export default function SettingsPage() {
         if (active) {
           setMessage({
             type: "error",
-            text: error instanceof Error ? error.message : "Failed to load linked wallets.",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Failed to load linked wallets.",
           });
         }
       } finally {
@@ -63,13 +82,22 @@ export default function SettingsPage() {
 
     try {
       const walletAddress = await connectFreighter();
-      await linkWalletWithChallenge(walletAddress, "freighter");
-      setWallets(await fetchLinkedWallets());
-      setMessage({ type: "success", text: "Wallet linked successfully." });
-    } catch (error) {
+
+      // Execute the direct cryptographic challenge workflow required upstream
+      if (typeof context.linkWallet === "function") {
+        await context.linkWallet(walletAddress, "freighter");
+      } else {
+        await linkWalletWithChallenge(walletAddress, "freighter");
+      }
+
+      // Re-fetch datasets smoothly to preserve component tracking loop logic
+      const freshWallets = await fetchLinkedWallets();
+      setWallets(freshWallets);
+      setMessage({ type: "success", text: "Wallet linked successfully!" });
+    } catch (error: any) {
       setMessage({
         type: "error",
-        text: error instanceof Error ? error.message : "Failed to link wallet.",
+        text: error?.message || "Failed to link wallet.",
       });
     } finally {
       setLinking(false);
@@ -81,13 +109,19 @@ export default function SettingsPage() {
     setUnlinkingAddress(walletAddress);
 
     try {
-      await unlinkWallet(walletAddress);
-      setWallets(await fetchLinkedWallets());
-      setMessage({ type: "success", text: "Wallet unlinked successfully." });
-    } catch (error) {
+      if (typeof context.unlinkWallet === "function") {
+        await context.unlinkWallet(walletAddress);
+      } else {
+        await unlinkWallet(walletAddress);
+      }
+
+      const freshWallets = await fetchLinkedWallets();
+      setWallets(freshWallets);
+      setMessage({ type: "success", text: "Wallet unlinked successfully!" });
+    } catch (error: any) {
       setMessage({
         type: "error",
-        text: error instanceof Error ? error.message : "Failed to unlink wallet.",
+        text: error?.message || "Failed to unlink wallet.",
       });
     } finally {
       setUnlinkingAddress(null);
@@ -95,21 +129,27 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10">
-      <h1 className="mb-6 text-3xl font-bold text-nftopia-text">Settings</h1>
+    <div className="mx-auto max-w-2xl px-6 py-10 min-h-screen bg-background">
+      <h1 className="mb-6 text-3xl font-bold text-foreground">Settings</h1>
 
       {message && <StatusMessage type={message.type} text={message.text} />}
 
       <section className="mt-6 rounded-xl border border-border bg-card p-6">
         <div className="mb-5 flex items-center gap-2">
           <Wallet className="h-5 w-5 text-purple-400" />
-          <h2 className="text-xl font-semibold text-card-foreground">Linked Stellar Wallets</h2>
+          <h2 className="text-xl font-semibold text-card-foreground">
+            Linked Stellar Wallets
+          </h2>
         </div>
 
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading wallets...</p>
+        {loading || context.isLoading ? (
+          <p className="text-sm text-muted-foreground animate-pulse">
+            Loading connected profiles...
+          </p>
         ) : wallets.length === 0 ? (
-          <p className="mb-4 text-sm text-nftopia-subtext">No wallets linked.</p>
+          <p className="mb-4 text-sm text-muted-foreground">
+            No cryptographic keys linked.
+          </p>
         ) : (
           <ul className="mb-5 space-y-3">
             {wallets.map((wallet) => (
@@ -130,17 +170,24 @@ export default function SettingsPage() {
                   </div>
                   <p className="mt-1 text-xs capitalize text-muted-foreground">
                     {wallet.walletProvider}
-                    {wallet.createdAt ? ` · Linked ${new Date(wallet.createdAt).toLocaleDateString()}` : ""}
+                    {wallet.createdAt
+                      ? ` · Linked ${new Date(wallet.createdAt).toLocaleDateString()}`
+                      : " · Recently"}
                   </p>
                 </div>
 
                 <button
+                  type="button"
                   className="flex items-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-sm text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
                   onClick={() => handleUnlink(wallet.walletAddress)}
-                  disabled={linking || unlinkingAddress === wallet.walletAddress}
+                  disabled={
+                    linking || unlinkingAddress === wallet.walletAddress
+                  }
                 >
                   <Link2Off className="h-4 w-4" />
-                  {unlinkingAddress === wallet.walletAddress ? "Unlinking..." : "Unlink"}
+                  {unlinkingAddress === wallet.walletAddress
+                    ? "Unlinking..."
+                    : "Unlink"}
                 </button>
               </li>
             ))}
@@ -148,6 +195,7 @@ export default function SettingsPage() {
         )}
 
         <button
+          type="button"
           className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
           onClick={handleLinkFreighter}
           disabled={linking}
@@ -160,7 +208,13 @@ export default function SettingsPage() {
   );
 }
 
-function StatusMessage({ type, text }: { type: "success" | "error"; text: string }) {
+function StatusMessage({
+  type,
+  text,
+}: {
+  type: "success" | "error";
+  text: string;
+}) {
   const Icon = type === "success" ? CheckCircle2 : AlertCircle;
   const classes =
     type === "success"
@@ -168,7 +222,9 @@ function StatusMessage({ type, text }: { type: "success" | "error"; text: string
       : "border-red-500/30 bg-red-900/30 text-red-300";
 
   return (
-    <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${classes}`}>
+    <div
+      className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${classes}`}
+    >
       <Icon className="mt-0.5 h-4 w-4 flex-shrink-0" />
       <span>{text}</span>
     </div>
@@ -178,4 +234,3 @@ function StatusMessage({ type, text }: { type: "success" | "error"; text: string
 function shortAddress(value: string): string {
   return `${value.slice(0, 6)}...${value.slice(-6)}`;
 }
-

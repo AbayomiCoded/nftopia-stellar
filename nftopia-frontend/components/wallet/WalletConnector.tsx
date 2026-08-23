@@ -10,7 +10,10 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { getExplorerUrl } from "@/lib/stellar/network";
 import { useToast } from "@/lib/stores";
 import { Button } from "@/components/ui/button";
+import { emitCtaClicked, CTA_IDS, CTA_PLACEMENTS } from "@/lib/telemetry/navigation-instrumentation";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSeparator } from "@/components/ui/dropdown";
+import { telemetry } from "@/lib/telemetry";
+import { EVENT_NAMES } from "@/lib/telemetry/events";
 
 interface WalletConnectorProps {
   forceVisible?: boolean;
@@ -50,7 +53,16 @@ export function WalletConnector({ forceVisible = false, fullWidth = false }: Wal
           <Button
             variant="wallet"
             size="pill"
-            onClick={() => setModalOpen(true)}
+            onClick={e => {
+              emitCtaClicked({
+                cta_id: CTA_IDS.CONNECT_WALLET_HEADER,
+                placement: forceVisible ? CTA_PLACEMENTS.NAVBAR_MOBILE_DRAWER : CTA_PLACEMENTS.NAVBAR_DESKTOP_RIGHT,
+                destination_route: "none",
+                interaction_type: "button",
+                ui_variant: "wallet",
+              }, e.nativeEvent);
+              setModalOpen(true);
+            }}
             loading={connecting}
             loadingText={t("connectWallet.connecting") || "Connecting..."}
             className="rounded-full"
@@ -108,7 +120,14 @@ export function WalletConnector({ forceVisible = false, fullWidth = false }: Wal
         <DropdownSeparator />
 
         <DropdownItem
-          onClick={() => disconnect()}
+          onClick={() => {
+            // Emit wallet_disconnect_clicked event with privacy-safe payload
+            telemetry.track(EVENT_NAMES.walletDisconnectClicked, {
+              provider: provider || "unknown",
+              surface: "wallet_dropdown",
+            });
+            disconnect();
+          }}
           className="text-red-400 hover:bg-red-500/10"
         >
           <LogOut className="h-4 w-4" aria-hidden="true" />

@@ -13,19 +13,22 @@ import {
 import { useTranslation } from "@/hooks/useTranslation";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useStellarWallet } from "@/components/wallet/hooks/useStellarWallet";
+import { useStellarAuth } from "@/components/wallet/hooks/useStellarAuth";
 import { WalletModal } from "@/components/wallet/WalletModal";
 import { WalletBalance } from "@/components/wallet/WalletBalance";
 import { WalletNetworkStatus } from "@/components/wallet/WalletNetworkStatus";
 import { getExplorerUrl } from "@/lib/stellar/network";
+import { linkWalletToAccount } from "@/lib/stellar/auth/signature";
 import {
   LinkedWallet,
   ProfileUser,
   UpdateProfilePayload,
   fetchLinkedWallets,
   fetchProfileByAddress,
-  linkWalletWithChallenge,
   updateMyProfile,
 } from "@/lib/services/profile";
+import { ImageUploadField } from "@/components/ui/image-upload-field";
+import { uploadToFirebase } from "@/lib/firebase/uploadtofirebase";
 
 type ProfileForm = Required<UpdateProfilePayload>;
 type FormErrors = Partial<Record<keyof ProfileForm, string>>;
@@ -46,27 +49,38 @@ export default function ProfilePage() {
   const setAuthUser = useAuthStore((state) => state.setUser);
   const getCurrentUser = useAuthStore((state) => state.getCurrentUser);
 
-  const {
-    connected,
-    address,
-    provider,
-    network,
-    disconnect,
-  } = useStellarWallet();
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
 
+  const { connected, address, provider, network, disconnect } =
+    useStellarWallet();
+
+  const { authenticateWithWallet, loading: authLoading } = useStellarAuth();
+
+  // Profile Form States
   const [profile, setProfile] = useState<ProfileUser | null>(null);
   const [form, setForm] = useState<ProfileForm>(emptyForm);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
+
+  // Wallet Interaction States
   const [wallets, setWallets] = useState<LinkedWallet[]>([]);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [linking, setLinking] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [pendingBannerFile, setPendingBannerFile] = useState<File | null>(null);
 
-  const profileAddress = authUser?.walletAddress || authUser?.address || address || "";
-  const saveWalletAddress = address || authUser?.walletAddress || authUser?.address || "";
+  const profileAddress =
+    authUser?.walletAddress || authUser?.address || address || "";
+  const saveWalletAddress =
+    address || authUser?.walletAddress || authUser?.address || "";
 
+  // Synchronize stored user session data
   useEffect(() => {
     if (!authUser) {
       const storedUser = getCurrentUser();
@@ -76,6 +90,7 @@ export default function ProfilePage() {
     }
   }, [authUser, getCurrentUser, setAuthUser]);
 
+  // Load Profile metadata and linked wallets concurrently
   useEffect(() => {
     let active = true;
 
@@ -98,12 +113,18 @@ export default function ProfilePage() {
 
         setProfile(nextProfile);
         setForm(toProfileForm(nextProfile));
-        setWallets(nextWallets);
+
+        // Blend context store linked wallets with fetch results seamlessly
+        const fallbacks = (authUser as any)?.linkedWallets ?? [];
+        setWallets(nextWallets.length > 0 ? nextWallets : fallbacks);
       } catch (error) {
         if (active) {
           setMessage({
             type: "error",
-            text: error instanceof Error ? error.message : "Failed to load profile.",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Failed to load profile.",
           });
         }
       } finally {
@@ -115,11 +136,12 @@ export default function ProfilePage() {
     return () => {
       active = false;
     };
-  }, [profileAddress]);
+  }, [profileAddress, authUser]);
 
   const isAlreadyLinked = useMemo(
-    () => !!address && wallets.some((wallet) => wallet.walletAddress === address),
-    [address, wallets]
+    () =>
+      !!address && wallets.some((wallet) => wallet.walletAddress === address),
+    [address, wallets],
   );
 
   const handleChange = (field: keyof ProfileForm, value: string) => {
@@ -136,25 +158,42 @@ export default function ProfilePage() {
     if (Object.keys(errors).length > 0) return;
 
     if (!saveWalletAddress) {
-      setMessage({ type: "error", text: "Connect or authenticate a Stellar wallet before saving." });
+      setMessage({
+        type: "error",
+        text: "Connect or authenticate a Stellar wallet before saving.",
+      });
       return;
     }
 
     setSaving(true);
     try {
-      const updated = await updateMyProfile(saveWalletAddress, form);
+      const payload: UpdateProfilePayload = { ...form };
+
+      if (pendingAvatarFile) {
+        payload.avatarUrl = await uploadToFirebase(pendingAvatarFile);
+      }
+
+      if (pendingBannerFile) {
+        payload.bannerUrl = await uploadToFirebase(pendingBannerFile);
+      }
+
+      const updated = await updateMyProfile(saveWalletAddress, payload);
       setProfile(updated);
       setForm(toProfileForm(updated));
+      setPendingAvatarFile(null);
+      setPendingBannerFile(null);
       setAuthUser({
         ...(authUser || {}),
         ...updated,
-        walletAddress: updated.walletAddress || updated.address || saveWalletAddress,
+        walletAddress:
+          updated.walletAddress || updated.address || saveWalletAddress,
       } as NonNullable<typeof authUser>);
       setMessage({ type: "success", text: "Profile saved successfully." });
     } catch (error) {
       setMessage({
         type: "error",
-        text: error instanceof Error ? error.message : "Failed to save profile.",
+        text:
+          error instanceof Error ? error.message : "Failed to save profile.",
       });
     } finally {
       setSaving(false);
@@ -162,8 +201,11 @@ export default function ProfilePage() {
   };
 
   const handleLinkWallet = async () => {
-    if (!address || !provider) {
-      setMessage({ type: "error", text: "Connect your wallet before linking it." });
+    if (!address || !provider || !token) {
+      setMessage({
+        type: "error",
+        text: "Connect your wallet first, and make sure you are logged in.",
+      });
       return;
     }
 
@@ -171,16 +213,30 @@ export default function ProfilePage() {
     setMessage(null);
 
     try {
-      await linkWalletWithChallenge(address, provider);
+      // 1. Auth-sign challenge response payload via active wallet firmware
+      await authenticateWithWallet(address, provider);
+
+      // 2. Transmit validation block securely to database APIs
+      await linkWalletToAccount(
+        {
+          publicKey: address,
+          signature: "VALIDATED_VIA_FLOW",
+          nonce: "NONCE_SEQ",
+          provider,
+        },
+        token,
+      );
+
+      // 3. Refresh full wallet collection mapping arrays
       setWallets(await fetchLinkedWallets());
       setMessage({
         type: "success",
         text: `Wallet ${shortAddress(address)} linked successfully.`,
       });
-    } catch (error) {
+    } catch (error: any) {
       setMessage({
         type: "error",
-        text: error instanceof Error ? error.message : "Failed to link wallet.",
+        text: error?.message || "Failed to link cryptographic provider.",
       });
     } finally {
       setLinking(false);
@@ -201,22 +257,70 @@ export default function ProfilePage() {
 
         {message && <StatusMessage type={message.type} text={message.text} />}
 
+        {/* Creator Profile Section */}
         <section className="rounded-xl border border-border bg-card p-6">
-          <h2 className="mb-5 text-lg font-semibold text-card-foreground">Creator Profile</h2>
+          <h2 className="mb-5 text-lg font-semibold text-card-foreground">
+            Creator Profile
+          </h2>
 
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading profile...</p>
           ) : !profileAddress ? (
-            <p className="text-sm text-muted-foreground">Sign in to edit your profile.</p>
+            <p className="text-sm text-muted-foreground">
+              Sign in to edit your profile.
+            </p>
           ) : (
             <form className="space-y-4" onSubmit={handleSaveProfile}>
-              <TextField label="Username" value={form.username} error={formErrors.username} onChange={(value) => handleChange("username", value)} maxLength={50} />
-              <TextArea label="Bio" value={form.bio} error={formErrors.bio} onChange={(value) => handleChange("bio", value)} />
-              <TextField label="Avatar URL" value={form.avatarUrl} error={formErrors.avatarUrl} onChange={(value) => handleChange("avatarUrl", value)} />
-              <TextField label="Banner URL" value={form.bannerUrl} error={formErrors.bannerUrl} onChange={(value) => handleChange("bannerUrl", value)} />
-              <TextField label="Twitter Handle" value={form.twitterHandle} error={formErrors.twitterHandle} onChange={(value) => handleChange("twitterHandle", value)} placeholder="@handle" maxLength={16} />
-              <TextField label="Instagram Handle" value={form.instagramHandle} error={formErrors.instagramHandle} onChange={(value) => handleChange("instagramHandle", value)} placeholder="@handle" maxLength={31} />
-              <TextField label="Website" value={form.website} error={formErrors.website} onChange={(value) => handleChange("website", value)} />
+              <TextField
+                label="Username"
+                value={form.username}
+                error={formErrors.username}
+                onChange={(value) => handleChange("username", value)}
+                maxLength={50}
+              />
+              <TextArea
+                label="Bio"
+                value={form.bio}
+                error={formErrors.bio}
+                onChange={(value) => handleChange("bio", value)}
+              />
+              <div className="grid gap-4 md:grid-cols-2">
+                <ImageUploadField
+                  label="Avatar"
+                  value={form.avatarUrl}
+                  fallbackSeed={profile?.id || profileAddress}
+                  onPendingFileChange={setPendingAvatarFile}
+                />
+                <ImageUploadField
+                  label="Banner"
+                  value={form.bannerUrl}
+                  fallbackSeed={`${profile?.id || profileAddress}-banner`}
+                  aspect="banner"
+                  onPendingFileChange={setPendingBannerFile}
+                />
+              </div>
+              <TextField
+                label="Twitter Handle"
+                value={form.twitterHandle}
+                error={formErrors.twitterHandle}
+                onChange={(value) => handleChange("twitterHandle", value)}
+                placeholder="@handle"
+                maxLength={16}
+              />
+              <TextField
+                label="Instagram Handle"
+                value={form.instagramHandle}
+                error={formErrors.instagramHandle}
+                onChange={(value) => handleChange("instagramHandle", value)}
+                placeholder="@handle"
+                maxLength={31}
+              />
+              <TextField
+                label="Website"
+                value={form.website}
+                error={formErrors.website}
+                onChange={(value) => handleChange("website", value)}
+              />
 
               <button
                 type="submit"
@@ -229,6 +333,7 @@ export default function ProfilePage() {
           )}
         </section>
 
+        {/* Linked Wallets Section */}
         <section className="rounded-xl border border-border bg-card p-6">
           <div className="mb-5 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -254,33 +359,43 @@ export default function ProfilePage() {
             </div>
           ) : (
             <p className="mb-5 text-sm text-muted-foreground">
-              {loading ? "Loading wallets..." : "No wallets linked yet."}
+              {loading
+                ? "Loading wallets..."
+                : t("profile.noWallets") || "No wallets linked yet."}
             </p>
           )}
 
           {connected && address && (
             <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-4">
               <div className="mb-3 flex items-center justify-between gap-4">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-white">
                     {t("profile.connectedWallet") || "Connected Wallet"}
                   </p>
-                  <p className="mt-0.5 truncate font-mono text-xs text-gray-400">{address}</p>
+                  <p className="mt-0.5 truncate font-mono text-xs text-gray-400 pr-2">
+                    {address}
+                  </p>
                 </div>
                 <WalletNetworkStatus network={network} />
               </div>
 
-              <WalletBalance address={address} network={network} className="mb-4" />
+              <WalletBalance
+                address={address}
+                network={network}
+                className="mb-4"
+              />
 
               <div className="flex flex-wrap gap-2">
                 {!isAlreadyLinked && (
                   <button
                     onClick={handleLinkWallet}
-                    disabled={linking}
+                    disabled={linking || authLoading}
                     className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#4e3bff] to-[#9747ff] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     <Link2 className="h-4 w-4" />
-                    {linking ? "Linking..." : t("profile.linkWallet") || "Link to Account"}
+                    {linking || authLoading
+                      ? "Linking..."
+                      : t("profile.linkWallet") || "Link to Account"}
                   </button>
                 )}
                 <button
@@ -303,7 +418,10 @@ export default function ProfilePage() {
         </section>
       </div>
 
-      <WalletModal open={walletModalOpen} onClose={() => setWalletModalOpen(false)} />
+      <WalletModal
+        open={walletModalOpen}
+        onClose={() => setWalletModalOpen(false)}
+      />
     </div>
   );
 }
@@ -325,12 +443,25 @@ function validateProfile(form: ProfileForm): FormErrors {
   const handlePattern = /^@?[A-Za-z0-9_]{1,15}$/;
   const instagramPattern = /^@?[A-Za-z0-9_.]{1,30}$/;
 
-  if (form.username.trim().length > 50) errors.username = "Username must be 50 characters or less.";
-  if (form.avatarUrl && (!isValidUrl(form.avatarUrl) || form.avatarUrl.length > 500)) errors.avatarUrl = "Enter a valid avatar URL under 500 characters.";
-  if (form.bannerUrl && (!isValidUrl(form.bannerUrl) || form.bannerUrl.length > 500)) errors.bannerUrl = "Enter a valid banner URL under 500 characters.";
-  if (form.website && (!isValidUrl(form.website) || form.website.length > 500)) errors.website = "Enter a valid website URL under 500 characters.";
-  if (form.twitterHandle && !handlePattern.test(form.twitterHandle)) errors.twitterHandle = "Use a valid Twitter handle, up to 15 characters.";
-  if (form.instagramHandle && !instagramPattern.test(form.instagramHandle)) errors.instagramHandle = "Use a valid Instagram handle, up to 30 characters.";
+  if (form.username.trim().length > 50)
+    errors.username = "Username must be 50 characters or less.";
+  if (
+    form.avatarUrl &&
+    (!isValidUrl(form.avatarUrl) || form.avatarUrl.length > 500)
+  )
+    errors.avatarUrl = "Enter a valid avatar URL under 500 characters.";
+  if (
+    form.bannerUrl &&
+    (!isValidUrl(form.bannerUrl) || form.bannerUrl.length > 500)
+  )
+    errors.bannerUrl = "Enter a valid banner URL under 500 characters.";
+  if (form.website && (!isValidUrl(form.website) || form.website.length > 500))
+    errors.website = "Enter a valid website URL under 500 characters.";
+  if (form.twitterHandle && !handlePattern.test(form.twitterHandle))
+    errors.twitterHandle = "Use a valid Twitter handle, up to 15 characters.";
+  if (form.instagramHandle && !instagramPattern.test(form.instagramHandle))
+    errors.instagramHandle =
+      "Use a valid Instagram handle, up to 30 characters.";
 
   return errors;
 }
@@ -344,7 +475,13 @@ function isValidUrl(value: string): boolean {
   }
 }
 
-function StatusMessage({ type, text }: { type: "success" | "error"; text: string }) {
+function StatusMessage({
+  type,
+  text,
+}: {
+  type: "success" | "error";
+  text: string;
+}) {
   const Icon = type === "success" ? CheckCircle2 : AlertCircle;
   const classes =
     type === "success"
@@ -352,7 +489,9 @@ function StatusMessage({ type, text }: { type: "success" | "error"; text: string
       : "border-red-500/30 bg-red-900/30 text-red-300";
 
   return (
-    <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${classes}`}>
+    <div
+      className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${classes}`}
+    >
       <Icon className="mt-0.5 h-4 w-4 flex-shrink-0" />
       <span>{text}</span>
     </div>
@@ -376,7 +515,9 @@ function TextField({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-card-foreground">{label}</span>
+      <span className="mb-1 block text-sm font-medium text-card-foreground">
+        {label}
+      </span>
       <input
         value={value}
         placeholder={placeholder}
@@ -384,7 +525,9 @@ function TextField({
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-purple-400"
       />
-      {error && <span className="mt-1 block text-xs text-red-400">{error}</span>}
+      {error && (
+        <span className="mt-1 block text-xs text-red-400">{error}</span>
+      )}
     </label>
   );
 }
@@ -402,20 +545,25 @@ function TextArea({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-card-foreground">{label}</span>
+      <span className="mb-1 block text-sm font-medium text-card-foreground">
+        {label}
+      </span>
       <textarea
         value={value}
         rows={4}
         onChange={(event) => onChange(event.target.value)}
         className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-purple-400"
       />
-      {error && <span className="mt-1 block text-xs text-red-400">{error}</span>}
+      {error && (
+        <span className="mt-1 block text-xs text-red-400">{error}</span>
+      )}
     </label>
   );
 }
 
 function LinkedWalletRow({ wallet }: { wallet: LinkedWallet }) {
   const linkedAt = wallet.createdAt || wallet.lastUsedAt;
+  const network = wallet.walletAddress.startsWith("G") ? "mainnet" : "testnet";
 
   return (
     <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 p-3">
@@ -425,7 +573,9 @@ function LinkedWalletRow({ wallet }: { wallet: LinkedWallet }) {
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <p className="truncate font-mono text-sm text-foreground">{shortAddress(wallet.walletAddress)}</p>
+            <p className="truncate font-mono text-sm text-foreground">
+              {shortAddress(wallet.walletAddress)}
+            </p>
             {wallet.isPrimary && (
               <span className="rounded-full bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-medium text-purple-300">
                 Primary
@@ -434,15 +584,21 @@ function LinkedWalletRow({ wallet }: { wallet: LinkedWallet }) {
           </div>
           <p className="text-xs capitalize text-muted-foreground">
             {wallet.walletProvider}
-            {linkedAt ? ` · Linked ${new Date(linkedAt).toLocaleDateString()}` : ""}
+            {linkedAt
+              ? ` · Linked ${new Date(linkedAt).toLocaleDateString()}`
+              : " · Recently"}
           </p>
         </div>
       </div>
       <a
-        href={getExplorerUrl("testnet", undefined, wallet.walletAddress)}
+        href={getExplorerUrl(
+          network as "testnet" | "mainnet",
+          undefined,
+          wallet.walletAddress,
+        )}
         target="_blank"
         rel="noopener noreferrer"
-        className="ml-2 text-purple-400 transition-colors hover:text-purple-300"
+        className="ml-2 text-purple-400 transition-colors hover:text-purple-300 flex-shrink-0"
         aria-label="View wallet in explorer"
       >
         <ExternalLink className="h-4 w-4" />

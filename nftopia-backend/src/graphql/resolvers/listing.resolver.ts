@@ -23,7 +23,7 @@ import {
 import {
   GraphqlListing,
   ListingConnection,
-  TransactionResult,
+  ListingTransactionResult,
 } from '../types/listing.types';
 import { GraphqlUserType } from '../types/user.types';
 import { GraphqlNft } from '../types/nft.types';
@@ -73,10 +73,15 @@ export class ListingResolver {
     const result = await this.listingService.findConnection({
       first,
       after,
-      status: filter?.status as ListingStatus | undefined,
+      status: filter?.status,
       sellerId: filter?.sellerId,
       nftContractId: nftParts?.contractId,
       nftTokenId: nftParts?.tokenId,
+      search: filter?.search,
+      minPrice: filter?.minPrice,
+      maxPrice: filter?.maxPrice,
+      category: filter?.category,
+      sortBy: filter?.sortBy,
     });
 
     return this.toConnection(result.data, result.total, result.hasNextPage);
@@ -124,14 +129,14 @@ export class ListingResolver {
   }
 
   @UseGuards(GqlAuthGuard)
-  @Mutation(() => TransactionResult, {
+  @Mutation(() => ListingTransactionResult, {
     name: 'buyNFT',
     description: 'Execute NFT purchase against an active listing',
   })
   async buyNFT(
     @Args('listingId', { type: () => ID }) listingId: string,
     @Context() context: GraphqlContext,
-  ): Promise<TransactionResult> {
+  ): Promise<ListingTransactionResult> {
     const buyerId = this.getAuthenticatedUserId(context);
     const result = await this.listingService.buy(listingId, buyerId);
 

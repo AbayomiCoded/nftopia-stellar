@@ -11,7 +11,7 @@ import {
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import type { Cache } from 'cache-manager';
 import { Transaction } from './entities/transaction.entity';
 import {
@@ -39,6 +39,12 @@ import { StorageService } from '../../storage/storage.service';
 import { NftService } from '../nft/nft.service';
 import { UsersService } from '../../users/users.service';
 import { UserRole } from '../../common/enums/user-role.enum';
+import {
+  PaymentMethod,
+  OFFCHAIN_PAYMENT_METHODS,
+} from '../payment/enums/payment-method.enum';
+import { TransactionRetryQueueService } from './transaction-retry-queue.service';
+import { TransactionRetryStatus } from './interfaces/transaction-retry.interface';
 
 type ContractExecutionResult = {
   status?: unknown;
@@ -68,6 +74,7 @@ export class TransactionService {
     private readonly nftService: NftService,
     private readonly storageService: StorageService,
     private readonly configService: ConfigService,
+    private readonly retryQueueService: TransactionRetryQueueService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
@@ -87,6 +94,8 @@ export class TransactionService {
       nftId: dto.nftId,
       buyerId,
       sellerId: dto.sellerId,
+      paymentMethod: dto.paymentMethod || PaymentMethod.XLM,
+      tokenAddress: dto.tokenAddress,
     };
     const operations = this.buildOperations(dto.operations);
 
@@ -160,8 +169,9 @@ export class TransactionService {
       nftContractId: listing.nftContractId,
       nftTokenId: listing.nftTokenId,
       amount: Number(listing.price),
-      currency: listing.currency,
+      currency: listing.currency || 'XLM',
       listingId,
+      paymentMethod: PaymentMethod.XLM,
       metadata: { source: 'listing', maxGas },
     });
   }
@@ -186,10 +196,160 @@ export class TransactionService {
       amount,
       currency: 'XLM',
       auctionId,
+      paymentMethod: PaymentMethod.XLM,
       metadata: { source: 'auction', maxGas },
     });
   }
 
+  /**
+   * Execute a transaction with queue-based retry on failure
+   * Enhanced version that enqueues failed transactions for retry
+   */
+  async executeWithRetry(
+    id: number,
+    callerId: string,
+    dto: ExecuteTransactionDto,
+  ): Promise<Transaction> {
+    const transaction = await this.findById(id, callerId);
+    this.assertCanMutate(callerId, transaction);
+
+    if (
+      transaction.state === TransactionState.COMPLETED ||
+      transaction.state === TransactionState.CANCELLED
+    ) {
+      throw new ConflictException('Transaction is already finalized');
+    }
+
+    // First attempt to execute synchronously
+    try {
+      return await this.execute(id, callerId, dto);
+    } catch (error) {
+      // Check if the error is retryable
+      if (this.isRetryableError(error)) {
+        this.logger.warn(
+          `Transaction ${id} failed with retryable error, enqueuing for retry: ${(error as Error).message}`,
+        );
+
+        // Get the transaction XDR from the contract client
+        let transactionXdr: string;
+        try {
+          const txData = await this.txContract.getTransactionData(
+            Number(transaction.contractTxId),
+          );
+          transactionXdr = txData.xdr || '';
+        } catch (txError) {
+          this.logger.error(
+            `Failed to get transaction XDR for retry: ${(txError as Error).message}`,
+          );
+          throw error;
+        }
+
+        // Enqueue for retry
+        const retryRecord = await this.retryQueueService.enqueueRetry(
+          transaction.id,
+          transaction.contractTxId,
+          transactionXdr,
+          undefined, // signature will be handled by the worker
+          (error as Error).message,
+          {
+            originalError: (error as Error).message,
+            callerId,
+            dto,
+          },
+        );
+
+        // Update transaction state to PENDING_RETRY
+        transaction.state = TransactionState.PENDING_RETRY;
+        transaction.contractState = 'pending_retry';
+        transaction.errorReason = (error as Error).message;
+        await this.transactionRepo.save(transaction);
+
+        // Return the transaction with retry info
+        const result = await this.findById(id, callerId);
+        result.metadata = {
+          ...(result.metadata || {}),
+          retryId: retryRecord.retryId,
+          retryStatus: TransactionRetryStatus.PENDING,
+        };
+
+        this.logger.log(
+          `Transaction ${id} enqueued for retry with retryId ${retryRecord.retryId}`,
+        );
+
+        return result;
+      }
+
+      // Non-retryable error, throw it
+      throw error;
+    }
+  }
+
+  /**
+   * Check if an error is retryable
+   * Network errors, timeouts, and certain contract errors are retryable
+   */
+  private isRetryableError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+
+    // Network and timeout errors
+    if (
+      message.includes('timeout') ||
+      message.includes('timed out') ||
+      message.includes('network') ||
+      message.includes('fetch failed') ||
+      message.includes('unavailable') ||
+      message.includes('connection refused') ||
+      message.includes('econnrefused') ||
+      message.includes('econnreset') ||
+      message.includes('socket hang up')
+    ) {
+      return true;
+    }
+
+    // Soroban-specific errors that are retryable
+    if (
+      message.includes('tx_bad_seq') ||
+      message.includes('bad sequence') ||
+      message.includes('queue is full') ||
+      message.includes('rate limit') ||
+      message.includes('too many requests')
+    ) {
+      return true;
+    }
+
+    // Contract errors that might resolve with retry
+    if (
+      message.includes('temporarily unavailable') ||
+      message.includes('busy') ||
+      message.includes('pending')
+    ) {
+      return true;
+    }
+
+    // Non-retryable errors
+    if (
+      message.includes('invalid') ||
+      message.includes('not found') ||
+      message.includes('unauthorized') ||
+      message.includes('forbidden') ||
+      message.includes('already') ||
+      message.includes('insufficient')
+    ) {
+      return false;
+    }
+
+    // Default: retry if it's a server error or unknown
+    return message.includes('server') || message.includes('internal');
+  }
+
+  /**
+   * Execute a transaction with enhanced retry capability
+   * Preserves existing behavior while adding retry queue support
+   */
   async execute(
     id: number,
     callerId: string,
@@ -203,6 +363,35 @@ export class TransactionService {
       transaction.state === TransactionState.CANCELLED
     ) {
       throw new ConflictException('Transaction is already finalized');
+    }
+
+    // If transaction is already in retry state, check retry status
+    if (transaction.state === TransactionState.PENDING_RETRY) {
+      const retryId = transaction.metadata?.retryId as string;
+      if (retryId) {
+        const retryStatus =
+          await this.retryQueueService.getRetryStatus(retryId);
+        if (retryStatus) {
+          if (retryStatus.status === TransactionRetryStatus.COMPLETED) {
+            // Retry succeeded, update transaction
+            transaction.state = TransactionState.COMPLETED;
+            transaction.contractState = 'completed';
+            await this.transactionRepo.save(transaction);
+            await this.applySettlement(transaction);
+            await this.invalidateCaches(transaction);
+            return transaction;
+          }
+          if (retryStatus.status === TransactionRetryStatus.DLQ) {
+            throw new ConflictException(
+              `Transaction ${id} is in DLQ. Use admin API to retry.`,
+            );
+          }
+          if (retryStatus.status === TransactionRetryStatus.PENDING) {
+            // Retry is still pending, return current state
+            return transaction;
+          }
+        }
+      }
     }
 
     transaction.state = TransactionState.EXECUTING;
@@ -243,6 +432,58 @@ export class TransactionService {
       await this.invalidateCaches(saved);
       return saved;
     } catch (error) {
+      // If there's a retryable error, enqueue for retry
+      if (this.isRetryableError(error)) {
+        this.logger.warn(
+          `Transaction ${id} failed with retryable error during execution: ${(error as Error).message}`,
+        );
+
+        // Get the transaction XDR
+        let transactionXdr: string;
+        try {
+          const txData = await this.txContract.getTransactionData(
+            Number(transaction.contractTxId),
+          );
+          transactionXdr = txData.xdr || '';
+        } catch (txError) {
+          this.logger.error(
+            `Failed to get transaction XDR for retry: ${(txError as Error).message}`,
+          );
+          transaction.state = TransactionState.FAILED;
+          transaction.errorReason = (error as Error).message;
+          const failed = await this.transactionRepo.save(transaction);
+          await this.invalidateCaches(failed);
+          throw this.mapContractError(error);
+        }
+
+        const retryRecord = await this.retryQueueService.enqueueRetry(
+          transaction.id,
+          transaction.contractTxId,
+          transactionXdr,
+          undefined,
+          (error as Error).message,
+          {
+            originalError: (error as Error).message,
+            callerId,
+            dto,
+          },
+        );
+
+        transaction.state = TransactionState.PENDING_RETRY;
+        transaction.contractState = 'pending_retry';
+        transaction.errorReason = (error as Error).message;
+        transaction.metadata = {
+          ...(transaction.metadata || {}),
+          retryId: retryRecord.retryId,
+          retryStatus: TransactionRetryStatus.PENDING,
+        };
+
+        const saved = await this.transactionRepo.save(transaction);
+        await this.invalidateCaches(saved);
+        return saved;
+      }
+
+      // Non-retryable error
       transaction.state = TransactionState.FAILED;
       transaction.errorReason = (error as Error).message;
       const failed = await this.transactionRepo.save(transaction);
@@ -264,6 +505,20 @@ export class TransactionService {
       transaction.state === TransactionState.CANCELLED
     ) {
       throw new ConflictException('Transaction is already finalized');
+    }
+
+    // Check if there's a pending retry and cancel it
+    if (transaction.state === TransactionState.PENDING_RETRY) {
+      const retryId = transaction.metadata?.retryId as string;
+      if (retryId) {
+        try {
+          await this.retryQueueService.cancelRetry(retryId);
+        } catch (cancelError) {
+          this.logger.warn(
+            `Failed to cancel retry ${retryId}: ${(cancelError as Error).message}`,
+          );
+        }
+      }
     }
 
     await this.txContract.cancelTransaction(
@@ -533,12 +788,38 @@ export class TransactionService {
 
   async getQuickStatus(id: number, callerId?: string) {
     const transaction = await this.findById(id, callerId);
+    // Check if there's a retry in progress
+    let retryInfo: {
+      retryId: string;
+      status: TransactionRetryStatus;
+      attemptCount: number;
+      maxAttempts: number;
+      nextRetryAt?: number;
+    } | null = null;
+    if (transaction.state === TransactionState.PENDING_RETRY) {
+      const retryId = transaction.metadata?.retryId as string;
+      if (retryId) {
+        const retryStatus =
+          await this.retryQueueService.getRetryStatus(retryId);
+        if (retryStatus) {
+          retryInfo = {
+            retryId: retryStatus.retryId,
+            status: retryStatus.status,
+            attemptCount: retryStatus.attemptCount,
+            maxAttempts: retryStatus.maxAttempts,
+            nextRetryAt: retryStatus.nextRetryAt,
+          };
+        }
+      }
+    }
+
     return {
       id: transaction.id,
       contractTxId: transaction.contractTxId,
       state: transaction.state,
       contractState: transaction.contractState,
       errorReason: transaction.errorReason,
+      retryInfo,
     };
   }
 
@@ -566,6 +847,37 @@ export class TransactionService {
     }
   }
 
+  /**
+   * Get retry status for a transaction
+   */
+  async getTransactionRetryStatus(transactionId: number): Promise<{
+    retries: Array<{
+      retryId: string;
+      status: TransactionRetryStatus;
+      attemptCount: number;
+      maxAttempts: number;
+      lastError?: string;
+      createdAt: number;
+      nextRetryAt?: number;
+      completedAt?: number;
+    }>;
+  }> {
+    const retries =
+      await this.retryQueueService.getRetriesForTransaction(transactionId);
+    return {
+      retries: retries.map((retry) => ({
+        retryId: retry.retryId,
+        status: retry.status,
+        attemptCount: retry.attemptCount,
+        maxAttempts: retry.maxAttempts,
+        lastError: retry.lastError,
+        createdAt: retry.createdAt,
+        nextRetryAt: retry.nextRetryAt,
+        completedAt: retry.completedAt,
+      })),
+    };
+  }
+
   private async syncContractState(
     transaction: Transaction,
   ): Promise<Transaction> {
@@ -577,7 +889,8 @@ export class TransactionService {
 
       if (
         status === 'failed' &&
-        transaction.state !== TransactionState.FAILED
+        transaction.state !== TransactionState.FAILED &&
+        transaction.state !== TransactionState.PENDING_RETRY
       ) {
         transaction.state = TransactionState.FAILED;
       }
@@ -863,5 +1176,351 @@ export class TransactionService {
         `tx-history:nft:${transaction.nftContractId}:${transaction.nftTokenId}`,
       ),
     ]);
+  }
+
+  /**
+   * Create an off-chain payment transaction (credit card, Stripe)
+   * Transaction starts in PENDING state and waits for webhook confirmation
+   */
+  async createOffchainPaymentTransaction(
+    listingId: string,
+    buyerId: string,
+    params: {
+      amount: number;
+      paymentMethod: PaymentMethod;
+      stripePaymentIntentId: string;
+      paymentIntentSecret?: string;
+    },
+  ): Promise<Transaction> {
+    const listing = await this.listingRepo.findOne({
+      where: { id: listingId },
+    });
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    if (listing.status !== 'ACTIVE') {
+      throw new ConflictException('Listing is not active');
+    }
+
+    // Validate payment method is off-chain
+    if (
+      !(OFFCHAIN_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
+        params.paymentMethod,
+      )
+    ) {
+      throw new BadRequestException(
+        `Payment method ${params.paymentMethod} is not supported for off-chain payments`,
+      );
+    }
+
+    // Create transaction in PENDING state
+    const transaction = this.transactionRepo.create({
+      contractTxId: `offchain_${Date.now()}_${listingId}`,
+      buyerId,
+      sellerId: listing.sellerId,
+      nftContractId: listing.nftContractId,
+      nftTokenId: listing.nftTokenId,
+      amount: params.amount.toString(),
+      currency: listing.currency || 'USD',
+      state: TransactionState.PENDING,
+      contractState: 'pending_offchain',
+      createdAt: this.getLedgerTimestamp(),
+      metadata: {
+        listingId,
+        paymentMethod: params.paymentMethod,
+        stripePaymentIntentId: params.stripePaymentIntentId,
+        paymentIntentSecret: params.paymentIntentSecret,
+        paymentType: 'offchain',
+        source: 'listing',
+      },
+    });
+
+    const saved = await this.transactionRepo.save(transaction);
+
+    this.logger.log(
+      `Off-chain payment initiated: transaction=${saved.id}, method=${params.paymentMethod}, intent=${params.stripePaymentIntentId}`,
+    );
+
+    await this.invalidateCaches(saved);
+    return saved;
+  }
+
+  /**
+   * Create and execute a bundle purchase with discount logic
+   */
+  async createAndExecuteBundlePurchase(
+    listingId: string,
+    buyerId: string,
+    params: {
+      amount: number;
+      paymentMethod: PaymentMethod;
+      bundleItemIds: string[];
+      discountPercentage: number;
+    },
+  ): Promise<Transaction> {
+    const listing = await this.listingRepo.findOne({
+      where: { id: listingId },
+    });
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    if (listing.status !== 'ACTIVE') {
+      throw new ConflictException('Listing is not active');
+    }
+
+    // Validate bundle items exist and are active
+    const bundleListings = await this.listingRepo.find({
+      where: {
+        id: In(params.bundleItemIds),
+        status: ListingStatus.ACTIVE,
+      },
+    });
+
+    if (bundleListings.length !== params.bundleItemIds.length) {
+      throw new BadRequestException(
+        'One or more bundle items are not available',
+      );
+    }
+
+    // Calculate total bundle price with discount
+    const originalTotal = bundleListings.reduce(
+      (sum, item) => sum + Number(item.price),
+      0,
+    );
+    const discountMultiplier = 1 - (params.discountPercentage || 0) / 100;
+    const finalPrice = Math.round(originalTotal * discountMultiplier);
+
+    // Validate the final price matches the expected amount
+    if (Math.abs(finalPrice - params.amount) > 1) {
+      throw new BadRequestException(
+        `Price mismatch: expected ${finalPrice}, got ${params.amount}`,
+      );
+    }
+
+    // Create transaction for the bundle
+    const metadata = {
+      listingId,
+      bundleItemIds: params.bundleItemIds,
+      discountPercentage: params.discountPercentage,
+      originalTotal,
+      paymentMethod: params.paymentMethod,
+      source: 'bundle',
+    };
+
+    const operations = this.buildOperations([
+      {
+        type: 'bundle_purchase',
+        payload: {
+          listingIds: [listingId, ...params.bundleItemIds],
+          discountPercentage: params.discountPercentage,
+          originalTotal,
+        },
+      },
+      {
+        type: 'nft_transfer',
+        payload: {
+          listingIds: [listingId, ...params.bundleItemIds],
+        },
+      },
+      {
+        type: 'payment',
+        payload: {
+          amount: params.amount,
+          currency: listing.currency || 'XLM',
+        },
+      },
+      {
+        type: 'royalty',
+        payload: { validated: true },
+      },
+    ]);
+
+    // Create contract transaction
+    let contractTxId: number;
+    try {
+      contractTxId = await this.txContract.createTransaction(
+        buyerId,
+        metadata,
+        operations,
+      );
+
+      for (const operation of operations) {
+        await this.txContract.addOperation(contractTxId, operation);
+      }
+    } catch (error) {
+      throw this.mapContractError(error);
+    }
+
+    // Create transaction record
+    const transaction = this.transactionRepo.create({
+      contractTxId: String(contractTxId),
+      buyerId,
+      sellerId: listing.sellerId,
+      nftContractId: listing.nftContractId,
+      nftTokenId: listing.nftTokenId,
+      amount: params.amount.toString(),
+      currency: listing.currency || 'XLM',
+      state: TransactionState.PENDING,
+      contractState: 'pending',
+      createdAt: this.getLedgerTimestamp(),
+      metadata,
+    });
+
+    const saved = await this.transactionRepo.save(transaction);
+
+    try {
+      const executed = await this.execute(saved.id, buyerId, {
+        maxGas: this.getGasCeiling(),
+        config: { auto: true },
+      });
+
+      // Update all bundle listings to SOLD
+      for (const bundleItem of bundleListings) {
+        bundleItem.status = ListingStatus.SOLD;
+        await this.listingRepo.save(bundleItem);
+      }
+
+      await this.invalidateCaches(executed);
+      return executed;
+    } catch (error) {
+      this.logger.warn(
+        `Bundle transaction ${saved.id} execution failed: ${(error as Error).message}`,
+      );
+      const fallback = await this.findById(saved.id, buyerId);
+      await this.invalidateCaches(fallback);
+      return fallback;
+    }
+  }
+
+  /**
+   * Confirm an off-chain payment (called by webhook)
+   * Updates transaction from PENDING to COMPLETED
+   */
+  async confirmOffchainPayment(
+    paymentIntentId: string,
+    status: 'succeeded' | 'failed',
+    metadata?: Record<string, unknown>,
+  ): Promise<Transaction> {
+    const transaction = await this.transactionRepo.findOne({
+      where: {
+        metadata: {
+          stripePaymentIntentId: paymentIntentId,
+        },
+      },
+    });
+
+    if (!transaction) {
+      throw new NotFoundException(
+        `Transaction not found for payment intent: ${paymentIntentId}`,
+      );
+    }
+
+    if (transaction.state !== TransactionState.PENDING) {
+      throw new ConflictException(
+        `Transaction ${transaction.id} is already ${transaction.state}`,
+      );
+    }
+
+    if (status === 'failed') {
+      transaction.state = TransactionState.FAILED;
+      transaction.errorReason = 'Payment failed or cancelled';
+      await this.transactionRepo.save(transaction);
+      await this.invalidateCaches(transaction);
+      return transaction;
+    }
+
+    // Payment succeeded - execute the transaction
+    transaction.state = TransactionState.EXECUTING;
+    transaction.contractState = 'executing_offchain';
+    transaction.executedAt = this.getLedgerTimestamp();
+    transaction.metadata = {
+      ...transaction.metadata,
+      confirmedAt: new Date().toISOString(),
+      ...metadata,
+    };
+
+    await this.transactionRepo.save(transaction);
+
+    try {
+      const executed = await this.execute(transaction.id, transaction.buyerId, {
+        maxGas: this.getGasCeiling(),
+        config: { auto: true },
+      });
+
+      // Update listing status
+      const listingId = this.readStringMetadata(transaction, 'listingId');
+      if (listingId) {
+        const listing = await this.listingRepo.findOne({
+          where: { id: listingId },
+        });
+        if (listing) {
+          listing.status = ListingStatus.SOLD;
+          await this.listingRepo.save(listing);
+        }
+      }
+
+      await this.invalidateCaches(executed);
+      return executed;
+    } catch (error) {
+      transaction.state = TransactionState.FAILED;
+      transaction.errorReason = (error as Error).message;
+      const failed = await this.transactionRepo.save(transaction);
+      await this.invalidateCaches(failed);
+      throw this.mapContractError(error);
+    }
+  }
+
+  /**
+   * Create and execute a listing purchase with payment method
+   * Enhanced version of the existing method with payment method support
+   */
+  async createAndExecuteListingPurchaseWithPayment(
+    listingId: string,
+    buyerId: string,
+    paymentMethod: PaymentMethod = PaymentMethod.XLM,
+    tokenAddress?: string,
+    maxGas?: number,
+  ): Promise<Transaction> {
+    const listing = await this.listingRepo.findOne({
+      where: { id: listingId },
+    });
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    if (listing.status !== 'ACTIVE') {
+      throw new ConflictException('Listing is not active');
+    }
+
+    // For off-chain payments, use the off-chain method
+    if (
+      (OFFCHAIN_PAYMENT_METHODS as readonly PaymentMethod[]).includes(
+        paymentMethod,
+      )
+    ) {
+      throw new BadRequestException(
+        `For ${paymentMethod} payments, use createOffchainPaymentTransaction`,
+      );
+    }
+
+    // For native payments (XLM, USDC), use the existing method
+    return this.createAndExecutePurchase(buyerId, {
+      sellerId: listing.sellerId,
+      nftContractId: listing.nftContractId,
+      nftTokenId: listing.nftTokenId,
+      amount: Number(listing.price),
+      currency: paymentMethod === PaymentMethod.XLM ? 'XLM' : 'USDC',
+      listingId,
+      paymentMethod,
+      tokenAddress,
+      metadata: {
+        source: 'listing',
+        maxGas,
+        paymentMethod,
+        tokenAddress,
+      },
+    });
   }
 }

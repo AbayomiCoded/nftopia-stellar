@@ -55,3 +55,38 @@ export class EmailLoginDto {
   @MaxLength(72)
   password: string;
 }
+
+export class EmailLoginResponseDto {
+  @ApiPropertyOptional({
+    description: 'Temporary token if 2FA is required',
+  })
+  tempToken?: string;
+
+  @ApiPropertyOptional({
+    description: 'Whether 2FA is required to complete login',
+  })
+  requiresTwoFactor?: boolean;
+
+  @ApiProperty({
+    description: 'Access token (only if 2FA is not required)',
+  })
+  access_token?: string;
+
+  @ApiProperty({
+    description: 'Refresh token (only if 2FA is not required)',
+  })
+  refresh_token?: string;
+
+  @ApiProperty({
+    description: 'User information',
+  })
+  user?: {
+    id: string;
+    email?: string | null;
+    username?: string | null;
+    walletAddress?: string | null;
+    walletProvider?: string | null;
+    avatarUrl?: string | null;
+    bannerUrl?: string | null;
+  };
+}

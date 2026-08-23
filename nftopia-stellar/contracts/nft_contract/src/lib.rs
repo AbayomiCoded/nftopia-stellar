@@ -10,6 +10,7 @@ pub mod storage;
 pub mod token;
 pub mod transfer;
 pub mod types;
+pub mod version;
 
 use crate::access_control as ac;
 use crate::error::ContractError;
@@ -36,6 +37,10 @@ impl NftContract {
             panic_with_error!(&env, ContractError::AlreadyInitialized);
         }
         admin.require_auth();
+
+        // Validate supply cap during initialization
+        use crate::storage::validate_supply_cap;
+        validate_supply_cap(config.max_supply)?;
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
@@ -99,6 +104,11 @@ impl NftContract {
     pub fn burn(env: Env, caller: Address, token_id: u64) -> Result<(), ContractError> {
         caller.require_auth();
         token::burn(&env, &caller, token_id)
+    }
+
+    pub fn batch_burn(env: Env, caller: Address, token_ids: Vec<u64>) -> Result<(), ContractError> {
+        caller.require_auth();
+        token::batch_burn(&env, &caller, token_ids)
     }
 
     pub fn transfer(
@@ -284,6 +294,54 @@ impl NftContract {
     pub fn supports_interface(env: Env, interface_id: u32) -> bool {
         let _ = env;
         interface::supports_interface(interface_id)
+    }
+
+    // -------------------------------------------------------------------------
+    // Versioning
+    // -------------------------------------------------------------------------
+
+    /// Returns the semver string with embedded git commit: "0.1.0+abc1234"
+    pub fn version(env: Env) -> String {
+        version::version(&env)
+    }
+
+    /// Returns full build metadata for incident response:
+    /// "version=0.1.0;git=abc1234;ts=1700000000;rustc=rustc 1.x.y"
+    pub fn get_version(env: Env) -> String {
+        version::get_version(&env)
+    }
+
+    /// Gets the remaining supply available for minting.
+    pub fn remaining_supply(env: Env) -> u64 {
+        token::get_remaining_supply(&env)
+    }
+
+    /// Gets the current supply cap.
+    pub fn get_max_supply(env: Env) -> Result<u64, ContractError> {
+        token::get_max_supply(&env)
+    }
+
+    /// Updates the maximum supply cap for the collection.
+    ///
+    /// # Authorization
+    /// Only the contract admin can call this function.
+    ///
+    /// # Validation
+    /// - New cap must be >= MIN_SUPPLY_CAP (1)
+    /// - New cap must be <= MAX_SUPPLY_HARD_CAP (1,000,000)
+    /// - New cap must be >= current total supply (cannot reduce below existing supply)
+    ///
+    /// # Events
+    /// Emits `SupplyCapUpdated` on success.
+    ///
+    /// # Errors
+    /// - `NotAuthorized` if caller is not admin
+    /// - `SupplyCapTooLow` if cap < MIN_SUPPLY_CAP
+    /// - `SupplyCapTooHigh` if cap > MAX_SUPPLY_HARD_CAP
+    /// - `SupplyCapBelowCurrentSupply` if cap < current total supply
+    pub fn update_max_supply(env: Env, caller: Address, new_cap: u64) -> Result<(), ContractError> {
+        caller.require_auth();
+        token::update_max_supply(&env, &caller, new_cap)
     }
 }
 

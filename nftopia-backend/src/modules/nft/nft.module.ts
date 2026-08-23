@@ -7,14 +7,18 @@ import { Nft } from './entities/nft.entity';
 import { NftMetadata } from './entities/nft-metadata.entity';
 import { User } from '../../users/user.entity';
 import { SorobanService } from '../../nft/soroban.service';
+import { NftTransferEvent } from '../../jobs/entities/nft-transfer-event.entity';
+import { MetricsModule } from '../../common/metrics/metrics.module';
+import { NftMediaService } from './nft-media.service';
 
 @Module({
   imports: [
     EventEmitterModule,
-    TypeOrmModule.forFeature([Nft, NftMetadata, User]),
+    TypeOrmModule.forFeature([Nft, NftMetadata, User, NftTransferEvent]),
+    MetricsModule,
   ],
   controllers: [NftController],
-  providers: [NftService, SorobanService],
+  providers: [NftService, NftMediaService, SorobanService],
   exports: [NftService],
 })
 export class NftModule {}

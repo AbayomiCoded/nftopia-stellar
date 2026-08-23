@@ -1,3 +1,4 @@
+use crate::version;
 use soroban_sdk::{Address, Bytes, Env, Map, String, Vec, contract, contractimpl};
 
 use crate::error::TransactionError;
@@ -223,6 +224,7 @@ impl TransactionContract {
         let tx = storage::load_transaction(&env, transaction_id)
             .ok_or(TransactionError::TransactionNotFound)?;
 
+        gas_calculator::validate_gas_limits(&tx.operations)?;
         Ok(gas_calculator::total_gas(&tx.operations))
     }
 
@@ -393,6 +395,21 @@ impl TransactionContract {
         let _ = storage::load_transaction(&env, transaction_id)
             .ok_or(TransactionError::TransactionNotFound)?;
         Ok(default_gas_config(&env))
+    }
+
+    // -------------------------------------------------------------------------
+    // Versioning
+    // -------------------------------------------------------------------------
+
+    /// Returns the semver string with embedded git commit: "0.1.0+abc1234"
+    pub fn version(env: Env) -> String {
+        version::version(&env)
+    }
+
+    /// Returns full build metadata for incident response:
+    /// "version=0.1.0;git=abc1234;ts=1700000000;rustc=rustc 1.x.y"
+    pub fn get_version(env: Env) -> String {
+        version::get_version(&env)
     }
 }
 

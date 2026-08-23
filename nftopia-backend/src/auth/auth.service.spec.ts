@@ -8,6 +8,7 @@ import { User } from '../users/user.entity';
 import { UserWallet } from './entities/user-wallet.entity';
 import { WalletSession } from './entities/wallet-session.entity';
 import { StellarSignatureStrategy } from './strategies/stellar.strategy';
+import { TwoFactorService } from './two-factor.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -52,6 +53,10 @@ describe('AuthService', () => {
     del: jest.fn(),
   };
 
+  const twoFactorService = {
+    createTwoFactorSession: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -81,6 +86,10 @@ describe('AuthService', () => {
         {
           provide: CACHE_MANAGER,
           useValue: cacheManager,
+        },
+        {
+          provide: TwoFactorService,
+          useValue: twoFactorService,
         },
       ],
     }).compile();
@@ -195,6 +204,9 @@ describe('AuthService', () => {
       signature: Buffer.from('signed').toString('base64'),
     });
 
+    if ('requiresTwoFactor' in result) {
+      throw new Error('expected direct auth response, got 2FA challenge');
+    }
     expect(result.access_token).toEqual('access-token');
     expect(result.refresh_token).toEqual('refresh-token');
     expect(result.user.id).toEqual('user-1');

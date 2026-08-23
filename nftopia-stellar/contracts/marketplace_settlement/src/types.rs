@@ -1,4 +1,29 @@
+use crate::error::SettlementError;
 use soroban_sdk::{contracttype, Address, Bytes, Map, Symbol, Vec};
+
+/// Hard cap on royalty percentage in basis points (50%). No royalty may ever
+/// exceed this, regardless of the admin-configured cap.
+pub const MAX_ROYALTY_BPS: u64 = 5000;
+
+/// Default max royalty percentage used when no `AdminConfig` has been stored yet.
+pub const DEFAULT_MAX_ROYALTY_PERCENTAGE: u64 = MAX_ROYALTY_BPS;
+
+/// Validate a royalty percentage against both the hard cap and the
+/// admin-configured cap.
+///
+/// # Returns
+/// * `Err(SettlementError::InvalidRoyaltyPercentage)` if `percentage` exceeds the hard cap
+/// * `Err(SettlementError::RoyaltyExceedsMaxCap)` if `percentage` exceeds `admin_cap`
+/// * `Ok(())` otherwise
+pub fn validate_royalty_percentage(percentage: u64, admin_cap: u64) -> Result<(), SettlementError> {
+    if percentage > MAX_ROYALTY_BPS {
+        return Err(SettlementError::InvalidRoyaltyPercentage);
+    }
+    if percentage > admin_cap {
+        return Err(SettlementError::RoyaltyExceedsMaxCap);
+    }
+    Ok(())
+}
 
 // Transaction state enum
 #[contracttype]
@@ -71,6 +96,7 @@ pub struct Bid {
     pub placed_at: u64,
     pub is_committed: bool, // For commit-reveal schemes
     pub commitment_hash: Option<Bytes>,
+    pub refunded: bool,
 }
 
 // Royalty distribution structure
@@ -78,8 +104,10 @@ pub struct Bid {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoyaltyDistribution {
     pub creator_address: Address,
-    pub creator_percentage: u64,  // Basis points (10000 = 100%)
-    pub seller_percentage: u64,   // Basis points
+    pub creator_percentage: u64, // Basis points (10000 = 100%)
+    pub seller_address: Address,
+    pub seller_percentage: u64, // Basis points
+    pub platform_address: Address,
     pub platform_percentage: u64, // Basis points
     pub total_amount: i128,
     pub amounts: Map<Address, i128>, // Final amounts for each party

@@ -3,7 +3,7 @@ import type { GraphqlContext } from '../context/context.interface';
 import {
   GraphqlAuction,
   GraphqlBid,
-  AuctionStatus,
+  AuctionStatus, // eslint-disable-line @typescript-eslint/no-unused-vars
 } from '../types/auction.types';
 import { GraphqlUserType } from '../types/user.types';
 import type { Auction } from '../../modules/auction/entities/auction.entity';
@@ -55,7 +55,7 @@ export class BidResolver {
       reservePrice: this.toDecimalString(auction.reservePrice),
       startTime: auction.startTime,
       endTime: auction.endTime,
-      status: auction.status as AuctionStatus,
+      status: auction.status,
       winnerId: auction.winnerId ?? null,
       bids: undefined,
     };

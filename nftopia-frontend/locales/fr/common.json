@@ -101,6 +101,24 @@
     "royalties": "Revenus",
     "mint": "Minter le NFT"
   },
+  "creatorProfile": {
+    "verified": "Vérifié",
+    "followers": "abonnés",
+    "nftsCreated": "NFTs",
+    "volume": "volume",
+    "tabNfts": "NFTs",
+    "tabCollections": "Collections",
+    "tabActivity": "Activité",
+    "sortNewest": "Plus récents",
+    "sortPrice": "Prix",
+    "emptyNfts": "Aucun NFT",
+    "emptyCollections": "Aucune collection",
+    "emptyActivity": "Aucune activité",
+    "notFound": "Créateur introuvable",
+    "activityMint": "Minté",
+    "activitySale": "Vendu",
+    "activityListing": "Listé"
+  },
   "common": {
     "loading": "Chargement...",
     "error": "Erreur",
@@ -213,7 +231,22 @@
     "title": "Oups !",
     "message": "Nous ne trouvons pas la page que vous recherchez.",
     "errorCode": "Code d'erreur : 404",
-    "backToHome": "Retour à l'accueil"
+    "backToHome": "Retour à l'accueil",
+    "nft": {
+      "title": "NFT introuvable",
+      "message": "Le NFT que vous recherchez n'existe pas ou a été supprimé.",
+      "backToMarketplace": "Aller au Marketplace"
+    },
+    "collection": {
+      "title": "Collection introuvable",
+      "message": "La collection que vous recherchez n'existe pas ou a été supprimée.",
+      "backToMarketplace": "Aller au Marketplace"
+    },
+    "auction": {
+      "title": "Enchère introuvable",
+      "message": "L'enchère que vous recherchez n'existe pas ou est terminée.",
+      "backToAuctions": "Retour aux enchères"
+    }
   },
   "connectWallet": {
     "connect": "Connecter le portefeuille",
@@ -255,7 +288,11 @@
     "quickActions": "Actions rapides",
     "mintNewNFT": "Minter un nouveau NFT",
     "singleOrBatch": "Téléchargement unique ou par lot",
-    "goToMint": "Aller au mint"
+    "goToMint": "Aller au mint",
+    "errorFallbackTitle": "Impossible de charger le tableau de bord",
+    "errorFallbackMessage": "Un problème est survenu lors du chargement du tableau de bord. Nous avons enregistré cette erreur et travaillons à sa résolution.",
+    "errorOfflineTitle": "Pas de connexion internet",
+    "errorOfflineMessage": "Il semble que vous soyez hors ligne. Veuillez vérifier votre connexion réseau et réessayer."
   },
   "mintNFT": {
     "title": "Minter un NFT",
