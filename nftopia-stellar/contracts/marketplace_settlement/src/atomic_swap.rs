@@ -1,6 +1,6 @@
 use crate::error::SettlementError;
 use crate::security::reentrancy_guard::ReentrancyGuard;
-use crate::types::{Asset, ExecutionResult};
+use crate::types::{Asset, ExecutionResult, TokenAsset};
 use crate::utils::asset_utils;
 use soroban_sdk::{contracttype, symbol_short, Address, Bytes, Env, Map, Symbol, Vec};
 
@@ -66,13 +66,13 @@ impl AtomicSwapEngine {
         seller_escrow.push_back(EscrowHolding {
             transaction_id,
             holder: seller.clone(),
-            asset: Asset {
+            asset: Asset::Token(TokenAsset {
                 contract: nft_address.clone(),
                 symbol: Symbol::new(env, "NFT"),
-            },
+            }),
             amount: token_id as i128,
             is_nft: true,
-            deposited_at: env.ledger().timestamp(),
+            deposited_at: 0,
             released_at: None,
         });
 
@@ -83,7 +83,7 @@ impl AtomicSwapEngine {
             asset: payment_asset.clone(),
             amount: payment_amount,
             is_nft: false,
-            deposited_at: env.ledger().timestamp(),
+            deposited_at: 0,
             released_at: None,
         });
 
@@ -174,6 +174,48 @@ impl AtomicSwapEngine {
         })
     }
 
+    /// Fund a sale from the buyer and release the escrowed NFT.
+    ///
+    /// Payment remains in the settlement contract so royalties and platform
+    /// fees can be distributed atomically by the caller.
+    pub fn execute_sale_swap(
+        env: &Env,
+        transaction_id: u64,
+        buyer: &Address,
+    ) -> Result<(), SettlementError> {
+        let mut swap = Self::get_swap_by_transaction(env, transaction_id)?;
+        if swap.state != SwapState::SellerFunded {
+            return Err(SettlementError::InvalidState);
+        }
+
+        let mut payment = swap
+            .buyer_escrow
+            .get(0)
+            .ok_or(SettlementError::InvalidState)?;
+        payment.holder = buyer.clone();
+        Self::transfer_to_escrow(env, buyer, &payment.asset, payment.amount, false)?;
+
+        let timestamp = env.ledger().timestamp().max(1);
+        payment.deposited_at = timestamp;
+        payment.released_at = Some(timestamp);
+        swap.buyer_escrow.set(0, payment);
+        swap.state = SwapState::Ready;
+
+        for i in 0..swap.seller_escrow.len() {
+            if let Some(mut holding) = swap.seller_escrow.get(i) {
+                if holding.is_nft {
+                    Self::transfer_from_escrow(env, buyer, &holding.asset, holding.amount, true)?;
+                    holding.released_at = Some(timestamp);
+                    swap.seller_escrow.set(i, holding);
+                }
+            }
+        }
+
+        swap.state = SwapState::Executed;
+        swap.executed_at = Some(timestamp);
+        Self::store_swap(env, &swap)
+    }
+
     /// Cancel a swap and refund all parties
     pub fn cancel_swap(
         env: &Env,
@@ -235,18 +277,23 @@ impl AtomicSwapEngine {
         is_nft: bool,
     ) -> Result<(), SettlementError> {
         if is_nft {
+            // Extract contract address from the Token variant (NFT holdings always use Token)
+            let nft_contract = match asset {
+                Asset::Token(t) => t.contract.clone(),
+                Asset::NativeXLM => return Err(SettlementError::InvalidState),
+            };
             // Transfer NFT to escrow contract
             asset_utils::transfer_nft(
-                &asset.contract,
+                &nft_contract,
                 from,
                 &env.current_contract_address(),
                 amount as u64,
                 env,
             )?;
         } else {
-            // Transfer tokens to escrow contract
+            // Transfer tokens (or native XLM) to escrow contract
             asset_utils::transfer_tokens(
-                &asset.contract,
+                asset,
                 from,
                 &env.current_contract_address(),
                 amount,
@@ -265,21 +312,19 @@ impl AtomicSwapEngine {
         is_nft: bool,
     ) -> Result<(), SettlementError> {
         if is_nft {
+            let nft_contract = match asset {
+                Asset::Token(t) => t.contract.clone(),
+                Asset::NativeXLM => return Err(SettlementError::InvalidState),
+            };
             asset_utils::transfer_nft(
-                &asset.contract,
+                &nft_contract,
                 &env.current_contract_address(),
                 to,
                 amount as u64,
                 env,
             )?;
         } else {
-            asset_utils::transfer_tokens(
-                &asset.contract,
-                &env.current_contract_address(),
-                to,
-                amount,
-                env,
-            )?;
+            asset_utils::transfer_tokens(asset, &env.current_contract_address(), to, amount, env)?;
         }
         Ok(())
     }
@@ -325,24 +370,28 @@ impl AtomicSwapEngine {
     fn refund_escrow_holdings(env: &Env, swap: &AtomicSwap) -> Result<(), SettlementError> {
         // Refund seller escrow
         for holding in swap.seller_escrow.iter() {
-            Self::transfer_from_escrow(
-                env,
-                &holding.holder,
-                &holding.asset,
-                holding.amount,
-                holding.is_nft,
-            )?;
+            if holding.deposited_at > 0 && holding.released_at.is_none() {
+                Self::transfer_from_escrow(
+                    env,
+                    &holding.holder,
+                    &holding.asset,
+                    holding.amount,
+                    holding.is_nft,
+                )?;
+            }
         }
 
         // Refund buyer escrow
         for holding in swap.buyer_escrow.iter() {
-            Self::transfer_from_escrow(
-                env,
-                &holding.holder,
-                &holding.asset,
-                holding.amount,
-                holding.is_nft,
-            )?;
+            if holding.deposited_at > 0 && holding.released_at.is_none() {
+                Self::transfer_from_escrow(
+                    env,
+                    &holding.holder,
+                    &holding.asset,
+                    holding.amount,
+                    holding.is_nft,
+                )?;
+            }
         }
 
         Ok(())
@@ -357,12 +406,13 @@ impl AtomicSwapEngine {
         _amount: i128,
         _is_nft: bool,
     ) -> Result<(), SettlementError> {
-        let timestamp = env.ledger().timestamp();
+        let timestamp = env.ledger().timestamp().max(1);
 
         // Update seller escrow
         for i in 0..swap.seller_escrow.len() {
             if let Some(mut holding) = swap.seller_escrow.get(i) {
-                if holding.holder == *depositor && holding.asset.contract == asset.contract {
+                if holding.holder == *depositor && asset_utils::assets_equal(&holding.asset, asset)
+                {
                     holding.deposited_at = timestamp;
                     swap.seller_escrow.set(i, holding);
                     break;
@@ -373,7 +423,8 @@ impl AtomicSwapEngine {
         // Update buyer escrow
         for i in 0..swap.buyer_escrow.len() {
             if let Some(mut holding) = swap.buyer_escrow.get(i) {
-                if holding.holder == *depositor && holding.asset.contract == asset.contract {
+                if holding.holder == *depositor && asset_utils::assets_equal(&holding.asset, asset)
+                {
                     holding.deposited_at = timestamp;
                     swap.buyer_escrow.set(i, holding);
                     break;
@@ -470,14 +521,7 @@ impl EscrowManager {
         asset: &Asset,
         amount: i128,
     ) -> Result<(), SettlementError> {
-        // Transfer from escrow to recipient
-        asset_utils::transfer_tokens(
-            &asset.contract,
-            &env.current_contract_address(),
-            to,
-            amount,
-            env,
-        )
+        asset_utils::transfer_tokens(asset, &env.current_contract_address(), to, amount, env)
     }
 
     /// Get escrow holdings for a transaction

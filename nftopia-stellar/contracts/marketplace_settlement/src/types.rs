@@ -37,12 +37,25 @@ pub enum TransactionState {
     Resolved = 5,
 }
 
+// Token asset: a SEP-41 / Stellar Asset Contract token with a real contract address.
+// Extracted into its own struct so Asset enum can use a tuple variant, which is
+// required for Soroban's #[contracttype] SorobanArbitrary derive.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenAsset {
+    pub contract: Address,
+    pub symbol: Symbol,
+}
+
 // Asset type for multi-asset support
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Asset {
-    pub contract: Address,
-    pub symbol: Symbol,
+pub enum Asset {
+    /// Native Stellar XLM — resolved to the separately configured
+    /// Stellar Asset Contract (SAC) address.
+    NativeXLM,
+    /// A SEP-41 / Stellar Asset Contract token.
+    Token(TokenAsset),
 }
 
 // Sale transaction structure

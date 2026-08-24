@@ -133,7 +133,7 @@ impl FeeManager {
 
         // Transfer fees to recipient
         crate::utils::asset_utils::transfer_tokens(
-            &asset.contract,
+            asset,
             &env.current_contract_address(),
             recipient,
             amount,

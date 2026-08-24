@@ -18,7 +18,7 @@ pub enum SettlementError {
     TransactionAlreadyExecuted = 101,
     TransactionExpired = 102,
     TransactionCancelled = 103,
-    TransactionDisputed = 104,
+    // TransactionDisputed = 104,
     InvalidTransactionState = 105,
 
     // Auction errors
@@ -37,6 +37,10 @@ pub enum SettlementError {
     InsufficientPayment = 301,
     InvalidCurrency = 302,
     AssetNotSupported = 303,
+    /// Returned when a native XLM transfer fails (e.g. no SAC address configured)
+    NativeAssetTransferFailed = 304,
+    /// Returned when a native XLM balance query fails
+    NativeAssetBalanceFailed = 305,
 
     // Royalty errors
     RoyaltyCalculationFailed = 400,
@@ -55,7 +59,7 @@ pub enum SettlementError {
     // Security errors
     ReentrancyDetected = 600,
     FrontRunningDetected = 601,
-    InvalidSignature = 602,
+    // InvalidSignature = 602,
     CooldownActive = 603,
     ContractPaused = 604,
 
