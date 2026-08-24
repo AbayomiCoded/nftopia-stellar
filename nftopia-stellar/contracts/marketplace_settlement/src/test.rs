@@ -4,11 +4,11 @@ use crate::{
     error::SettlementError,
     royalty_distributor::RoyaltyDistributor,
     settlement_core::{MarketplaceSettlement, MarketplaceSettlementClient},
-    types::{Asset, AuctionType, FeeConfig},
+    types::{Asset, AuctionType, FeeConfig, TokenAsset},
 };
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    Address, Bytes, Env, Symbol,
+    token, Address, Bytes, Env, Symbol,
 };
 
 // --- Mock Contracts ---
@@ -19,6 +19,9 @@ impl MockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
     pub fn balance(_env: Env, _id: Address) -> i128 {
         100_000_000
+    }
+    pub fn decimals(_env: Env) -> u32 {
+        7
     }
 }
 
@@ -45,15 +48,21 @@ impl MockNft {
             Address::generate(&env)
         }
     }
-    pub fn transfer(_env: Env, _from: Address, _to: Address, _token_id: u64) {}
+    pub fn transfer(env: Env, _caller: Address, from: Address, to: Address, _token_id: u64) {
+        let owner = Self::owner_of(env.clone(), 0);
+        assert_eq!(owner, from);
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::Symbol::new(&env, "owner"), &to);
+    }
 }
 
 fn mk_asset(env: &Env) -> Asset {
     let contract = env.register(MockToken, ());
-    Asset {
+    Asset::Token(TokenAsset {
         contract,
         symbol: Symbol::new(env, "XLM"),
-    }
+    })
 }
 
 fn default_fee_config(env: &Env, fee_recipient: Address) -> FeeConfig {
@@ -76,6 +85,9 @@ fn new_env() -> (Env, Address, MarketplaceSettlementClient<'static>, Address) {
     let admin = Address::generate(&env);
     let fee_config = default_fee_config(&env, admin.clone());
     client.initialize(&admin, &fee_config);
+    let sac_admin = Address::generate(&env);
+    let native_xlm_sac = env.register_stellar_asset_contract_v2(sac_admin).address();
+    client.set_native_xlm_sac(&admin, &Some(native_xlm_sac));
     let client: MarketplaceSettlementClient<'static> = unsafe { core::mem::transmute(client) };
     (env, cid, client, admin)
 }
@@ -83,7 +95,9 @@ fn new_env() -> (Env, Address, MarketplaceSettlementClient<'static>, Address) {
 fn reg(env: &Env, cid: &Address, nft: &Address, creator: &Address, admin: &Address, asset: &Asset) {
     let client = MarketplaceSettlementClient::new(env, cid);
     client.add_allowed_nft_contract(admin, nft);
-    client.add_allowed_token_contract(admin, &asset.contract);
+    if let Asset::Token(t) = asset {
+        client.add_allowed_token_contract(admin, &t.contract);
+    }
 
     env.as_contract(cid, || {
         let _ = RoyaltyDistributor::set_royalty_info(env, nft, 1, creator, 500, creator);
@@ -154,6 +168,7 @@ fn test_cancel_sale_by_seller() {
     MockNftClient::new(&env, &nft).set_owner(&seller);
     let id = client.create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     client.cancel_transaction(&id, &Symbol::new(&env, "sale"), &seller);
+    assert_eq!(MockNftClient::new(&env, &nft).owner_of(&1), seller);
 }
 
 #[test]
@@ -200,9 +215,10 @@ fn test_create_english_auction_success() {
     let (env, cid, client, _admin) = new_env();
     let _asset = mk_asset(&env);
     let seller = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
     reg(&env, &cid, &nft, &creator, &_admin, &_asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
     let id = client.create_auction(
         &seller,
         &nft,
@@ -223,9 +239,10 @@ fn test_create_dutch_auction_success() {
     let (env, cid, client, _admin) = new_env();
     let _asset = mk_asset(&env);
     let seller = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
     reg(&env, &cid, &nft, &creator, &_admin, &_asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
     let id = client.create_auction(
         &seller,
         &nft,
@@ -245,9 +262,10 @@ fn test_create_auction_zero_price_fails() {
     let (env, cid, client, _admin) = new_env();
     let _asset = mk_asset(&env);
     let seller = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
     reg(&env, &cid, &nft, &creator, &_admin, &_asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
     assert!(client
         .try_create_auction(
             &seller,
@@ -269,9 +287,10 @@ fn test_bid_below_starting_price_fails() {
     let _asset = mk_asset(&env);
     let seller = Address::generate(&env);
     let bidder = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
     reg(&env, &cid, &nft, &creator, &_admin, &_asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
     let id = client.create_auction(
         &seller,
         &nft,
@@ -294,9 +313,10 @@ fn test_get_dutch_auction_price() {
     let (env, cid, client, _admin) = new_env();
     let _asset = mk_asset(&env);
     let seller = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
     reg(&env, &cid, &nft, &creator, &_admin, &_asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
     let id = client.create_auction(
         &seller,
         &nft,
@@ -375,7 +395,7 @@ fn test_get_user_volume_starts_zero() {
 fn test_set_and_get_royalty_info() {
     let (env, cid, _client, _admin) = new_env();
     let _asset = mk_asset(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
     env.as_contract(&cid, || {
         let _ = RoyaltyDistributor::set_royalty_info(&env, &nft, 1, &creator, 500, &creator);
@@ -577,9 +597,10 @@ fn test_reveal_wrong_salt_fails() {
     let _asset = mk_asset(&env);
     let seller = Address::generate(&env);
     let bidder = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
     reg(&env, &cid, &nft, &creator, &_admin, &_asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
     let id = client.create_auction(
         &seller,
         &nft,
@@ -621,6 +642,7 @@ fn test_rate_limiter_defaults_and_cooldown_active() {
     MockNftClient::new(&env, &nft).set_owner(&seller);
 
     for _ in 0..10 {
+        MockNftClient::new(&env, &nft).set_owner(&seller);
         let _id = client.create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     }
 
@@ -647,6 +669,7 @@ fn test_rate_limiter_independent_users_and_functions() {
     MockNftClient::new(&env, &nft).set_owner(&seller_1);
 
     for _ in 0..10 {
+        MockNftClient::new(&env, &nft).set_owner(&seller_1);
         let _id = client.create_sale(&seller_1, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     }
 
@@ -665,6 +688,7 @@ fn test_rate_limiter_independent_users_and_functions() {
     assert!(id_2 > 0);
 
     // seller_1 can still create_auction
+    MockNftClient::new(&env, &nft).set_owner(&seller_1);
     let auc_id = client.create_auction(
         &seller_1,
         &nft,
@@ -690,6 +714,7 @@ fn test_rate_limiter_window_reset() {
     MockNftClient::new(&env, &nft).set_owner(&seller);
 
     for _ in 0..10 {
+        MockNftClient::new(&env, &nft).set_owner(&seller);
         let _id = client.create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     }
 
@@ -707,6 +732,7 @@ fn test_rate_limiter_window_reset() {
     env.ledger().set_timestamp(new_timestamp);
 
     // Now it should succeed again!
+    MockNftClient::new(&env, &nft).set_owner(&seller);
     let id = client.create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
     assert!(id > 0);
 }
@@ -725,9 +751,10 @@ fn test_rate_limiter_admin_update_config() {
 
     let bidder = Address::generate(&env);
     let seller = Address::generate(&env);
-    let nft = Address::generate(&env);
+    let nft = env.register(MockNft, ());
     let creator = Address::generate(&env);
     reg(&env, &cid2, &nft, &creator, &admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
 
     let id = c2.create_auction(
         &seller,
@@ -1278,4 +1305,296 @@ fn test_complex_royalties_respect_caps() {
         );
         assert_eq!(result, Err(SettlementError::RoyaltyExceedsMaxCap));
     });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Native XLM Integration Tests
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_native_asset_returns_xlm_variant() {
+    use crate::utils::asset_utils::native_asset;
+    assert_eq!(native_asset(), Asset::NativeXLM);
+}
+
+#[test]
+fn test_configured_native_asset_is_valid() {
+    let (env, cid, _client, _admin) = new_env();
+    let asset = Asset::NativeXLM;
+    env.as_contract(&cid, || {
+        let supported: soroban_sdk::Vec<Asset> = soroban_sdk::Vec::new(&env);
+        let result = crate::utils::asset_utils::validate_asset(&asset, &supported, &env);
+        assert!(result.is_ok());
+    });
+}
+
+#[test]
+fn test_assets_equal_native_xlm() {
+    use crate::utils::asset_utils::assets_equal;
+    assert!(assets_equal(&Asset::NativeXLM, &Asset::NativeXLM));
+}
+
+#[test]
+fn test_create_sale_with_native_xlm() {
+    let (env, cid, client, admin) = new_env();
+    let asset = Asset::NativeXLM;
+    let seller = Address::generate(&env);
+    let nft = env.register(MockNft, ());
+    let creator = Address::generate(&env);
+    reg(&env, &cid, &nft, &creator, &admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
+    let id = client.create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
+    assert_eq!(id, 1u64);
+}
+
+#[test]
+fn test_create_auction_with_native_xlm() {
+    let (env, cid, client, _admin) = new_env();
+    let asset = Asset::NativeXLM;
+    let seller = Address::generate(&env);
+    let nft = env.register(MockNft, ());
+    let creator = Address::generate(&env);
+    reg(&env, &cid, &nft, &creator, &_admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
+    let id = client.create_auction(
+        &seller,
+        &nft,
+        &1u64,
+        &100_000i128,
+        &80_000i128,
+        &3600u64,
+        &1_000i128,
+        &AuctionType::English,
+        &asset,
+    );
+    assert_eq!(id, 1u64);
+}
+
+#[test]
+fn test_place_bid_native_xlm() {
+    let (env, cid, client, _admin) = new_env();
+    let asset = Asset::NativeXLM;
+    let seller = Address::generate(&env);
+    let bidder = Address::generate(&env);
+    let nft = env.register(MockNft, ());
+    let creator = Address::generate(&env);
+    reg(&env, &cid, &nft, &creator, &_admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
+    let sac = client.get_native_xlm_sac().unwrap();
+    token::StellarAssetClient::new(&env, &sac).mint(&bidder, &100_000i128);
+    let id = client.create_auction(
+        &seller,
+        &nft,
+        &1u64,
+        &100_000i128,
+        &80_000i128,
+        &3600u64,
+        &1_000i128,
+        &AuctionType::English,
+        &asset,
+    );
+    client.place_bid(&id, &bidder, &100_000i128, &None);
+    let auction = client.get_auction(&id);
+    assert_eq!(auction.highest_bid, 100_000i128);
+}
+
+#[test]
+fn test_get_token_balance_native_xlm_succeeds() {
+    let (env, cid, client, _admin) = new_env();
+    let user = Address::generate(&env);
+    let sac = client.get_native_xlm_sac().unwrap();
+    token::StellarAssetClient::new(&env, &sac).mint(&user, &100_000_000i128);
+    env.as_contract(&cid, || {
+        let balance =
+            crate::utils::asset_utils::get_token_balance(&Asset::NativeXLM, &user, &env).unwrap();
+        assert_eq!(balance, 100_000_000);
+    });
+}
+
+#[test]
+fn test_native_asset_requires_configured_sac() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let cid = env.register(MarketplaceSettlement, ());
+    let client = MarketplaceSettlementClient::new(&env, &cid);
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &default_fee_config(&env, admin.clone()));
+
+    env.as_contract(&cid, || {
+        let supported = soroban_sdk::Vec::new(&env);
+        assert_eq!(
+            crate::utils::asset_utils::validate_asset(&Asset::NativeXLM, &supported, &env,),
+            Err(SettlementError::NativeAssetTransferFailed)
+        );
+        let account = Address::generate(&env);
+        assert_eq!(
+            crate::utils::asset_utils::get_token_balance(&Asset::NativeXLM, &account, &env),
+            Err(SettlementError::NativeAssetBalanceFailed)
+        );
+    });
+}
+
+#[test]
+fn test_asset_decimals_dispatches_for_native_and_tokens() {
+    let env = Env::default();
+    let token_asset = mk_asset(&env);
+    assert_eq!(
+        crate::utils::asset_utils::get_token_decimals(&Asset::NativeXLM, &env),
+        Ok(7)
+    );
+    assert_eq!(
+        crate::utils::asset_utils::get_token_decimals(&token_asset, &env),
+        Ok(7)
+    );
+}
+
+#[test]
+fn test_native_transfer_failure_returns_contract_error() {
+    let (env, cid, _client, _admin) = new_env();
+    let empty = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&cid, || {
+        assert_eq!(
+            crate::utils::asset_utils::transfer_tokens(
+                &Asset::NativeXLM,
+                &empty,
+                &recipient,
+                1,
+                &env,
+            ),
+            Err(SettlementError::NativeAssetTransferFailed)
+        );
+    });
+}
+
+#[test]
+fn test_execute_sale_with_native_xlm_distributes_proceeds_and_fees() {
+    let (env, cid, client, admin) = new_env();
+    let asset = Asset::NativeXLM;
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let nft = env.register(MockNft, ());
+    reg(&env, &cid, &nft, &creator, &admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
+
+    let sac = client.get_native_xlm_sac().unwrap();
+    let sac_admin = token::StellarAssetClient::new(&env, &sac);
+    let balances = token::Client::new(&env, &sac);
+    sac_admin.mint(&buyer, &1_000_000i128);
+
+    let id = client.create_sale(&seller, &nft, &1u64, &1_000_000i128, &asset, &86400u64);
+    assert_eq!(MockNftClient::new(&env, &nft).owner_of(&1), cid);
+
+    let result = client.execute_sale(&id, &buyer, &1_000_000i128);
+    assert!(result.success);
+    assert_eq!(MockNftClient::new(&env, &nft).owner_of(&1), buyer);
+    assert_eq!(balances.balance(&buyer), 0);
+    assert_eq!(balances.balance(&creator), 50_000);
+    assert_eq!(balances.balance(&seller), 925_000);
+    assert_eq!(balances.balance(&cid), 25_000);
+    assert_eq!(client.get_accumulated_fees(&asset), 25_000);
+
+    assert_eq!(
+        client.withdraw_platform_fees(&asset, &admin, &admin),
+        25_000
+    );
+    assert_eq!(balances.balance(&cid), 0);
+    assert_eq!(balances.balance(&admin), 25_000);
+}
+
+#[test]
+fn test_native_xlm_auction_refunds_outbid_bidder_and_settles() {
+    let (env, cid, client, admin) = new_env();
+    let asset = Asset::NativeXLM;
+    let seller = Address::generate(&env);
+    let bidder_one = Address::generate(&env);
+    let bidder_two = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let nft = env.register(MockNft, ());
+    reg(&env, &cid, &nft, &creator, &admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
+
+    let sac = client.get_native_xlm_sac().unwrap();
+    let sac_admin = token::StellarAssetClient::new(&env, &sac);
+    let balances = token::Client::new(&env, &sac);
+    sac_admin.mint(&bidder_one, &100_000i128);
+    sac_admin.mint(&bidder_two, &110_000i128);
+
+    let id = client.create_auction(
+        &seller,
+        &nft,
+        &1u64,
+        &100_000i128,
+        &80_000i128,
+        &3600u64,
+        &1_000i128,
+        &AuctionType::English,
+        &asset,
+    );
+    client.place_bid(&id, &bidder_one, &100_000i128, &None);
+    client.place_bid(&id, &bidder_two, &110_000i128, &None);
+    assert_eq!(balances.balance(&bidder_one), 100_000);
+    assert_eq!(balances.balance(&cid), 110_000);
+
+    env.ledger().set_timestamp(3601);
+    client.end_auction(&id, &seller);
+
+    assert_eq!(MockNftClient::new(&env, &nft).owner_of(&1), bidder_two);
+    assert_eq!(balances.balance(&bidder_two), 0);
+    assert_eq!(balances.balance(&creator), 5_500);
+    assert_eq!(balances.balance(&seller), 101_750);
+    assert_eq!(balances.balance(&cid), 2_750);
+    assert_eq!(client.get_accumulated_fees(&asset), 2_750);
+}
+
+#[test]
+fn test_bundle_creation_with_native_xlm() {
+    use crate::types::{NFTItem, RoyaltyDistribution};
+    let (env, cid, client, admin) = new_env();
+    let asset = Asset::NativeXLM;
+    let seller = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let nft = Address::generate(&env);
+    reg(&env, &cid, &nft, &creator, &admin, &asset);
+    client.add_supported_asset(&admin, &asset);
+    let dummy = RoyaltyDistribution {
+        creator_address: creator.clone(),
+        creator_percentage: 500,
+        seller_address: creator.clone(),
+        seller_percentage: 9000,
+        platform_address: creator.clone(),
+        platform_percentage: 500,
+        total_amount: 0,
+        amounts: soroban_sdk::Map::new(&env),
+    };
+    let mut items = soroban_sdk::Vec::new(&env);
+    items.push_back(NFTItem {
+        nft_address: nft,
+        token_id: 1,
+        royalty_info: dummy,
+    });
+    let id = client.create_bundle(&seller, &items, &500_000i128, &asset, &86400u64);
+    assert!(id > 0);
+}
+
+#[test]
+fn test_assets_not_equal_xlm_and_token() {
+    use crate::utils::asset_utils::assets_equal;
+    let env = Env::default();
+    let contract = env.register(MockToken, ());
+    let token_asset = Asset::Token(crate::types::TokenAsset {
+        contract,
+        symbol: soroban_sdk::Symbol::new(&env, "XLM"),
+    });
+    assert!(!assets_equal(&Asset::NativeXLM, &token_asset));
+}
+
+#[test]
+fn test_xlm_payment_failed_error() {
+    let err = SettlementError::NativeAssetTransferFailed;
+    assert_eq!(err as u32, 304);
+    let err2 = SettlementError::NativeAssetBalanceFailed;
+    assert_eq!(err2 as u32, 305);
 }
