@@ -1,6 +1,6 @@
-import { Keypair } from 'stellar-sdk';
+import { Keypair, Server, Horizon } from 'stellar-sdk';
 import * as bip39 from 'bip39';
-import { Wallet, WalletCreateResult, WalletError, WalletErrorCode } from './types';
+import { Wallet, WalletCreateResult, WalletError, WalletErrorCode, Transaction, TransactionType, TransactionFilters, PaginatedTransactions } from './types';
 import {
   isValidSecretKey,
   isValidMnemonic,
@@ -8,12 +8,15 @@ import {
   assertValidMnemonic,
 } from './validation';
 import { SecureStorage } from './secureStorage';
+import { network } from './network';
 
 export class StellarWalletService {
   private readonly storage: SecureStorage;
+  private readonly server: Server;
 
   constructor(storage?: SecureStorage) {
     this.storage = storage ?? new SecureStorage();
+    this.server = new Server(network.horizonUrl);
   }
 
   async createWallet(password?: string): Promise<WalletCreateResult> {
@@ -96,6 +99,223 @@ export class StellarWalletService {
 
   isValidMnemonic(phrase: string): boolean {
     return isValidMnemonic(phrase);
+  }
+
+  async getAccountOperations(
+    publicKey: string,
+    cursor?: string,
+    limit: number = 20
+  ): Promise<PaginatedTransactions> {
+    try {
+      const builder = this.server
+        .operations()
+        .forAccount(publicKey)
+        .limit(limit)
+        .order('desc');
+
+      if (cursor) {
+        builder.cursor(cursor);
+      }
+
+      const response = await builder.call();
+      const transactions = this.mapOperationsToTransactions(response.records);
+
+      return {
+        transactions,
+        nextPage: response.next ? response.next.toString() : undefined,
+        hasMore: !!response.next,
+      };
+    } catch (error) {
+      throw new WalletError(
+        `Failed to fetch account operations: ${(error as Error).message}`,
+        WalletErrorCode.NETWORK_ERROR
+      );
+    }
+  }
+
+  async getFilteredTransactions(
+    publicKey: string,
+    filters: TransactionFilters,
+    cursor?: string,
+    limit: number = 20
+  ): Promise<PaginatedTransactions> {
+    try {
+      const builder = this.server
+        .operations()
+        .forAccount(publicKey)
+        .limit(limit)
+        .order('desc');
+
+      if (cursor) {
+        builder.cursor(cursor);
+      }
+
+      // Apply date filters if provided
+      if (filters.dateFrom) {
+        builder.from(filters.dateFrom.toISOString());
+      }
+      if (filters.dateTo) {
+        builder.to(filters.dateTo.toISOString());
+      }
+
+      const response = await builder.call();
+      let transactions = this.mapOperationsToTransactions(response.records);
+
+      // Apply type and asset filters locally (Horizon doesn't support these directly)
+      if (filters.type) {
+        transactions = transactions.filter(tx => tx.type === filters.type);
+      }
+      if (filters.asset) {
+        transactions = transactions.filter(tx => tx.asset === filters.asset);
+      }
+
+      return {
+        transactions,
+        nextPage: response.next ? response.next.toString() : undefined,
+        hasMore: !!response.next,
+      };
+    } catch (error) {
+      throw new WalletError(
+        `Failed to fetch filtered transactions: ${(error as Error).message}`,
+        WalletErrorCode.NETWORK_ERROR
+      );
+    }
+  }
+
+  private mapOperationsToTransactions(operations: Horizon.OperationResponse[]): Transaction[] {
+    return operations.map(op => this.mapOperationToTransaction(op));
+  }
+
+  private mapOperationToTransaction(op: Horizon.OperationResponse): Transaction {
+    const type = this.mapOperationType(op.type);
+    const baseTransaction: Transaction = {
+      id: op.id,
+      hash: op.transaction_hash || '',
+      ledger: op.ledger || 0,
+      createdAt: op.created_at || new Date().toISOString(),
+      sourceAccount: op.source_account || '',
+      type,
+      fee: 0, // Fee is at transaction level, not operation level
+      successful: op.transaction_successful || true,
+    };
+
+    // Add type-specific fields
+    switch (op.type) {
+      case 'payment':
+        const paymentOp = op as Horizon.PaymentOperationResponse;
+        return {
+          ...baseTransaction,
+          amount: paymentOp.amount,
+          asset: paymentOp.asset_type === 'native' ? 'XLM' : paymentOp.asset_code,
+          from: paymentOp.from,
+          to: paymentOp.to,
+        };
+      case 'create_account':
+        const createOp = op as Horizon.CreateAccountOperationResponse;
+        return {
+          ...baseTransaction,
+          amount: createOp.starting_balance,
+          asset: 'XLM',
+          to: createOp.account,
+        };
+      case 'path_payment':
+        const pathOp = op as Horizon.PathPaymentOperationResponse;
+        return {
+          ...baseTransaction,
+          amount: pathOp.amount,
+          asset: pathOp.asset_type === 'native' ? 'XLM' : pathOp.asset_code,
+          from: pathOp.from,
+          to: pathOp.to,
+        };
+      case 'change_trust':
+        const trustOp = op as Horizon.ChangeTrustOperationResponse;
+        return {
+          ...baseTransaction,
+          asset: trustOp.asset_type === 'native' ? 'XLM' : trustOp.asset_code,
+        };
+      default:
+        return baseTransaction;
+    }
+  }
+
+  private mapOperationType(opType: string): TransactionType {
+    const typeMap: Record<string, TransactionType> = {
+      'payment': TransactionType.PAYMENT,
+      'path_payment': TransactionType.PATH_PAYMENT,
+      'create_account': TransactionType.CREATE_ACCOUNT,
+      'manage_sell_offer': TransactionType.MANAGE_SELL_OFFER,
+      'manage_buy_offer': TransactionType.MANAGE_BUY_OFFER,
+      'set_options': TransactionType.SET_OPTIONS,
+      'change_trust': TransactionType.CHANGE_TRUST,
+      'allow_trust': TransactionType.ALLOW_TRUST,
+      'account_merge': TransactionType.ACCOUNT_MERGE,
+      'inflation': TransactionType.INFLATION,
+      'manage_data': TransactionType.MANAGE_DATA,
+      'bump_sequence': TransactionType.BUMP_SEQUENCE,
+      'clawback': TransactionType.CLAWBACK,
+      'clawback_claimable_balance': TransactionType.CLAWBACK_CLAIMABLE_BALANCE,
+      'begin_sponsoring_future_reserves': TransactionType.BEGIN_SPONSORING_FUTURE_RESERVES,
+      'end_sponsoring_future_reserves': TransactionType.END_SPONSORING_FUTURE_RESERVES,
+      'revoke_sponsorship': TransactionType.REVOKE_SPONSORSHIP,
+      'liquidity_pool_deposit': TransactionType.LIQUIDITY_POOL_DEPOSIT,
+      'liquidity_pool_withdraw': TransactionType.LIQUIDITY_POOL_WITHDRAW,
+    };
+
+    return typeMap[opType] || TransactionType.UNKNOWN;
+  }
+
+  getTransactionTypeIcon(type: TransactionType): string {
+    const iconMap: Record<TransactionType, string> = {
+      [TransactionType.PAYMENT]: '💸',
+      [TransactionType.PATH_PAYMENT]: '🔄',
+      [TransactionType.CREATE_ACCOUNT]: '🆕',
+      [TransactionType.MANAGE_SELL_OFFER]: '📉',
+      [TransactionType.MANAGE_BUY_OFFER]: '📈',
+      [TransactionType.SET_OPTIONS]: '⚙️',
+      [TransactionType.CHANGE_TRUST]: '🔐',
+      [TransactionType.ALLOW_TRUST]: '✅',
+      [TransactionType.ACCOUNT_MERGE]: '🔀',
+      [TransactionType.INFLATION]: '🎈',
+      [TransactionType.MANAGE_DATA]: '📝',
+      [TransactionType.BUMP_SEQUENCE]: '⏭️',
+      [TransactionType.CLAWBACK]: '🔙',
+      [TransactionType.CLAWBACK_CLAIMABLE_BALANCE]: '💰',
+      [TransactionType.BEGIN_SPONSORING_FUTURE_RESERVES]: '🤝',
+      [TransactionType.END_SPONSORING_FUTURE_RESERVES]: '👋',
+      [TransactionType.REVOKE_SPONSORSHIP]: '❌',
+      [TransactionType.LIQUIDITY_POOL_DEPOSIT]: '💧',
+      [TransactionType.LIQUIDITY_POOL_WITHDRAW]: '🚰',
+      [TransactionType.UNKNOWN]: '❓',
+    };
+
+    return iconMap[type] || '❓';
+  }
+
+  getTransactionTypeLabel(type: TransactionType): string {
+    const labelMap: Record<TransactionType, string> = {
+      [TransactionType.PAYMENT]: 'Payment',
+      [TransactionType.PATH_PAYMENT]: 'Path Payment',
+      [TransactionType.CREATE_ACCOUNT]: 'Create Account',
+      [TransactionType.MANAGE_SELL_OFFER]: 'Sell Offer',
+      [TransactionType.MANAGE_BUY_OFFER]: 'Buy Offer',
+      [TransactionType.SET_OPTIONS]: 'Set Options',
+      [TransactionType.CHANGE_TRUST]: 'Add Trustline',
+      [TransactionType.ALLOW_TRUST]: 'Allow Trust',
+      [TransactionType.ACCOUNT_MERGE]: 'Account Merge',
+      [TransactionType.INFLATION]: 'Inflation',
+      [TransactionType.MANAGE_DATA]: 'Manage Data',
+      [TransactionType.BUMP_SEQUENCE]: 'Bump Sequence',
+      [TransactionType.CLAWBACK]: 'Clawback',
+      [TransactionType.CLAWBACK_CLAIMABLE_BALANCE]: 'Claimable Balance',
+      [TransactionType.BEGIN_SPONSORING_FUTURE_RESERVES]: 'Begin Sponsorship',
+      [TransactionType.END_SPONSORING_FUTURE_RESERVES]: 'End Sponsorship',
+      [TransactionType.REVOKE_SPONSORSHIP]: 'Revoke Sponsorship',
+      [TransactionType.LIQUIDITY_POOL_DEPOSIT]: 'Pool Deposit',
+      [TransactionType.LIQUIDITY_POOL_WITHDRAW]: 'Pool Withdraw',
+      [TransactionType.UNKNOWN]: 'Unknown',
+    };
+
+    return labelMap[type] || 'Unknown';
   }
 }
 

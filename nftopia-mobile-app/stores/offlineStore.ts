@@ -7,6 +7,7 @@ interface OfflineStore {
   queue: OfflineQueueItem[];
   cachedData: CachedData;
   lastSync: string | null;
+  writeActionsBlocked: boolean;
 
   setOnlineStatus: (isOnline: boolean) => void;
   addToQueue: (item: Omit<OfflineQueueItem, 'id' | 'timestamp' | 'retryCount' | 'maxRetries'>) => void;
@@ -24,6 +25,8 @@ interface OfflineStore {
   addRecentSearch: (query: string) => void;
   clearRecentSearches: () => void;
   clearCache: () => void;
+  canPerformWriteAction: () => boolean;
+  blockWriteActions: (blocked: boolean) => void;
 }
 
 const initialCachedData: CachedData = {
@@ -43,12 +46,22 @@ export const useOfflineStore = create<OfflineStore>()(
       queue: [],
       cachedData: initialCachedData,
       lastSync: null,
+      writeActionsBlocked: false,
 
       setOnlineStatus: (isOnline: boolean) => {
-        set({ isOnline });
+        set({ isOnline, writeActionsBlocked: !isOnline });
         if (isOnline) {
           get().processQueue();
         }
+      },
+
+      canPerformWriteAction: () => {
+        const { isOnline, writeActionsBlocked } = get();
+        return isOnline && !writeActionsBlocked;
+      },
+
+      blockWriteActions: (blocked: boolean) => {
+        set({ writeActionsBlocked: blocked });
       },
 
       addToQueue: (item) => {

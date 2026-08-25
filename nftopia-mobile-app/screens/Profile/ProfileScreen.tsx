@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '@/navigation/MainNavigator';
 import { useWalletConnect } from '@/hooks/useWalletConnect';
-import { useAuthStore } from '@/stores/authStore';
+import { useAuthStore } from '@/src/stores/authStore';
 import { useLanguageStore } from '@/src/stores/languageStore';
 import NetworkSwitcher from '@/components/wallet/NetworkSwitcher';
 import { LanguageSwitcher } from '@/src/components/LanguageSwitcher';
@@ -18,9 +18,10 @@ type Props = NativeStackScreenProps<MainStackParamList, 'Profile'>;
 function ProfileContent({ navigation }: Props) {
   const { t } = useTranslation();
   const { activeWallet, network, switchNetwork, wallets } = useWalletConnect();
-  const { user, logout } = useAuthStore();
+  const { user, logout, appLockEnabled, setAppLockEnabled, lockTimeout, setLockTimeout } = useAuthStore();
   const { language } = useLanguageStore();
   const { colors, isDark } = useTheme();
+  const [showLockTimeoutPicker, setShowLockTimeoutPicker] = useState(false);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -139,6 +140,54 @@ function ProfileContent({ navigation }: Props) {
       alignItems: 'center',
       paddingVertical: 4,
     },
+    switch: {
+      width: 50,
+      height: 28,
+    },
+    switchTrack: {
+      width: '100%',
+      height: '100%',
+      backgroundColor: colors.border,
+      borderRadius: 14,
+      padding: 2,
+    },
+    switchTrackActive: {
+      backgroundColor: colors.primary,
+    },
+    switchThumb: {
+      width: 24,
+      height: 24,
+      backgroundColor: colors.background,
+      borderRadius: 12,
+    },
+    switchThumbActive: {
+      transform: [{ translateX: 22 }],
+    },
+    timeoutOptions: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 8,
+    },
+    timeoutOption: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 8,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    timeoutOptionActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    timeoutOptionText: {
+      fontSize: 13,
+      color: colors.text,
+    },
+    timeoutOptionTextActive: {
+      color: '#FFFFFF',
+    },
   });
 
   return (
@@ -182,6 +231,54 @@ function ProfileContent({ navigation }: Props) {
           <Text style={styles.rowLabel}>{t('profile.theme')}</Text>
           <ThemeToggle variant="switch" showLabel={false} />
         </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Security</Text>
+        <View style={styles.row}>
+          <Text style={styles.rowLabel}>App Lock</Text>
+          <TouchableOpacity
+            onPress={() => setAppLockEnabled(!appLockEnabled)}
+            style={styles.switch}
+          >
+            <View style={[styles.switchTrack, appLockEnabled && styles.switchTrackActive]}>
+              <View style={[styles.switchThumb, appLockEnabled && styles.switchThumbActive]} />
+            </View>
+          </TouchableOpacity>
+        </View>
+        {appLockEnabled && (
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Lock Timeout</Text>
+          </View>
+        )}
+        {appLockEnabled && (
+          <View style={styles.timeoutOptions}>
+            {[
+              { label: 'Immediately', value: 0 },
+              { label: '30 seconds', value: 30 },
+              { label: '1 minute', value: 60 },
+              { label: '5 minutes', value: 300 },
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.timeoutOption,
+                  lockTimeout === option.value && styles.timeoutOptionActive,
+                ]}
+                onPress={() => setLockTimeout(option.value)}
+              >
+                <Text
+                  style={[
+                    styles.timeoutOptionText,
+                    lockTimeout === option.value && styles.timeoutOptionTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       <View style={styles.card}>
