@@ -76,7 +76,7 @@ export function AppLockScreen({ onUnlockSuccess }: AppLockScreenProps) {
       setIsAuthenticating(true);
 
       const success = await requireBiometricWithFallback(
-        'unlock_app',
+        'UNLOCK_APP',
         async () => {
           const unlocked = await unlockApp();
           if (unlocked) {
@@ -121,23 +121,13 @@ export function AppLockScreen({ onUnlockSuccess }: AppLockScreenProps) {
       } else {
         shake();
         setPin('');
-        showToast({
-          type: 'error',
-          title: 'Incorrect PIN',
-          message: `Failed attempts: ${failedUnlockAttempts + 1}/5`,
-          duration: 2000,
-        });
+        showToast(`Incorrect PIN. Failed attempts: ${failedUnlockAttempts + 1}/5`, 'error', 2000);
         AccessibilityInfo.announceForAccessibility('Incorrect PIN');
       }
     } catch (error) {
       shake();
       setPin('');
-      showToast({
-        type: 'error',
-        title: 'Error',
-        message: 'Failed to unlock app',
-        duration: 2000,
-      });
+      showToast('Failed to unlock app', 'error', 2000);
     } finally {
       setIsAuthenticating(false);
     }

@@ -34,7 +34,7 @@ export enum BiometricType {
   PIN = 'pin',
 }
 
-export const BIOMETRIC_CONFIGS = {
+export const BIOMETRIC_CONFIGS: Record<string, BiometricConfig> = {
   WALLET_ACCESS: {
     title: 'Authenticate to Access Wallet',
     subtitle: 'Verify your identity to view wallet details',
@@ -59,6 +59,16 @@ export const BIOMETRIC_CONFIGS = {
     title: 'Change Password',
     subtitle: 'Verify your identity to change your password',
     description: 'Biometric authentication required for password changes',
+  },
+  UNLOCK_APP: {
+    title: 'Unlock App',
+    subtitle: 'Verify your identity to unlock the application',
+    description: 'Biometric authentication required to unlock app',
+  },
+  EXTEND_SESSION: {
+    title: 'Extend Session',
+    subtitle: 'Verify your identity to extend your session',
+    description: 'Biometric authentication required to extend session',
   },
 };
 
