@@ -61,9 +61,19 @@ This contract implements a secure, efficient marketplace settlement system with 
 - `vote_on_dispute()`: Vote on an active dispute
 - `execute_dispute_resolution()`: Execute dispute resolution
 
+### Swap Timeouts
+- `cleanup_expired_swaps()`: Sweep expired swaps, refunding escrow (permissionless)
+- `expire_swap()`: Expire one swap by transaction id (permissionless)
+- `reclaim_expired_escrow()`: Reclaim holdings past their escrow backstop (permissionless)
+- `get_atomic_swap()`: Read a transaction's atomic swap, including its deadlines
+- `get_swap_time_remaining()`: Seconds left before a swap's deadline
+- `get_swap_timeout_config()`: Read the timeout policy in force
+
 ### Administration
-- `initialize()`: Initialize the contract
+- `initialize()`: Initialize the contract with a fee config and, optionally, a swap
+  timeout policy
 - `update_fee_config()`: Update fee configuration
+- `update_swap_timeout_config()`: Update the swap timeout policy (admin only)
 - `emergency_withdraw()`: Emergency withdrawal (admin only)
 - `withdraw_platform_fees()`: Withdraw accumulated platform fees
 
@@ -124,7 +134,64 @@ let result = contract.execute_sale(
 - **Front-Running Protection**: Commit-reveal schemes for bids
 - **Atomic Swaps**: All-or-nothing transaction execution
 - **Escrow Security**: Secure fund holding during settlement
+- **Swap Timeouts**: Deadlines enforced against both ledger timestamps and ledger
+  sequence numbers, with a per-holding escrow backstop (see below)
 - **Arbitration**: Multi-signature dispute resolution
+
+## Swap Timeouts and Mainnet Ledger Variability
+
+Mainnet ledger close intervals vary and `env.ledger().timestamp()` reports the close
+time of the current ledger rather than a real-world clock, so time-based expiry needs
+more than one timestamp comparison. Every atomic swap therefore carries two deadlines:
+`expires_at` (a timestamp) and `expires_at_ledger` (the ledger sequence the same
+deadline is projected to fall on, at ~5s per ledger).
+
+The two are used for different things:
+
+- **Rejecting operations** — `deposit_to_escrow` and `execute_swap` fail with
+  `SwapExpired` once the timestamp passes `expires_at + grace_period_seconds`. A
+  rejection is reversible (the escrow stays refundable), so the timestamp alone is
+  enough. The grace period covers the delay between transaction submission and ledger
+  inclusion, so a transaction submitted just inside its deadline is not falsely
+  expired.
+- **Confirming an expiry** — `expire_swap` and `cleanup_expired_swaps` additionally
+  require `ledger_tolerance_blocks` ledgers to close past `expires_at_ledger`, so
+  neither a drifting timestamp nor an unusually slow stretch of ledger closes can
+  force an irreversible refund on its own. Until both clocks agree they return
+  `NotYetExpired`.
+
+Escrow can never be locked indefinitely. Each `EscrowHolding` carries
+`escrow_expires_at` (swap expiry + grace + `escrow_buffer_seconds`); past that point
+`reclaim_expired_escrow` returns the assets to their depositors regardless of swap
+state and regardless of the ledger-sequence check. Every refund path marks
+`released_at`, so the several entrypoints (cancel, expire, cleanup, reclaim,
+emergency) can be called in any order without paying a holder twice.
+
+`SwapExpired` and `SwapAutoRefunded` events are emitted for off-chain monitoring of
+timeout-driven refunds.
+
+`cleanup_expired_swaps` and `expire_swap` respect the pause circuit breaker, like
+`cancel_transaction`. `reclaim_expired_escrow` deliberately does not: it is a
+last-resort recovery path like `emergency_withdraw`, and gating it would let a paused
+contract hold deposits past every deadline.
+
+Timeout error codes live in a separate `SwapTimeoutError` enum (`SwapExpired`,
+`NotYetExpired`, `SwapAlreadyFinalized`, `InvalidSwapDuration`,
+`InvalidTimeoutConfig`) because `SettlementError` is at the 50-case spec limit. They
+are converted into `SettlementError` at the contract boundary — `SwapExpired` surfaces
+as `TransactionExpired`, `NotYetExpired` as `InvalidState`, `SwapAlreadyFinalized` as
+`InvalidTransactionState`, `InvalidSwapDuration` as `InvalidAmount`.
+
+The policy is set by `SwapTimeoutConfig`, supplied at `initialize()` or updated by the
+admin via `update_swap_timeout_config()`:
+
+| Field | Default | Purpose |
+| --- | --- | --- |
+| `max_swap_duration` | 30 days | Ceiling on a swap's lifetime |
+| `default_swap_duration` | 7 days | Applied when a caller passes a 0 timeout |
+| `grace_period_seconds` | 300 | Ledger-inclusion latency tolerance |
+| `ledger_tolerance_blocks` | 5 | Ledgers past projected expiry before confirming |
+| `escrow_buffer_seconds` | 86400 | Added to swap expiry for the escrow backstop |
 
 ## Testing
 
@@ -157,6 +224,8 @@ The contract supports extensive configuration:
 - **Auction Settings**: Configurable durations, increments, and extensions
 - **Dispute Resolution**: Customizable arbitration parameters
 - **Royalty Enforcement**: Automatic royalty distribution
+- **Swap Timeouts**: Configurable swap lifetime, grace period, ledger tolerance, and
+  escrow backstop
 - **Emergency Controls**: Admin emergency withdrawal capabilities
 
 ## Events
@@ -168,6 +237,7 @@ The contract emits comprehensive events for all operations:
 - Royalty and fee events
 - Dispute events
 - Security events
+- Swap timeout events (expired, auto-refunded, timeout config updated)
 
 ## Error Handling
 

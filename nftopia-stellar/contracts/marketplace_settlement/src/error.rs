@@ -1,6 +1,12 @@
 use soroban_sdk::{contracterror, contracttype};
 
 // Primary error enum - keep under the limit
+//
+// The limit is 50 cases (the contract spec XDR caps `ScSpecUdtErrorEnumV0::cases`)
+// and this enum is now at it. Adding a variant fails the build with a
+// `LengthExceedsMax` panic from the `contracterror` macro, so new error domains go
+// in their own enum with a `From` impl into this one — see `PauseError` and
+// `SwapTimeoutError` below.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum SettlementError {
@@ -104,6 +110,46 @@ impl From<PauseError> for SettlementError {
             PauseError::PauseNotScheduled => SettlementError::ContractPaused,
             PauseError::PauseCancellationNotAllowed => SettlementError::ContractPaused,
             PauseError::NotPaused => SettlementError::ContractPaused,
+        }
+    }
+}
+
+// Separate enum for atomic swap / escrow timeout errors
+//
+// These live outside `SettlementError` because it is at the 50-case spec limit.
+// The timeout-specific entrypoints (`expire_swap`, `reclaim_expired_escrow`,
+// `update_swap_timeout_config`) return these codes directly so callers can tell the
+// cases apart; the mixed-concern lifecycle functions convert through the `From` impl
+// below, which necessarily collapses some of them onto existing codes.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum SwapTimeoutError {
+    /// The swap is past `expires_at` plus its grace period.
+    SwapExpired = 1,
+    /// A timeout-triggered action was attempted before its deadline passed.
+    /// Covers both the swap deadline and the per-holding escrow backstop.
+    NotYetExpired = 2,
+    /// The swap is already `Executed` or `Failed`.
+    SwapAlreadyFinalized = 3,
+    /// The requested swap lifetime is zero or above `max_swap_duration`.
+    InvalidSwapDuration = 4,
+    /// The supplied `SwapTimeoutConfig` would disable expiry or overflow.
+    InvalidTimeoutConfig = 5,
+    SwapNotFound = 6,
+}
+
+// Helper to convert SwapTimeoutError to SettlementError
+impl From<SwapTimeoutError> for SettlementError {
+    fn from(err: SwapTimeoutError) -> Self {
+        match err {
+            // `TransactionExpired` is the settlement-level code for a swap whose
+            // deadline has passed, distinct from `Expired` used for sale expiry.
+            SwapTimeoutError::SwapExpired => SettlementError::TransactionExpired,
+            SwapTimeoutError::NotYetExpired => SettlementError::InvalidState,
+            SwapTimeoutError::SwapAlreadyFinalized => SettlementError::InvalidTransactionState,
+            SwapTimeoutError::InvalidSwapDuration => SettlementError::InvalidAmount,
+            SwapTimeoutError::InvalidTimeoutConfig => SettlementError::InvalidState,
+            SwapTimeoutError::SwapNotFound => SettlementError::NotFound,
         }
     }
 }
