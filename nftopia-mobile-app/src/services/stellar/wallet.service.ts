@@ -154,23 +154,23 @@ export class StellarWalletService {
         builder.cursor(cursor);
       }
 
-      // Apply date filters if provided
-      if (filters.dateFrom) {
-        builder.from(filters.dateFrom.toISOString());
-      }
-      if (filters.dateTo) {
-        builder.to(filters.dateTo.toISOString());
-      }
-
       const response = await builder.call();
       let transactions = this.mapOperationsToTransactions(response.records);
 
-      // Apply type and asset filters locally (Horizon doesn't support these directly)
+      // Apply filters locally (Horizon's operations endpoint supports none of them)
       if (filters.type) {
         transactions = transactions.filter(tx => tx.type === filters.type);
       }
       if (filters.asset) {
         transactions = transactions.filter(tx => tx.asset === filters.asset);
+      }
+      if (filters.dateFrom) {
+        const from = filters.dateFrom.getTime();
+        transactions = transactions.filter(tx => new Date(tx.createdAt).getTime() >= from);
+      }
+      if (filters.dateTo) {
+        const to = filters.dateTo.getTime();
+        transactions = transactions.filter(tx => new Date(tx.createdAt).getTime() <= to);
       }
 
       return {
