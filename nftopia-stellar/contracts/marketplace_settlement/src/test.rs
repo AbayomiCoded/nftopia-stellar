@@ -1,14 +1,17 @@
 #![cfg(test)]
 
 use crate::{
-    error::SettlementError,
+    atomic_swap::{AtomicSwapEngine, SwapState},
+    error::{SettlementError, SwapTimeoutError},
     royalty_distributor::RoyaltyDistributor,
     settlement_core::{MarketplaceSettlement, MarketplaceSettlementClient},
-    types::{Asset, AuctionType, FeeConfig},
+    types::{Asset, AuctionType, FeeConfig, SwapTimeoutConfig},
+    utils::time_utils,
 };
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
-    Address, Bytes, Env, Symbol,
+    symbol_short,
+    testutils::{Address as _, Events as _, Ledger as _},
+    Address, Bytes, Env, Symbol, TryFromVal,
 };
 
 // --- Mock Contracts ---
@@ -48,6 +51,26 @@ impl MockNft {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _token_id: u64) {}
 }
 
+/// NFT mock matching the argument list `asset_utils::transfer_nft` actually sends:
+/// `(operator, from, to, token_id)`.
+#[soroban_sdk::contract]
+pub struct MockEscrowNft;
+#[soroban_sdk::contractimpl]
+impl MockEscrowNft {
+    pub fn set_owner(env: Env, owner: Address) {
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::Symbol::new(&env, "owner"), &owner);
+    }
+    pub fn owner_of(env: Env, _id: u64) -> Address {
+        env.storage()
+            .instance()
+            .get(&soroban_sdk::Symbol::new(&env, "owner"))
+            .unwrap_or_else(|| Address::generate(&env))
+    }
+    pub fn transfer(_env: Env, _operator: Address, _from: Address, _to: Address, _token_id: u64) {}
+}
+
 fn mk_asset(env: &Env) -> Asset {
     let contract = env.register(MockToken, ());
     Asset {
@@ -75,7 +98,7 @@ fn new_env() -> (Env, Address, MarketplaceSettlementClient<'static>, Address) {
     let client = MarketplaceSettlementClient::new(&env, &cid);
     let admin = Address::generate(&env);
     let fee_config = default_fee_config(&env, admin.clone());
-    client.initialize(&admin, &fee_config);
+    client.initialize(&admin, &fee_config, &None);
     let client: MarketplaceSettlementClient<'static> = unsafe { core::mem::transmute(client) };
     (env, cid, client, admin)
 }
@@ -102,7 +125,7 @@ fn test_reinitialize_fee_config_fails() {
     let (env, _cid, client, admin) = new_env();
     let fee_config = default_fee_config(&env, admin.clone());
     // A second initialize on the same contract must fail with FeeAlreadyInitialized.
-    let result = client.try_initialize(&admin, &fee_config);
+    let result = client.try_initialize(&admin, &fee_config, &None);
     assert!(result.is_err());
 }
 
@@ -338,7 +361,7 @@ fn test_update_fee_config_by_admin() {
     let cid2 = env.register(MarketplaceSettlement, ());
     let c2 = MarketplaceSettlementClient::new(&env, &cid2);
     let init_cfg = default_fee_config(&env, admin.clone());
-    c2.initialize(&admin, &init_cfg);
+    c2.initialize(&admin, &init_cfg, &None);
     c2.update_fee_config(&cfg, &admin);
 }
 
@@ -711,6 +734,692 @@ fn test_rate_limiter_window_reset() {
     assert!(id > 0);
 }
 
+// ─── Atomic Swap Timeouts ────────────────────────────────────────────────────
+
+const SALE_DURATION: u64 = 86_400;
+const SALE_PRICE: i128 = 1_000_000;
+
+type ClientResult<T> = Result<T, Result<SettlementError, soroban_sdk::InvokeError>>;
+
+fn assert_contract_err<T>(res: ClientResult<T>, expected: SettlementError) {
+    match res {
+        Err(Ok(actual)) => assert_eq!(actual, expected),
+        Err(Err(e)) => panic!("expected {:?}, got invoke error {:?}", expected, e),
+        Ok(_) => panic!("expected {:?}, call succeeded", expected),
+    }
+}
+
+/// Count published events carrying `topic`.
+///
+/// The test host only exposes events from the most recent invocation, so call this
+/// immediately after the call that emits them.
+fn count_events(env: &Env, topic: Symbol) -> u32 {
+    let mut count = 0u32;
+    for (_, topics, _) in env.events().all().iter() {
+        if let Some(val) = topics.get(1) {
+            if let Ok(sym) = Symbol::try_from_val(env, &val) {
+                if sym == topic {
+                    count += 1;
+                }
+            }
+        }
+    }
+    count
+}
+
+/// A sale with its backing atomic swap, using mocks that accept escrow transfers.
+fn new_swap_env() -> (
+    Env,
+    Address,
+    MarketplaceSettlementClient<'static>,
+    Address,
+    Address,
+    Asset,
+    u64,
+) {
+    let (env, cid, client, admin) = new_env();
+    let currency = Asset {
+        contract: env.register(MockToken, ()),
+        symbol: Symbol::new(&env, "XLM"),
+    };
+    let nft = env.register(MockEscrowNft, ());
+    let seller = Address::generate(&env);
+    let creator = Address::generate(&env);
+    reg(&env, &cid, &nft, &creator, &admin, &currency);
+    MockEscrowNftClient::new(&env, &nft).set_owner(&seller);
+
+    let transaction_id =
+        client.create_sale(&seller, &nft, &1u64, &SALE_PRICE, &currency, &SALE_DURATION);
+    (env, cid, client, seller, nft, currency, transaction_id)
+}
+
+/// Deposit both sides of the swap so it reaches `Ready` with real escrow holdings.
+fn fund_swap(
+    env: &Env,
+    cid: &Address,
+    seller: &Address,
+    nft: &Address,
+    currency: &Asset,
+    transaction_id: u64,
+) {
+    let nft_asset = Asset {
+        contract: nft.clone(),
+        symbol: Symbol::new(env, "NFT"),
+    };
+    env.as_contract(cid, || {
+        AtomicSwapEngine::deposit_to_escrow(env, transaction_id, seller, &nft_asset, 1, true)
+            .unwrap();
+        AtomicSwapEngine::deposit_to_escrow(
+            env,
+            transaction_id,
+            seller,
+            currency,
+            SALE_PRICE,
+            false,
+        )
+        .unwrap();
+    });
+}
+
+/// Move both clocks past the point where expiry is confirmed.
+fn confirm_expiry(env: &Env, expires_at: u64, expires_at_ledger: u32, cfg: &SwapTimeoutConfig) {
+    env.ledger()
+        .set_timestamp(expires_at + cfg.grace_period_seconds + 1);
+    env.ledger()
+        .set_sequence_number(expires_at_ledger + cfg.ledger_tolerance_blocks);
+}
+
+#[test]
+fn test_swap_expiry_fields_set_at_creation() {
+    let (env, _cid, client, _seller, _nft, _currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+
+    assert_eq!(swap.expires_at, swap.created_at + SALE_DURATION);
+    assert_eq!(
+        swap.expires_at_ledger,
+        time_utils::projected_expiry_ledger(swap.created_ledger, SALE_DURATION)
+    );
+    assert!(swap.expires_at_ledger > swap.created_ledger);
+    assert_eq!(swap.state, SwapState::Pending);
+
+    // Every holding carries a backstop strictly past the swap's own deadline.
+    let expected_backstop = swap.expires_at + cfg.grace_period_seconds + cfg.escrow_buffer_seconds;
+    for holding in swap.seller_escrow.iter().chain(swap.buyer_escrow.iter()) {
+        assert_eq!(holding.escrow_expires_at, expected_backstop);
+        assert!(holding.escrow_expires_at > swap.expires_at);
+        assert!(!holding.is_deposited);
+        assert_eq!(holding.released_at, None);
+    }
+
+    assert_eq!(
+        client.get_swap_time_remaining(&txid),
+        SALE_DURATION + cfg.grace_period_seconds
+    );
+    let _ = env;
+}
+
+#[test]
+fn test_execute_swap_fails_when_expired() {
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+
+    env.ledger()
+        .set_timestamp(swap.expires_at + cfg.grace_period_seconds + 1);
+
+    let res = env.as_contract(&cid, || AtomicSwapEngine::execute_swap(&env, txid, &seller));
+    assert_eq!(res.err(), Some(SwapTimeoutError::SwapExpired.into()));
+    assert_eq!(client.get_swap_time_remaining(&txid), 0);
+}
+
+#[test]
+fn test_execute_swap_succeeds_at_edge_of_grace_period() {
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+
+    // Submitted past `expires_at` but inside the grace period: the mainnet case the
+    // grace period exists for, and it must not be treated as expired.
+    env.ledger()
+        .set_timestamp(swap.expires_at + cfg.grace_period_seconds);
+
+    let result = env
+        .as_contract(&cid, || AtomicSwapEngine::execute_swap(&env, txid, &seller))
+        .unwrap();
+    assert!(result.success);
+
+    let swap = client.get_atomic_swap(&txid);
+    assert_eq!(swap.state, SwapState::Executed);
+    for holding in swap.seller_escrow.iter().chain(swap.buyer_escrow.iter()) {
+        assert!(holding.released_at.is_some());
+    }
+}
+
+#[test]
+fn test_expired_swap_reports_expiry_not_invalid_state() {
+    // An unfunded swap is not `Ready`; once expired it must still report SwapExpired
+    // so callers can tell a stale swap from an unfunded one.
+    let (env, cid, client, seller, _nft, _currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+
+    env.ledger()
+        .set_timestamp(swap.expires_at + cfg.grace_period_seconds + 1);
+
+    let res = env.as_contract(&cid, || AtomicSwapEngine::execute_swap(&env, txid, &seller));
+    assert_eq!(res.err(), Some(SwapTimeoutError::SwapExpired.into()));
+}
+
+#[test]
+fn test_deposit_to_escrow_rejected_after_expiry() {
+    let (env, cid, client, seller, nft, _currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+
+    env.ledger()
+        .set_timestamp(swap.expires_at + cfg.grace_period_seconds + 1);
+
+    let nft_asset = Asset {
+        contract: nft.clone(),
+        symbol: Symbol::new(&env, "NFT"),
+    };
+    let res = env.as_contract(&cid, || {
+        AtomicSwapEngine::deposit_to_escrow(&env, txid, &seller, &nft_asset, 1, true)
+    });
+    assert_eq!(res.err(), Some(SwapTimeoutError::SwapExpired.into()));
+}
+
+#[test]
+fn test_initialize_swap_rejects_duration_over_max() {
+    let (env, cid, client, seller, nft, currency, _txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+
+    env.as_contract(&cid, || {
+        let res = AtomicSwapEngine::initialize_swap(
+            &env,
+            777,
+            &seller,
+            &seller,
+            &nft,
+            1,
+            &currency,
+            SALE_PRICE,
+            cfg.max_swap_duration + 1,
+        );
+        assert_eq!(
+            res.err(),
+            Some(SwapTimeoutError::InvalidSwapDuration.into())
+        );
+    });
+}
+
+#[test]
+fn test_initialize_swap_zero_duration_uses_configured_default() {
+    let (env, cid, client, seller, nft, currency, _txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+
+    env.as_contract(&cid, || {
+        AtomicSwapEngine::initialize_swap(
+            &env, 4242, &seller, &seller, &nft, 1, &currency, SALE_PRICE, 0,
+        )
+        .unwrap();
+        let swap = AtomicSwapEngine::get_swap_by_transaction(&env, 4242).unwrap();
+        assert_eq!(swap.expires_at, swap.created_at + cfg.default_swap_duration);
+    });
+}
+
+#[test]
+fn test_create_sale_duration_bounded_by_admin_config() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let cid = env.register(MarketplaceSettlement, ());
+    let client = MarketplaceSettlementClient::new(&env, &cid);
+
+    let mut cfg = SwapTimeoutConfig::defaults();
+    cfg.max_swap_duration = 3_600;
+    cfg.default_swap_duration = 3_600;
+    let fee_config = default_fee_config(&env, admin.clone());
+    client.initialize(&admin, &fee_config, &Some(cfg));
+
+    let currency = Asset {
+        contract: env.register(MockToken, ()),
+        symbol: Symbol::new(&env, "XLM"),
+    };
+    let nft = env.register(MockEscrowNft, ());
+    let seller = Address::generate(&env);
+    reg(
+        &env,
+        &cid,
+        &nft,
+        &Address::generate(&env),
+        &admin,
+        &currency,
+    );
+    MockEscrowNftClient::new(&env, &nft).set_owner(&seller);
+
+    // Inside the sale's own 30-day limit, but past the configured swap ceiling.
+    assert_contract_err(
+        client.try_create_sale(&seller, &nft, &1u64, &SALE_PRICE, &currency, &7_200u64),
+        SwapTimeoutError::InvalidSwapDuration.into(),
+    );
+    assert!(client.create_sale(&seller, &nft, &1u64, &SALE_PRICE, &currency, &3_600u64) > 0);
+}
+
+#[test]
+fn test_expire_swap_requires_both_timestamp_and_ledger_tolerance() {
+    let (env, _cid, client, _seller, _nft, _currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+    let anyone = Address::generate(&env);
+
+    // Neither clock has moved.
+    assert_contract_err(
+        client.try_expire_swap(&txid, &anyone),
+        SwapTimeoutError::NotYetExpired.into(),
+    );
+
+    // Timestamp alone is past the deadline: not enough to force a refund, since a
+    // single drifting ledger timestamp must not be able to expire a swap.
+    env.ledger()
+        .set_timestamp(swap.expires_at + cfg.grace_period_seconds + 1);
+    assert_contract_err(
+        client.try_expire_swap(&txid, &anyone),
+        SwapTimeoutError::NotYetExpired.into(),
+    );
+
+    // One ledger short of the tolerance still holds.
+    env.ledger()
+        .set_sequence_number(swap.expires_at_ledger + cfg.ledger_tolerance_blocks - 1);
+    assert_contract_err(
+        client.try_expire_swap(&txid, &anyone),
+        SwapTimeoutError::NotYetExpired.into(),
+    );
+
+    // Both clocks agree.
+    env.ledger()
+        .set_sequence_number(swap.expires_at_ledger + cfg.ledger_tolerance_blocks);
+    client.expire_swap(&txid, &anyone);
+    assert_eq!(client.get_atomic_swap(&txid).state, SwapState::Failed);
+
+    // Already finalized.
+    assert_contract_err(
+        client.try_expire_swap(&txid, &anyone),
+        SwapTimeoutError::SwapAlreadyFinalized.into(),
+    );
+}
+
+#[test]
+fn test_cleanup_expired_swaps_refunds_and_emits_events() {
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+
+    // Anyone may sweep; it can only return assets to their depositors.
+    let anyone = Address::generate(&env);
+    assert_eq!(client.cleanup_expired_swaps(&anyone, &0u32), 0);
+
+    confirm_expiry(&env, swap.expires_at, swap.expires_at_ledger, &cfg);
+    assert_eq!(client.cleanup_expired_swaps(&anyone, &0u32), 1);
+
+    // One expiry, plus an auto-refund per escrowed holding, for off-chain monitors.
+    assert_eq!(count_events(&env, symbol_short!("swp_exprd")), 1);
+    assert_eq!(count_events(&env, symbol_short!("swp_refnd")), 2);
+
+    let swap = client.get_atomic_swap(&txid);
+    assert_eq!(swap.state, SwapState::Failed);
+    for holding in swap.seller_escrow.iter().chain(swap.buyer_escrow.iter()) {
+        assert!(holding.released_at.is_some());
+    }
+
+    // Nothing left to sweep.
+    assert_eq!(client.cleanup_expired_swaps(&anyone, &0u32), 0);
+}
+
+#[test]
+fn test_cleanup_expired_swaps_respects_limit() {
+    let (env, _cid, client, seller, nft, currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+    client.create_sale(&seller, &nft, &1u64, &SALE_PRICE, &currency, &SALE_DURATION);
+    client.create_sale(&seller, &nft, &1u64, &SALE_PRICE, &currency, &SALE_DURATION);
+
+    confirm_expiry(&env, swap.expires_at, swap.expires_at_ledger, &cfg);
+
+    let anyone = Address::generate(&env);
+    assert_eq!(client.cleanup_expired_swaps(&anyone, &2u32), 2);
+    assert_eq!(client.cleanup_expired_swaps(&anyone, &2u32), 1);
+    assert_eq!(client.cleanup_expired_swaps(&anyone, &2u32), 0);
+}
+
+#[test]
+fn test_escrow_backstop_reclaimable_without_ledger_confirmation() {
+    // Worst case: the swap never settles and the ledger sequence never reaches the
+    // tolerance, so `expire_swap` stays unavailable. The escrow backstop is what
+    // guarantees the funds still come back.
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    let swap = client.get_atomic_swap(&txid);
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+    let backstop = swap.seller_escrow.get(0).unwrap().escrow_expires_at;
+    let anyone = Address::generate(&env);
+
+    assert_contract_err(
+        client.try_reclaim_expired_escrow(&txid, &anyone),
+        SwapTimeoutError::NotYetExpired.into(),
+    );
+
+    env.ledger().set_timestamp(backstop + 1);
+    assert_contract_err(
+        client.try_expire_swap(&txid, &anyone),
+        SwapTimeoutError::NotYetExpired.into(),
+    );
+
+    assert_eq!(client.reclaim_expired_escrow(&txid, &anyone), 2);
+    let swap = client.get_atomic_swap(&txid);
+    assert_eq!(swap.state, SwapState::Failed);
+    for holding in swap.seller_escrow.iter().chain(swap.buyer_escrow.iter()) {
+        assert!(holding.released_at.is_some());
+    }
+}
+
+#[test]
+fn test_expiry_paths_never_refund_twice() {
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+    let backstop = swap.seller_escrow.get(0).unwrap().escrow_expires_at;
+    let anyone = Address::generate(&env);
+
+    confirm_expiry(&env, swap.expires_at, swap.expires_at_ledger, &cfg);
+    assert_eq!(client.expire_swap(&txid, &anyone), 2);
+
+    // Every other refund path must now find nothing to pay out.
+    env.ledger().set_timestamp(backstop + 1);
+    assert_contract_err(
+        client.try_reclaim_expired_escrow(&txid, &anyone),
+        SwapTimeoutError::NotYetExpired.into(),
+    );
+    assert_contract_err(
+        client.try_expire_swap(&txid, &anyone),
+        SwapTimeoutError::SwapAlreadyFinalized.into(),
+    );
+    assert_eq!(client.cleanup_expired_swaps(&anyone, &0u32), 0);
+}
+
+#[test]
+fn test_executed_swap_cannot_be_reclaimed_via_backstop() {
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+    env.as_contract(&cid, || AtomicSwapEngine::execute_swap(&env, txid, &seller))
+        .unwrap();
+
+    let backstop = client
+        .get_atomic_swap(&txid)
+        .seller_escrow
+        .get(0)
+        .unwrap()
+        .escrow_expires_at;
+    env.ledger().set_timestamp(backstop + 1);
+
+    let anyone = Address::generate(&env);
+    assert_contract_err(
+        client.try_reclaim_expired_escrow(&txid, &anyone),
+        SwapTimeoutError::NotYetExpired.into(),
+    );
+    assert_eq!(client.get_atomic_swap(&txid).state, SwapState::Executed);
+}
+
+#[test]
+fn test_cancel_swap_after_expiry_still_refunds() {
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+
+    confirm_expiry(&env, swap.expires_at, swap.expires_at_ledger, &cfg);
+
+    // Cancellation stays open after expiry — blocking it would strand the escrow —
+    // and reports the timeout through the expiry events.
+    env.as_contract(&cid, || AtomicSwapEngine::cancel_swap(&env, txid, &seller))
+        .unwrap();
+    assert_eq!(count_events(&env, symbol_short!("swp_exprd")), 1);
+    assert_eq!(count_events(&env, symbol_short!("swp_refnd")), 2);
+    assert_eq!(client.get_atomic_swap(&txid).state, SwapState::Failed);
+
+    let res = env.as_contract(&cid, || AtomicSwapEngine::cancel_swap(&env, txid, &seller));
+    assert_eq!(
+        res.err(),
+        Some(SwapTimeoutError::SwapAlreadyFinalized.into())
+    );
+}
+
+#[test]
+fn test_cancel_swap_before_expiry_emits_no_timeout_events() {
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+
+    env.as_contract(&cid, || AtomicSwapEngine::cancel_swap(&env, txid, &seller))
+        .unwrap();
+    assert_eq!(count_events(&env, symbol_short!("swp_exprd")), 0);
+    assert_eq!(client.get_atomic_swap(&txid).state, SwapState::Failed);
+}
+
+/// Read back the admin the contract was initialized with.
+fn stored_admin(env: &Env, cid: &Address) -> Address {
+    env.as_contract(cid, || {
+        let cfg: crate::types::AdminConfig = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("admin_cfg"))
+            .unwrap();
+        cfg.admin
+    })
+}
+
+#[test]
+fn test_admin_can_update_swap_timeout_config() {
+    let (env, cid, client, _seller, _nft, _currency, _txid) = new_swap_env();
+
+    let mut cfg = SwapTimeoutConfig::defaults();
+    cfg.max_swap_duration = 1_209_600; // 14 days
+    cfg.grace_period_seconds = 600;
+    cfg.ledger_tolerance_blocks = 3;
+
+    let attacker = Address::generate(&env);
+    assert_contract_err(
+        client.try_update_swap_timeout_config(&cfg, &attacker),
+        SettlementError::Unauthorized,
+    );
+
+    let admin = stored_admin(&env, &cid);
+    client.update_swap_timeout_config(&cfg, &admin);
+    assert_eq!(client.get_swap_timeout_config(), cfg);
+}
+
+#[test]
+fn test_invalid_swap_timeout_config_rejected() {
+    let (env, cid, client, _seller, _nft, _currency, _txid) = new_swap_env();
+    let admin = stored_admin(&env, &cid);
+
+    // A zero tolerance would let one ledger's timestamp confirm an expiry.
+    let mut zero_tolerance = SwapTimeoutConfig::defaults();
+    zero_tolerance.ledger_tolerance_blocks = 0;
+    assert_contract_err(
+        client.try_update_swap_timeout_config(&zero_tolerance, &admin),
+        SwapTimeoutError::InvalidTimeoutConfig.into(),
+    );
+
+    let mut zero_max = SwapTimeoutConfig::defaults();
+    zero_max.max_swap_duration = 0;
+    assert_contract_err(
+        client.try_update_swap_timeout_config(&zero_max, &admin),
+        SwapTimeoutError::InvalidTimeoutConfig.into(),
+    );
+
+    let mut default_over_max = SwapTimeoutConfig::defaults();
+    default_over_max.max_swap_duration = 3_600;
+    default_over_max.default_swap_duration = 7_200;
+    assert_contract_err(
+        client.try_update_swap_timeout_config(&default_over_max, &admin),
+        SwapTimeoutError::InvalidTimeoutConfig.into(),
+    );
+
+    let mut overflowing = SwapTimeoutConfig::defaults();
+    overflowing.max_swap_duration = u64::MAX;
+    overflowing.grace_period_seconds = 1;
+    assert_contract_err(
+        client.try_update_swap_timeout_config(&overflowing, &admin),
+        SwapTimeoutError::InvalidTimeoutConfig.into(),
+    );
+}
+
+#[test]
+fn test_initialize_with_custom_swap_timeout_config() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let cid = env.register(MarketplaceSettlement, ());
+    let client = MarketplaceSettlementClient::new(&env, &cid);
+
+    let mut cfg = SwapTimeoutConfig::defaults();
+    cfg.max_swap_duration = 2_592_000; // 30 days
+    cfg.default_swap_duration = 1_209_600; // 14 days
+    cfg.ledger_tolerance_blocks = 4;
+    let fee_config = default_fee_config(&env, admin.clone());
+    client.initialize(&admin, &fee_config, &Some(cfg.clone()));
+
+    assert_eq!(client.get_swap_timeout_config(), cfg);
+}
+
+#[test]
+fn test_swap_timeout_defaults_applied_without_initialization() {
+    let env = Env::default();
+    let cid = env.register(MarketplaceSettlement, ());
+    let client = MarketplaceSettlementClient::new(&env, &cid);
+    assert_eq!(
+        client.get_swap_timeout_config(),
+        SwapTimeoutConfig::defaults()
+    );
+}
+
+#[test]
+fn test_pause_halts_cleanup_but_not_the_escrow_backstop() {
+    let (env, cid, client, seller, nft, currency, txid) = new_swap_env();
+    let cfg = client.get_swap_timeout_config();
+    let swap = client.get_atomic_swap(&txid);
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+    let backstop = swap.seller_escrow.get(0).unwrap().escrow_expires_at;
+    let admin = stored_admin(&env, &cid);
+    let anyone = Address::generate(&env);
+
+    confirm_expiry(&env, swap.expires_at, swap.expires_at_ledger, &cfg);
+    client.pause_contract(&admin, &None, &None);
+
+    // Routine timeout processing stops with the circuit breaker.
+    assert_contract_err(
+        client.try_cleanup_expired_swaps(&anyone, &0u32),
+        SettlementError::ContractPaused,
+    );
+    assert_contract_err(
+        client.try_expire_swap(&txid, &anyone),
+        SettlementError::ContractPaused,
+    );
+
+    // The last-resort backstop does not, or a paused contract could hold deposits
+    // past every deadline.
+    env.ledger().set_timestamp(backstop + 1);
+    assert_eq!(client.reclaim_expired_escrow(&txid, &anyone), 2);
+    assert_eq!(client.get_atomic_swap(&txid).state, SwapState::Failed);
+}
+
+// ─── Time Math ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_time_math_guards_overflow_and_underflow() {
+    assert_eq!(time_utils::deadline_with_grace(10, 5), Ok(15));
+    assert_eq!(
+        time_utils::deadline_with_grace(u64::MAX, 1),
+        Err(SettlementError::Overflow)
+    );
+
+    assert_eq!(time_utils::ledgers_for_duration(50), 10);
+    assert_eq!(time_utils::ledgers_for_duration(u64::MAX), u32::MAX);
+    assert_eq!(time_utils::projected_expiry_ledger(u32::MAX, 100), u32::MAX);
+    assert_eq!(time_utils::projected_expiry_ledger(10, 50), 20);
+
+    assert_eq!(
+        time_utils::validate_duration(0, 100),
+        Err(SwapTimeoutError::InvalidSwapDuration.into())
+    );
+    assert_eq!(
+        time_utils::validate_duration(101, 100),
+        Err(SwapTimeoutError::InvalidSwapDuration.into())
+    );
+    assert_eq!(time_utils::validate_duration(100, 100), Ok(()));
+
+    assert_eq!(
+        time_utils::time_diff_seconds(5, 10),
+        Err(SettlementError::InvalidAmount)
+    );
+    assert_eq!(
+        time_utils::calculate_expiration(u64::MAX, 1),
+        Err(SettlementError::Overflow)
+    );
+}
+
+#[test]
+fn test_time_math_handles_ledger_time_moving_backwards() {
+    let env = Env::default();
+    env.ledger().set_timestamp(1_000);
+    env.ledger().set_sequence_number(100);
+
+    // A reference stamped by a later ledger must read as "no time passed", not
+    // underflow, and must never make something look expired.
+    assert_eq!(time_utils::elapsed_since(2_000, &env), 0);
+    assert_eq!(time_utils::overdue_by(2_000, 100, &env), 0);
+    assert_eq!(time_utils::remaining_time_with_grace(900, 50, &env), 0);
+    assert_eq!(time_utils::remaining_time_with_grace(1_200, 100, &env), 300);
+    assert!(!time_utils::has_time_elapsed(2_000, 10, &env));
+
+    // Very large deadlines neither panic nor expire.
+    assert_eq!(
+        time_utils::is_expired_with_grace(u64::MAX, 0, &env),
+        Ok(false)
+    );
+    assert_eq!(
+        time_utils::is_expired_with_grace(u64::MAX, 1, &env),
+        Err(SettlementError::Overflow)
+    );
+
+    assert_eq!(time_utils::ledgers_elapsed(200, &env), 0);
+    assert_eq!(time_utils::ledgers_elapsed(40, &env), 60);
+    assert!(!time_utils::has_ledger_tolerance_passed(u32::MAX, 5, &env));
+    assert!(time_utils::has_ledger_tolerance_passed(90, 5, &env));
+}
+
+#[test]
+fn test_swap_not_expired_when_ledger_time_moves_backwards() {
+    let (env, _cid, client, _seller, _nft, _currency, txid) = new_swap_env();
+    let swap = client.get_atomic_swap(&txid);
+    let anyone = Address::generate(&env);
+
+    // Ledger sequence far past the projection, but the timestamp has regressed.
+    env.ledger()
+        .set_sequence_number(swap.expires_at_ledger + 1_000);
+    env.ledger().set_timestamp(swap.created_at);
+
+    assert_contract_err(
+        client.try_expire_swap(&txid, &anyone),
+        SwapTimeoutError::NotYetExpired.into(),
+    );
+    assert_eq!(client.cleanup_expired_swaps(&anyone, &0u32), 0);
+}
+
 #[test]
 fn test_rate_limiter_admin_update_config() {
     let (env, _cid, _client, _admin) = new_env();
@@ -721,7 +1430,7 @@ fn test_rate_limiter_admin_update_config() {
     let cid2 = env.register(MarketplaceSettlement, ());
     let c2 = MarketplaceSettlementClient::new(&env, &cid2);
     let init_cfg = default_fee_config(&env, admin.clone());
-    c2.initialize(&admin, &init_cfg);
+    c2.initialize(&admin, &init_cfg, &None);
 
     let bidder = Address::generate(&env);
     let seller = Address::generate(&env);

@@ -320,6 +320,39 @@ pub struct PauseCancelledEvent {
     pub timestamp: u64,
 }
 
+// Atomic Swap Timeout Events
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SwapExpiredEvent {
+    pub swap_id: u64,
+    pub transaction_id: u64,
+    pub expires_at: u64,
+    pub expires_at_ledger: u32,
+    pub expired_by_seconds: u64,
+    pub ledger: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SwapAutoRefundedEvent {
+    pub swap_id: u64,
+    pub transaction_id: u64,
+    pub holder: Address,
+    pub asset: Asset,
+    pub amount: i128,
+    pub is_nft: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SwapTimeoutConfigUpdatedEvent {
+    pub new_config: SwapTimeoutConfig,
+    pub updated_by: Address,
+    pub timestamp: u64,
+}
+
 // Configuration Events
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -563,6 +596,24 @@ pub fn emit_pause_cancelled(env: &Env, event: PauseCancelledEvent) {
 pub fn emit_fee_config_initialized(env: &Env, event: FeeConfigInitializedEvent) {
     env.events()
         .publish(("MarketplaceSettlement", symbol_short!("fee_init")), event);
+}
+
+#[allow(deprecated)]
+pub fn emit_swap_expired(env: &Env, event: SwapExpiredEvent) {
+    env.events()
+        .publish(("MarketplaceSettlement", symbol_short!("swp_exprd")), event);
+}
+
+#[allow(deprecated)]
+pub fn emit_swap_auto_refunded(env: &Env, event: SwapAutoRefundedEvent) {
+    env.events()
+        .publish(("MarketplaceSettlement", symbol_short!("swp_refnd")), event);
+}
+
+#[allow(deprecated)]
+pub fn emit_swap_timeout_config_updated(env: &Env, event: SwapTimeoutConfigUpdatedEvent) {
+    env.events()
+        .publish(("MarketplaceSettlement", symbol_short!("swp_cfg")), event);
 }
 
 #[allow(deprecated)]

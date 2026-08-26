@@ -1,13 +1,26 @@
-use crate::error::SettlementError;
+use crate::error::{SettlementError, SwapTimeoutError};
+use crate::events::{SwapAutoRefundedEvent, SwapExpiredEvent, SwapTimeoutConfigUpdatedEvent};
 use crate::security::reentrancy_guard::ReentrancyGuard;
-use crate::types::{Asset, ExecutionResult};
+use crate::types::{Asset, ExecutionResult, SwapTimeoutConfig};
 use crate::utils::asset_utils;
+use crate::utils::time_utils;
 use soroban_sdk::{contracttype, symbol_short, Address, Bytes, Env, Map, Symbol, Vec};
 
 // Storage keys
 const ATOMIC_SWAPS: Symbol = symbol_short!("atom_swps");
+const SWAP_TIMEOUT_CFG: Symbol = symbol_short!("swap_cfg");
+
+/// Swaps inspected per `cleanup_expired_swaps` call when no limit is supplied.
+/// Bounded so a single cleanup invocation cannot exceed the resource budget.
+const DEFAULT_CLEANUP_LIMIT: u32 = 20;
 
 /// Represents an escrow holding
+///
+/// `escrow_expires_at` is the hard backstop for the funds in this holding: once the
+/// ledger timestamp passes it, the holding is reclaimable by anyone via
+/// [`AtomicSwapEngine::reclaim_expired_escrow`], regardless of what state the swap
+/// itself is in. That is what keeps escrowed value from being locked forever when a
+/// swap is neither completed nor cancelled.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EscrowHolding {
@@ -16,11 +29,24 @@ pub struct EscrowHolding {
     pub asset: Asset,
     pub amount: i128, // For tokens, or token_id for NFTs
     pub is_nft: bool,
-    pub deposited_at: u64,
+    /// Whether the holder has actually transferred the asset into escrow.
+    ///
+    /// Refunds are gated on this flag. Without it, the permissionless expiry paths
+    /// would pay out holdings that were only ever reserved, draining the contract.
+    pub is_deposited: bool,
+    pub deposited_at: u64, // 0 until deposited
+    pub escrow_expires_at: u64,
     pub released_at: Option<u64>,
 }
 
 /// Atomic swap state
+///
+/// Time-based expiry uses two independent clocks. `expires_at` is a ledger
+/// timestamp; `expires_at_ledger` is the ledger sequence the same deadline is
+/// projected to fall on. Rejecting new operations only needs the timestamp (a
+/// rejection is reversible — the funds stay refundable), but confirming an expiry so
+/// funds can be force-refunded requires both, so timestamp drift alone can never
+/// trigger an irreversible refund.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AtomicSwap {
@@ -30,6 +56,9 @@ pub struct AtomicSwap {
     pub buyer_escrow: Vec<EscrowHolding>,
     pub state: SwapState,
     pub created_at: u64,
+    pub created_ledger: u32,
+    pub expires_at: u64,
+    pub expires_at_ledger: u32,
     pub executed_at: Option<u64>,
 }
 
@@ -44,11 +73,78 @@ pub enum SwapState {
     Failed = 5,
 }
 
+impl SwapState {
+    /// Whether no further state transitions are possible.
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, SwapState::Executed | SwapState::Failed)
+    }
+}
+
 /// Atomic swap engine for secure NFT and token transfers
 pub struct AtomicSwapEngine;
 
 impl AtomicSwapEngine {
+    // ── Timeout configuration ────────────────────────────────────────────────
+
+    /// Current timeout configuration, falling back to conservative defaults.
+    pub fn timeout_config(env: &Env) -> SwapTimeoutConfig {
+        env.storage()
+            .instance()
+            .get(&SWAP_TIMEOUT_CFG)
+            .unwrap_or_else(SwapTimeoutConfig::defaults)
+    }
+
+    /// Persist a timeout configuration after validating it.
+    pub fn set_timeout_config(
+        env: &Env,
+        config: &SwapTimeoutConfig,
+        updated_by: &Address,
+    ) -> Result<(), SettlementError> {
+        Self::validate_timeout_config(config)?;
+        env.storage().instance().set(&SWAP_TIMEOUT_CFG, config);
+
+        crate::events::emit_swap_timeout_config_updated(
+            env,
+            SwapTimeoutConfigUpdatedEvent {
+                new_config: config.clone(),
+                updated_by: updated_by.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+        Ok(())
+    }
+
+    /// Reject configurations that would disable expiry or overflow the time math.
+    pub fn validate_timeout_config(config: &SwapTimeoutConfig) -> Result<(), SettlementError> {
+        if config.max_swap_duration == 0 || config.default_swap_duration == 0 {
+            return Err(SwapTimeoutError::InvalidTimeoutConfig.into());
+        }
+        if config.default_swap_duration > config.max_swap_duration {
+            return Err(SwapTimeoutError::InvalidTimeoutConfig.into());
+        }
+        // A tolerance of zero would let a single ledger's timestamp confirm an
+        // expiry, which is exactly the mainnet failure mode being guarded against.
+        if config.ledger_tolerance_blocks == 0 {
+            return Err(SwapTimeoutError::InvalidTimeoutConfig.into());
+        }
+        // Guard the deadline arithmetic: expiry + grace + escrow buffer must fit.
+        let fits = config
+            .max_swap_duration
+            .checked_add(config.grace_period_seconds)
+            .and_then(|v| v.checked_add(config.escrow_buffer_seconds))
+            .is_some();
+        if !fits {
+            return Err(SwapTimeoutError::InvalidTimeoutConfig.into());
+        }
+        Ok(())
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
     /// Initialize an atomic swap for a transaction
+    ///
+    /// `swap_timeout_seconds` bounds the swap's lifetime; passing 0 applies the
+    /// configured default. Values above `max_swap_duration` are rejected.
     #[allow(clippy::too_many_arguments)]
     pub fn initialize_swap(
         env: &Env,
@@ -59,7 +155,32 @@ impl AtomicSwapEngine {
         token_id: u64,
         payment_asset: &Asset,
         payment_amount: i128,
+        swap_timeout_seconds: u64,
     ) -> Result<u64, SettlementError> {
+        let config = Self::timeout_config(env);
+
+        let duration = if swap_timeout_seconds == 0 {
+            config.default_swap_duration
+        } else {
+            swap_timeout_seconds
+        };
+        time_utils::validate_duration(duration, config.max_swap_duration)?;
+
+        let created_at = env.ledger().timestamp();
+        let created_ledger = time_utils::current_ledger(env);
+        let expires_at = time_utils::calculate_expiration(created_at, duration)?;
+        let expires_at_ledger = time_utils::projected_expiry_ledger(created_ledger, duration);
+
+        // The escrow backstop sits past the swap's own effective deadline, so a swap
+        // always gets the chance to settle or be cancelled before funds become
+        // unconditionally reclaimable.
+        let escrow_expires_at = time_utils::calculate_expiration(
+            expires_at,
+            config
+                .grace_period_seconds
+                .saturating_add(config.escrow_buffer_seconds),
+        )?;
+
         let swap_id = Self::next_swap_id(env);
 
         let mut seller_escrow = Vec::new(env);
@@ -72,7 +193,9 @@ impl AtomicSwapEngine {
             },
             amount: token_id as i128,
             is_nft: true,
-            deposited_at: env.ledger().timestamp(),
+            is_deposited: false,
+            deposited_at: 0,
+            escrow_expires_at,
             released_at: None,
         });
 
@@ -83,7 +206,9 @@ impl AtomicSwapEngine {
             asset: payment_asset.clone(),
             amount: payment_amount,
             is_nft: false,
-            deposited_at: env.ledger().timestamp(),
+            is_deposited: false,
+            deposited_at: 0,
+            escrow_expires_at,
             released_at: None,
         });
 
@@ -93,7 +218,10 @@ impl AtomicSwapEngine {
             seller_escrow,
             buyer_escrow,
             state: SwapState::Pending,
-            created_at: env.ledger().timestamp(),
+            created_at,
+            created_ledger,
+            expires_at,
+            expires_at_ledger,
             executed_at: None,
         };
 
@@ -111,6 +239,10 @@ impl AtomicSwapEngine {
         is_nft: bool,
     ) -> Result<(), SettlementError> {
         let mut swap = Self::get_swap_by_transaction(env, transaction_id)?;
+        let config = Self::timeout_config(env);
+
+        // Refuse to take new funds into a swap that can no longer settle.
+        Self::ensure_not_expired(env, &swap, &config)?;
 
         // Validate depositor
         let is_seller_deposit = swap
@@ -147,6 +279,11 @@ impl AtomicSwapEngine {
     ) -> Result<ExecutionResult, SettlementError> {
         ReentrancyGuard::execute(env, executor, "execute_swap", || {
             let mut swap = Self::get_swap_by_transaction(env, transaction_id)?;
+            let config = Self::timeout_config(env);
+
+            // Deadline is checked before state so a stale swap always reports
+            // SwapExpired rather than a misleading InvalidState.
+            Self::ensure_not_expired(env, &swap, &config)?;
 
             // Validate swap is ready for execution
             if swap.state != SwapState::Ready {
@@ -154,7 +291,7 @@ impl AtomicSwapEngine {
             }
 
             // Perform the atomic swap
-            Self::perform_atomic_swap(env, &swap)?;
+            Self::perform_atomic_swap(env, &mut swap)?;
 
             // Update swap state
             swap.state = SwapState::Executed;
@@ -175,12 +312,21 @@ impl AtomicSwapEngine {
     }
 
     /// Cancel a swap and refund all parties
+    ///
+    /// Cancellation stays available after the deadline on purpose: blocking it would
+    /// strand escrowed funds. An expired swap is instead routed through the expiry
+    /// path so it emits the same timeout events as an automatic cleanup.
     pub fn cancel_swap(
         env: &Env,
         transaction_id: u64,
         canceller: &Address,
     ) -> Result<(), SettlementError> {
         let mut swap = Self::get_swap_by_transaction(env, transaction_id)?;
+        let config = Self::timeout_config(env);
+
+        if swap.state.is_terminal() {
+            return Err(SwapTimeoutError::SwapAlreadyFinalized.into());
+        }
 
         // Only seller or buyer can cancel
         let is_authorized = swap.seller_escrow.iter().any(|h| h.holder == *canceller)
@@ -190,13 +336,122 @@ impl AtomicSwapEngine {
             return Err(SettlementError::Unauthorized);
         }
 
-        // Refund all escrow holdings
-        Self::refund_escrow_holdings(env, &swap)?;
+        if Self::is_expired(env, &swap, &config)? {
+            Self::finalize_expiry(env, &mut swap, &config)?;
+        } else {
+            Self::refund_escrow_holdings(env, &mut swap, false)?;
+            swap.state = SwapState::Failed;
+        }
 
-        swap.state = SwapState::Failed;
         Self::store_swap(env, &swap)?;
-
         Ok(())
+    }
+
+    /// Mark a single expired swap as failed and refund its escrow.
+    ///
+    /// Permissionless: anyone may call it, since it can only ever return escrowed
+    /// assets to the parties that deposited them.
+    pub fn expire_swap(
+        env: &Env,
+        transaction_id: u64,
+        _caller: &Address,
+    ) -> Result<u32, SettlementError> {
+        let mut swap = Self::get_swap_by_transaction(env, transaction_id)?;
+        let config = Self::timeout_config(env);
+
+        if swap.state.is_terminal() {
+            return Err(SwapTimeoutError::SwapAlreadyFinalized.into());
+        }
+
+        if !Self::is_expiry_confirmed(env, &swap, &config)? {
+            return Err(SwapTimeoutError::NotYetExpired.into());
+        }
+
+        let refunded = Self::finalize_expiry(env, &mut swap, &config)?;
+        Self::store_swap(env, &swap)?;
+        Ok(refunded)
+    }
+
+    /// Sweep expired swaps, marking them failed and refunding their escrow.
+    ///
+    /// Permissionless. `limit` caps how many swaps are expired in one call (0 applies
+    /// [`DEFAULT_CLEANUP_LIMIT`]) so the sweep stays inside the resource budget as
+    /// the swap map grows; callers repeat until it returns 0. Returns the number of
+    /// swaps expired.
+    pub fn cleanup_expired_swaps(
+        env: &Env,
+        _caller: &Address,
+        limit: u32,
+    ) -> Result<u32, SettlementError> {
+        let config = Self::timeout_config(env);
+        let max = if limit == 0 {
+            DEFAULT_CLEANUP_LIMIT
+        } else {
+            limit
+        };
+
+        let mut swaps: Map<u64, AtomicSwap> = match env.storage().instance().get(&ATOMIC_SWAPS) {
+            Some(swaps) => swaps,
+            None => return Ok(0),
+        };
+
+        // Collect swap ids first, since finalizing mutates the map as we go. Ids come
+        // from the map key rather than `transaction_id`, which is not unique across
+        // swaps and could otherwise send the refund to the wrong swap.
+        let mut expired_ids: Vec<u64> = Vec::new(env);
+        for (swap_id, swap) in swaps.iter() {
+            if expired_ids.len() >= max {
+                break;
+            }
+            if swap.state.is_terminal() {
+                continue;
+            }
+            if Self::is_expiry_confirmed(env, &swap, &config)? {
+                expired_ids.push_back(swap_id);
+            }
+        }
+
+        let mut expired_count = 0u32;
+        for swap_id in expired_ids.iter() {
+            if let Some(mut swap) = swaps.get(swap_id) {
+                Self::finalize_expiry(env, &mut swap, &config)?;
+                swaps.set(swap_id, swap);
+                expired_count += 1;
+            }
+        }
+
+        // One write for the whole sweep instead of one per swap.
+        if expired_count > 0 {
+            env.storage().instance().set(&ATOMIC_SWAPS, &swaps);
+        }
+
+        Ok(expired_count)
+    }
+
+    /// Reclaim escrow holdings whose own backstop deadline has passed.
+    ///
+    /// The last-resort guarantee that escrowed value is never locked indefinitely:
+    /// it ignores swap state entirely and only asks whether each holding is past
+    /// `escrow_expires_at` and still unreleased. Permissionless, and funds can only
+    /// go back to the original depositor.
+    pub fn reclaim_expired_escrow(
+        env: &Env,
+        transaction_id: u64,
+        _caller: &Address,
+    ) -> Result<u32, SettlementError> {
+        let mut swap = Self::get_swap_by_transaction(env, transaction_id)?;
+
+        let refunded = Self::refund_holdings(env, &mut swap, true, true)?;
+        if refunded == 0 {
+            return Err(SwapTimeoutError::NotYetExpired.into());
+        }
+
+        // An executed swap keeps its state; anything else is now dead.
+        if swap.state != SwapState::Executed {
+            swap.state = SwapState::Failed;
+        }
+        Self::store_swap(env, &swap)?;
+        Ok(refunded)
     }
 
     /// Emergency withdrawal for stuck transactions
@@ -206,13 +461,14 @@ impl AtomicSwapEngine {
         admin: &Address,
         reason: &Bytes,
     ) -> Result<(), SettlementError> {
-        // This would check admin permissions
-        let swap = Self::get_swap_by_transaction(env, transaction_id)?;
+        // Admin permissions are checked by the contract entrypoint.
+        let mut swap = Self::get_swap_by_transaction(env, transaction_id)?;
 
-        // Log emergency withdrawal
-        // In production, this would have proper admin checks
-
-        Self::refund_escrow_holdings(env, &swap)?;
+        Self::refund_escrow_holdings(env, &mut swap, false)?;
+        if swap.state != SwapState::Executed {
+            swap.state = SwapState::Failed;
+        }
+        Self::store_swap(env, &swap)?;
 
         // Emit emergency withdrawal event
         let event = crate::events::EmergencyWithdrawalEvent {
@@ -225,6 +481,97 @@ impl AtomicSwapEngine {
 
         Ok(())
     }
+
+    // ── Expiry checks ────────────────────────────────────────────────────────
+
+    /// Whether the swap is past `expires_at` plus the configured grace period.
+    ///
+    /// Timestamp-only, and used to reject operations. Rejecting is reversible — the
+    /// escrow stays refundable — so it does not need the stronger ledger check.
+    pub fn is_expired(
+        env: &Env,
+        swap: &AtomicSwap,
+        config: &SwapTimeoutConfig,
+    ) -> Result<bool, SettlementError> {
+        time_utils::is_expired_with_grace(swap.expires_at, config.grace_period_seconds, env)
+    }
+
+    /// Whether expiry is confirmed by both clocks.
+    ///
+    /// Requires the timestamp to be past the deadline *and* `ledger_tolerance_blocks`
+    /// ledgers to have closed beyond the projected expiry ledger. Used before any
+    /// irreversible timeout action, so neither a drifting timestamp nor an unusually
+    /// slow stretch of ledger closes can force a refund on its own.
+    pub fn is_expiry_confirmed(
+        env: &Env,
+        swap: &AtomicSwap,
+        config: &SwapTimeoutConfig,
+    ) -> Result<bool, SettlementError> {
+        if !Self::is_expired(env, swap, config)? {
+            return Ok(false);
+        }
+        Ok(time_utils::has_ledger_tolerance_passed(
+            swap.expires_at_ledger,
+            config.ledger_tolerance_blocks,
+            env,
+        ))
+    }
+
+    /// Reject an operation on a swap that is past its deadline or already finalized.
+    fn ensure_not_expired(
+        env: &Env,
+        swap: &AtomicSwap,
+        config: &SwapTimeoutConfig,
+    ) -> Result<(), SettlementError> {
+        if swap.state.is_terminal() {
+            return Err(SwapTimeoutError::SwapAlreadyFinalized.into());
+        }
+        if Self::is_expired(env, swap, config)? {
+            return Err(SwapTimeoutError::SwapExpired.into());
+        }
+        Ok(())
+    }
+
+    /// Seconds left before a swap's deadline (including grace); 0 once past it.
+    pub fn time_remaining(env: &Env, transaction_id: u64) -> Result<u64, SettlementError> {
+        let swap = Self::get_swap_by_transaction(env, transaction_id)?;
+        let config = Self::timeout_config(env);
+        Ok(time_utils::remaining_time_with_grace(
+            swap.expires_at,
+            config.grace_period_seconds,
+            env,
+        ))
+    }
+
+    /// Internal: mark a swap failed, refund its escrow, and emit timeout events.
+    fn finalize_expiry(
+        env: &Env,
+        swap: &mut AtomicSwap,
+        config: &SwapTimeoutConfig,
+    ) -> Result<u32, SettlementError> {
+        crate::events::emit_swap_expired(
+            env,
+            SwapExpiredEvent {
+                swap_id: swap.swap_id,
+                transaction_id: swap.transaction_id,
+                expires_at: swap.expires_at,
+                expires_at_ledger: swap.expires_at_ledger,
+                expired_by_seconds: time_utils::overdue_by(
+                    swap.expires_at,
+                    config.grace_period_seconds,
+                    env,
+                ),
+                ledger: time_utils::current_ledger(env),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        let refunded = Self::refund_escrow_holdings(env, swap, true)?;
+        swap.state = SwapState::Failed;
+        Ok(refunded)
+    }
+
+    // ── Transfers ────────────────────────────────────────────────────────────
 
     /// Internal: Transfer assets to escrow
     fn transfer_to_escrow(
@@ -285,46 +632,136 @@ impl AtomicSwapEngine {
     }
 
     /// Internal: Perform the actual atomic swap
-    fn perform_atomic_swap(env: &Env, swap: &AtomicSwap) -> Result<(), SettlementError> {
+    fn perform_atomic_swap(env: &Env, swap: &mut AtomicSwap) -> Result<(), SettlementError> {
+        let now = env.ledger().timestamp();
+        let mut seller_escrow = swap.seller_escrow.clone();
+        let mut buyer_escrow = swap.buyer_escrow.clone();
+
         // Transfer NFT from seller escrow to buyer
-        for holding in swap.seller_escrow.iter() {
-            if holding.is_nft {
-                // Find corresponding buyer
-                if let Some(buyer_holding) = swap.buyer_escrow.get(0) {
-                    Self::transfer_from_escrow(
-                        env,
-                        &buyer_holding.holder,
-                        &holding.asset,
-                        holding.amount,
-                        holding.is_nft,
-                    )?;
-                }
+        for i in 0..seller_escrow.len() {
+            let mut holding = match seller_escrow.get(i) {
+                Some(holding) => holding,
+                None => continue,
+            };
+            if !holding.is_nft || !holding.is_deposited || holding.released_at.is_some() {
+                continue;
+            }
+            // Find corresponding buyer
+            if let Some(buyer_holding) = buyer_escrow.get(0) {
+                Self::transfer_from_escrow(
+                    env,
+                    &buyer_holding.holder,
+                    &holding.asset,
+                    holding.amount,
+                    holding.is_nft,
+                )?;
+                holding.released_at = Some(now);
+                seller_escrow.set(i, holding);
             }
         }
 
         // Transfer payment from buyer escrow to seller
-        for holding in swap.buyer_escrow.iter() {
-            if !holding.is_nft {
-                // Find corresponding seller
-                if let Some(seller_holding) = swap.seller_escrow.get(0) {
-                    Self::transfer_from_escrow(
-                        env,
-                        &seller_holding.holder,
-                        &holding.asset,
-                        holding.amount,
-                        holding.is_nft,
-                    )?;
-                }
+        for i in 0..buyer_escrow.len() {
+            let mut holding = match buyer_escrow.get(i) {
+                Some(holding) => holding,
+                None => continue,
+            };
+            if holding.is_nft || !holding.is_deposited || holding.released_at.is_some() {
+                continue;
+            }
+            // Find corresponding seller
+            if let Some(seller_holding) = seller_escrow.get(0) {
+                Self::transfer_from_escrow(
+                    env,
+                    &seller_holding.holder,
+                    &holding.asset,
+                    holding.amount,
+                    holding.is_nft,
+                )?;
+                holding.released_at = Some(now);
+                buyer_escrow.set(i, holding);
             }
         }
 
+        swap.seller_escrow = seller_escrow;
+        swap.buyer_escrow = buyer_escrow;
         Ok(())
     }
 
-    /// Internal: Refund all escrow holdings
-    fn refund_escrow_holdings(env: &Env, swap: &AtomicSwap) -> Result<(), SettlementError> {
-        // Refund seller escrow
-        for holding in swap.seller_escrow.iter() {
+    /// Internal: Refund every deposited, unreleased holding.
+    fn refund_escrow_holdings(
+        env: &Env,
+        swap: &mut AtomicSwap,
+        emit_auto_refund: bool,
+    ) -> Result<u32, SettlementError> {
+        Self::refund_holdings(env, swap, emit_auto_refund, false)
+    }
+
+    /// Internal: Refund holdings, optionally only those past their own backstop.
+    ///
+    /// Every refund marks `released_at`, and holdings that are already released — or
+    /// were never deposited — are skipped. That is what makes the several refund
+    /// entrypoints (cancel, expire, cleanup, reclaim, emergency) safe to call in any
+    /// order without paying a holder twice.
+    fn refund_holdings(
+        env: &Env,
+        swap: &mut AtomicSwap,
+        emit_auto_refund: bool,
+        only_escrow_expired: bool,
+    ) -> Result<u32, SettlementError> {
+        let swap_id = swap.swap_id;
+        let transaction_id = swap.transaction_id;
+
+        let mut seller_escrow = swap.seller_escrow.clone();
+        let seller_refunds = Self::refund_holding_vec(
+            env,
+            swap_id,
+            transaction_id,
+            &mut seller_escrow,
+            emit_auto_refund,
+            only_escrow_expired,
+        )?;
+        swap.seller_escrow = seller_escrow;
+
+        let mut buyer_escrow = swap.buyer_escrow.clone();
+        let buyer_refunds = Self::refund_holding_vec(
+            env,
+            swap_id,
+            transaction_id,
+            &mut buyer_escrow,
+            emit_auto_refund,
+            only_escrow_expired,
+        )?;
+        swap.buyer_escrow = buyer_escrow;
+
+        Ok(seller_refunds + buyer_refunds)
+    }
+
+    /// Internal: Refund one side's holdings, returning how many were paid out.
+    fn refund_holding_vec(
+        env: &Env,
+        swap_id: u64,
+        transaction_id: u64,
+        holdings: &mut Vec<EscrowHolding>,
+        emit_auto_refund: bool,
+        only_escrow_expired: bool,
+    ) -> Result<u32, SettlementError> {
+        let now = env.ledger().timestamp();
+        let mut refunded = 0u32;
+
+        for i in 0..holdings.len() {
+            let mut holding = match holdings.get(i) {
+                Some(holding) => holding,
+                None => continue,
+            };
+
+            if !holding.is_deposited || holding.released_at.is_some() {
+                continue;
+            }
+            if only_escrow_expired && now <= holding.escrow_expires_at {
+                continue;
+            }
+
             Self::transfer_from_escrow(
                 env,
                 &holding.holder,
@@ -332,21 +769,31 @@ impl AtomicSwapEngine {
                 holding.amount,
                 holding.is_nft,
             )?;
+
+            holding.released_at = Some(now);
+            holdings.set(i, holding.clone());
+            refunded += 1;
+
+            if emit_auto_refund {
+                crate::events::emit_swap_auto_refunded(
+                    env,
+                    SwapAutoRefundedEvent {
+                        swap_id,
+                        transaction_id,
+                        holder: holding.holder.clone(),
+                        asset: holding.asset.clone(),
+                        amount: holding.amount,
+                        is_nft: holding.is_nft,
+                        timestamp: now,
+                    },
+                );
+            }
         }
 
-        // Refund buyer escrow
-        for holding in swap.buyer_escrow.iter() {
-            Self::transfer_from_escrow(
-                env,
-                &holding.holder,
-                &holding.asset,
-                holding.amount,
-                holding.is_nft,
-            )?;
-        }
-
-        Ok(())
+        Ok(refunded)
     }
+
+    // ── State ────────────────────────────────────────────────────────────────
 
     /// Internal: Update escrow holding after deposit
     fn update_escrow_holding(
@@ -360,34 +807,40 @@ impl AtomicSwapEngine {
         let timestamp = env.ledger().timestamp();
 
         // Update seller escrow
-        for i in 0..swap.seller_escrow.len() {
-            if let Some(mut holding) = swap.seller_escrow.get(i) {
+        let mut seller_escrow = swap.seller_escrow.clone();
+        for i in 0..seller_escrow.len() {
+            if let Some(mut holding) = seller_escrow.get(i) {
                 if holding.holder == *depositor && holding.asset.contract == asset.contract {
+                    holding.is_deposited = true;
                     holding.deposited_at = timestamp;
-                    swap.seller_escrow.set(i, holding);
+                    seller_escrow.set(i, holding);
                     break;
                 }
             }
         }
+        swap.seller_escrow = seller_escrow;
 
         // Update buyer escrow
-        for i in 0..swap.buyer_escrow.len() {
-            if let Some(mut holding) = swap.buyer_escrow.get(i) {
+        let mut buyer_escrow = swap.buyer_escrow.clone();
+        for i in 0..buyer_escrow.len() {
+            if let Some(mut holding) = buyer_escrow.get(i) {
                 if holding.holder == *depositor && holding.asset.contract == asset.contract {
+                    holding.is_deposited = true;
                     holding.deposited_at = timestamp;
-                    swap.buyer_escrow.set(i, holding);
+                    buyer_escrow.set(i, holding);
                     break;
                 }
             }
         }
+        swap.buyer_escrow = buyer_escrow;
 
         Ok(())
     }
 
     /// Internal: Update swap state based on escrow status
     fn update_swap_state(_env: &Env, swap: &mut AtomicSwap) -> Result<(), SettlementError> {
-        let seller_funded = swap.seller_escrow.iter().all(|h| h.deposited_at > 0);
-        let buyer_funded = swap.buyer_escrow.iter().all(|h| h.deposited_at > 0);
+        let seller_funded = swap.seller_escrow.iter().all(|h| h.is_deposited);
+        let buyer_funded = swap.buyer_escrow.iter().all(|h| h.is_deposited);
 
         match (seller_funded, buyer_funded) {
             (true, false) => swap.state = SwapState::SellerFunded,
@@ -426,8 +879,8 @@ impl AtomicSwapEngine {
         Ok(())
     }
 
-    /// Internal: Get swap by transaction ID
-    fn get_swap_by_transaction(
+    /// Get swap by transaction ID
+    pub fn get_swap_by_transaction(
         env: &Env,
         transaction_id: u64,
     ) -> Result<AtomicSwap, SettlementError> {
@@ -481,8 +934,19 @@ impl EscrowManager {
     }
 
     /// Get escrow holdings for a transaction
-    pub fn get_escrow_holdings(_env: &Env, _transaction_id: u64) -> Vec<EscrowHolding> {
-        // This would return all escrow holdings for the transaction
-        Vec::new(_env)
+    pub fn get_escrow_holdings(env: &Env, transaction_id: u64) -> Vec<EscrowHolding> {
+        match AtomicSwapEngine::get_swap_by_transaction(env, transaction_id) {
+            Ok(swap) => {
+                let mut holdings = Vec::new(env);
+                for holding in swap.seller_escrow.iter() {
+                    holdings.push_back(holding);
+                }
+                for holding in swap.buyer_escrow.iter() {
+                    holdings.push_back(holding);
+                }
+                holdings
+            }
+            Err(_) => Vec::new(env),
+        }
     }
 }
