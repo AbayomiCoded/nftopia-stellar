@@ -60,7 +60,7 @@ export function SessionExpiryModal({ visible, onExtend, onLogout }: SessionExpir
 
       // If biometrics are available, require authentication
       if (isAvailable && isEnrolled) {
-        const authenticated = await requireBiometricWithFallback(
+        await requireBiometricWithFallback(
           'extend_session',
           async () => {
             await extendSession();
@@ -70,11 +70,6 @@ export function SessionExpiryModal({ visible, onExtend, onLogout }: SessionExpir
             setIsExtending(false);
           }
         );
-
-        if (!authenticated) {
-          setIsExtending(false);
-          return;
-        }
       } else {
         // No biometrics, extend directly
         await extendSession();

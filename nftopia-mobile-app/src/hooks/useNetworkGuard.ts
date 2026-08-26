@@ -11,12 +11,11 @@ export function useNetworkGuard() {
   const guardWriteAction = useCallback(
     (action: () => void | Promise<void>, errorMessage?: string) => {
       if (!canPerformWriteAction()) {
-        showToast({
-          type: 'warning',
-          title: 'Offline',
-          message: errorMessage || 'This action requires an internet connection',
-          duration: 3000,
-        });
+        showToast(
+          errorMessage || 'This action requires an internet connection',
+          'warning',
+          3000
+        );
         return false;
       }
 
@@ -29,12 +28,11 @@ export function useNetworkGuard() {
   const guardAsyncWriteAction = useCallback(
     async (action: () => Promise<void>, errorMessage?: string): Promise<boolean> => {
       if (!canPerformWriteAction()) {
-        showToast({
-          type: 'warning',
-          title: 'Offline',
-          message: errorMessage || 'This action requires an internet connection',
-          duration: 3000,
-        });
+        showToast(
+          errorMessage || 'This action requires an internet connection',
+          'warning',
+          3000
+        );
         return false;
       }
 
@@ -42,12 +40,11 @@ export function useNetworkGuard() {
         await action();
         return true;
       } catch (error) {
-        showToast({
-          type: 'error',
-          title: 'Action Failed',
-          message: error instanceof Error ? error.message : 'An error occurred',
-          duration: 3000,
-        });
+        showToast(
+          error instanceof Error ? error.message : 'An error occurred',
+          'error',
+          3000
+        );
         return false;
       }
     },

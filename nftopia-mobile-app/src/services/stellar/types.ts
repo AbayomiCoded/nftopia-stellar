@@ -41,10 +41,12 @@ export enum TransactionType {
 export interface Transaction {
   id: string;
   hash: string;
-  ledger: number;
   createdAt: string;
   sourceAccount: string;
   type: TransactionType;
+  // Horizon operation records do not carry a ledger sequence; only
+  // transaction-level responses do.
+  ledger?: number;
   amount?: string;
   asset?: string;
   from?: string;

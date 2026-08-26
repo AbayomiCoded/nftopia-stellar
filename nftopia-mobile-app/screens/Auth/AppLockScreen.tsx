@@ -75,7 +75,7 @@ export function AppLockScreen({ onUnlockSuccess }: AppLockScreenProps) {
     try {
       setIsAuthenticating(true);
 
-      const success = await requireBiometricWithFallback(
+      await requireBiometricWithFallback(
         'UNLOCK_APP',
         async () => {
           const unlocked = await unlockApp();
@@ -94,10 +94,6 @@ export function AppLockScreen({ onUnlockSuccess }: AppLockScreenProps) {
           AccessibilityInfo.announceForAccessibility('Authentication failed');
         }
       );
-
-      if (!success) {
-        shake();
-      }
     } catch (error) {
       console.error('Biometric unlock error:', error);
       shake();
@@ -135,22 +131,16 @@ export function AppLockScreen({ onUnlockSuccess }: AppLockScreenProps) {
 
   const handleBiometricPress = () => {
     if (!isAvailable || !isEnrolled) {
-      showToast({
-        type: 'info',
-        title: 'Biometrics Not Available',
-        message: 'Please use your PIN to unlock',
-        duration: 3000,
-      });
+      showToast('Biometrics not available. Please use your PIN to unlock', 'info', 3000);
       return;
     }
 
     if (isInLockout()) {
-      showToast({
-        type: 'warning',
-        title: 'Too Many Attempts',
-        message: `Please wait ${lockoutCountdown} seconds before trying again`,
-        duration: 3000,
-      });
+      showToast(
+        `Too many attempts. Please wait ${lockoutCountdown} seconds before trying again`,
+        'warning',
+        3000
+      );
       return;
     }
 

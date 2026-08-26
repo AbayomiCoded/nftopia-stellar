@@ -47,12 +47,7 @@ export function SessionManager() {
     setModalVisible(false);
     setShowExpiryWarning(false);
 
-    showToast({
-      type: 'error',
-      title: 'Session Expired',
-      message: 'Your session has expired. Please log in again.',
-      duration: 5000,
-    });
+    showToast('Your session has expired. Please log in again.', 'error', 5000);
 
     await logout();
     // Note: Navigation reset should be handled by the auth state change
@@ -63,12 +58,7 @@ export function SessionManager() {
     setModalVisible(false);
     setShowExpiryWarning(false);
 
-    showToast({
-      type: 'success',
-      title: 'Session Extended',
-      message: 'Your session has been extended successfully.',
-      duration: 3000,
-    });
+    showToast('Your session has been extended successfully.', 'success', 3000);
   };
 
   const handleLogout = async () => {

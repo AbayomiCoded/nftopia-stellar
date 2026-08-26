@@ -1,4 +1,4 @@
-import { Keypair, Server, Horizon } from 'stellar-sdk';
+import { Keypair, Horizon } from 'stellar-sdk';
 import * as bip39 from 'bip39';
 import { Wallet, WalletCreateResult, WalletError, WalletErrorCode, Transaction, TransactionType, TransactionFilters, PaginatedTransactions } from './types';
 import {
@@ -8,15 +8,19 @@ import {
   assertValidMnemonic,
 } from './validation';
 import { SecureStorage } from './secureStorage';
-import { network } from './network';
+import { createServer } from './network';
+import { NetworkType } from '@/stores/walletStore';
+
+export { TransactionType, WalletError, WalletErrorCode } from './types';
+export type { Wallet, WalletCreateResult, Transaction, TransactionFilters, PaginatedTransactions } from './types';
 
 export class StellarWalletService {
   private readonly storage: SecureStorage;
-  private readonly server: Server;
+  private readonly server: Horizon.Server;
 
-  constructor(storage?: SecureStorage) {
+  constructor(storage?: SecureStorage, network: NetworkType = 'testnet') {
     this.storage = storage ?? new SecureStorage();
-    this.server = new Server(network.horizonUrl);
+    this.server = createServer(network);
   }
 
   async createWallet(password?: string): Promise<WalletCreateResult> {
@@ -182,56 +186,57 @@ export class StellarWalletService {
     }
   }
 
-  private mapOperationsToTransactions(operations: Horizon.OperationResponse[]): Transaction[] {
+  private mapOperationsToTransactions(
+    operations: Horizon.ServerApi.OperationRecord[]
+  ): Transaction[] {
     return operations.map(op => this.mapOperationToTransaction(op));
   }
 
-  private mapOperationToTransaction(op: Horizon.OperationResponse): Transaction {
+  private mapOperationToTransaction(op: Horizon.ServerApi.OperationRecord): Transaction {
     const type = this.mapOperationType(op.type);
     const baseTransaction: Transaction = {
       id: op.id,
       hash: op.transaction_hash || '',
-      ledger: op.ledger || 0,
       createdAt: op.created_at || new Date().toISOString(),
       sourceAccount: op.source_account || '',
       type,
       fee: 0, // Fee is at transaction level, not operation level
-      successful: op.transaction_successful || true,
+      successful: op.transaction_successful ?? true,
     };
+
+    const OperationType = Horizon.HorizonApi.OperationResponseType;
 
     // Add type-specific fields
     switch (op.type) {
-      case 'payment':
-        const paymentOp = op as Horizon.PaymentOperationResponse;
+      case OperationType.payment:
         return {
           ...baseTransaction,
-          amount: paymentOp.amount,
-          asset: paymentOp.asset_type === 'native' ? 'XLM' : paymentOp.asset_code,
-          from: paymentOp.from,
-          to: paymentOp.to,
+          amount: op.amount,
+          asset: op.asset_type === 'native' ? 'XLM' : op.asset_code,
+          from: op.from,
+          to: op.to,
         };
-      case 'create_account':
-        const createOp = op as Horizon.CreateAccountOperationResponse;
+      case OperationType.createAccount:
         return {
           ...baseTransaction,
-          amount: createOp.starting_balance,
+          amount: op.starting_balance,
           asset: 'XLM',
-          to: createOp.account,
+          to: op.account,
         };
-      case 'path_payment':
-        const pathOp = op as Horizon.PathPaymentOperationResponse;
+      case OperationType.pathPayment:
+      case OperationType.pathPaymentStrictSend:
         return {
           ...baseTransaction,
-          amount: pathOp.amount,
-          asset: pathOp.asset_type === 'native' ? 'XLM' : pathOp.asset_code,
-          from: pathOp.from,
-          to: pathOp.to,
+          amount: op.amount,
+          asset: op.asset_type === 'native' ? 'XLM' : op.asset_code,
+          from: op.from,
+          to: op.to,
         };
-      case 'change_trust':
-        const trustOp = op as Horizon.ChangeTrustOperationResponse;
+      case OperationType.changeTrust:
         return {
           ...baseTransaction,
-          asset: trustOp.asset_type === 'native' ? 'XLM' : trustOp.asset_code,
+          // change_trust is never a native asset, so asset_code is the code (if any)
+          asset: op.asset_code,
         };
       default:
         return baseTransaction;
@@ -242,6 +247,8 @@ export class StellarWalletService {
     const typeMap: Record<string, TransactionType> = {
       'payment': TransactionType.PAYMENT,
       'path_payment': TransactionType.PATH_PAYMENT,
+      'path_payment_strict_receive': TransactionType.PATH_PAYMENT,
+      'path_payment_strict_send': TransactionType.PATH_PAYMENT,
       'create_account': TransactionType.CREATE_ACCOUNT,
       'manage_sell_offer': TransactionType.MANAGE_SELL_OFFER,
       'manage_buy_offer': TransactionType.MANAGE_BUY_OFFER,

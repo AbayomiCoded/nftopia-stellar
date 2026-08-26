@@ -14,12 +14,7 @@ export function NetworkStatusManager() {
 
   useEffect(() => {
     if (justCameOnline) {
-      showToast({
-        type: 'success',
-        title: 'Back Online',
-        message: 'Your connection has been restored',
-        duration: 3000,
-      });
+      showToast('Back online. Your connection has been restored', 'success', 3000);
     }
   }, [justCameOnline, showToast]);
 

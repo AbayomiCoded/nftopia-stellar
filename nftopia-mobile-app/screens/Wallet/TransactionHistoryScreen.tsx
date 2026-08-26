@@ -65,12 +65,11 @@ export function TransactionHistoryScreen({ navigation }: TransactionHistoryScree
         setNextPage(result.nextPage);
         setHasMore(result.hasMore);
       } catch (error) {
-        showToast({
-          type: 'error',
-          title: 'Error',
-          message: error instanceof Error ? error.message : 'Failed to load transactions',
-          duration: 3000,
-        });
+        showToast(
+          error instanceof Error ? error.message : 'Failed to load transactions',
+          'error',
+          3000
+        );
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -106,12 +105,7 @@ export function TransactionHistoryScreen({ navigation }: TransactionHistoryScree
     if (selectedTransaction?.hash) {
       const explorerUrl = `https://stellar.expert/explorer/public/tx/${selectedTransaction.hash}`;
       Linking.openURL(explorerUrl).catch(() => {
-        showToast({
-          type: 'error',
-          title: 'Error',
-          message: 'Unable to open block explorer',
-          duration: 3000,
-        });
+        showToast('Unable to open block explorer', 'error', 3000);
       });
     }
   };
@@ -298,10 +292,12 @@ export function TransactionHistoryScreen({ navigation }: TransactionHistoryScree
                   </Text>
                 </View>
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Ledger</Text>
-                  <Text style={styles.detailValue}>{selectedTransaction.ledger}</Text>
-                </View>
+                {selectedTransaction.ledger !== undefined && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Ledger</Text>
+                    <Text style={styles.detailValue}>{selectedTransaction.ledger}</Text>
+                  </View>
+                )}
 
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Transaction Hash</Text>
