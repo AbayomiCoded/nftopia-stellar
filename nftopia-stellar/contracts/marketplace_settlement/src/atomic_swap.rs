@@ -855,7 +855,8 @@ impl AtomicSwapEngine {
         let mut seller_escrow = swap.seller_escrow.clone();
         for i in 0..seller_escrow.len() {
             if let Some(mut holding) = seller_escrow.get(i) {
-                if holding.holder == *depositor && asset_utils::assets_equal(&holding.asset, asset) {
+                if holding.holder == *depositor && asset_utils::assets_equal(&holding.asset, asset)
+                {
                     holding.is_deposited = true;
                     holding.deposited_at = timestamp;
                     seller_escrow.set(i, holding);
@@ -869,7 +870,8 @@ impl AtomicSwapEngine {
         let mut buyer_escrow = swap.buyer_escrow.clone();
         for i in 0..buyer_escrow.len() {
             if let Some(mut holding) = buyer_escrow.get(i) {
-                if holding.holder == *depositor && asset_utils::assets_equal(&holding.asset, asset) {
+                if holding.holder == *depositor && asset_utils::assets_equal(&holding.asset, asset)
+                {
                     holding.is_deposited = true;
                     holding.deposited_at = timestamp;
                     buyer_escrow.set(i, holding);
