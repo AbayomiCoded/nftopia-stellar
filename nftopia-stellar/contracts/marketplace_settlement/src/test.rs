@@ -867,11 +867,17 @@ fn test_swap_expiry_fields_set_at_creation() {
         time_utils::projected_expiry_ledger(swap.created_ledger, SALE_DURATION)
     );
     assert!(swap.expires_at_ledger > swap.created_ledger);
-    assert_eq!(swap.state, SwapState::Pending);
+    assert_eq!(swap.state, SwapState::SellerFunded);
 
     // Every holding carries a backstop strictly past the swap's own deadline.
     let expected_backstop = swap.expires_at + cfg.grace_period_seconds + cfg.escrow_buffer_seconds;
-    for holding in swap.seller_escrow.iter().chain(swap.buyer_escrow.iter()) {
+    for holding in swap.seller_escrow.iter() {
+        assert_eq!(holding.escrow_expires_at, expected_backstop);
+        assert!(holding.escrow_expires_at > swap.expires_at);
+        assert!(holding.is_deposited);
+        assert_eq!(holding.released_at, None);
+    }
+    for holding in swap.buyer_escrow.iter() {
         assert_eq!(holding.escrow_expires_at, expected_backstop);
         assert!(holding.escrow_expires_at > swap.expires_at);
         assert!(!holding.is_deposited);
