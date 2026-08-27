@@ -6,6 +6,8 @@ use crate::events::{
     AuctionEndedEvent, AuctionExtendedEvent, BidBelowMinimumIncrementEvent, BidEscrowedEvent,
     BidPlacedEvent, BidRefundedEvent, BidRevealedEvent,
 };
+use crate::fee_manager::FeeManager;
+use crate::royalty_distributor::RoyaltyDistributor;
 use crate::security::frontrun_protection::{CommitRevealScheme, FrontRunningDetector};
 use crate::storage::auction_store::{AuctionStore, DutchAuctionStore};
 use crate::types::{
@@ -96,6 +98,15 @@ impl AuctionEngine {
         };
 
         AuctionStore::put(env, &auction)?;
+
+        // Lock the NFT for the lifetime of the auction.
+        asset_utils::transfer_nft(
+            nft_contract,
+            seller,
+            &env.current_contract_address(),
+            token_id,
+            env,
+        )?;
 
         // If Dutch auction, create Dutch auction data
         if auction_type == AuctionType::Dutch {
@@ -196,7 +207,7 @@ impl AuctionEngine {
         // Escrow bid funds: transfer from bidder into contract
         if !bid.is_committed {
             asset_utils::transfer_tokens(
-                &auction.currency.contract,
+                &auction.currency,
                 bidder,
                 &env.current_contract_address(),
                 bid_amount,
@@ -218,6 +229,7 @@ impl AuctionEngine {
 
         // Update auction if direct bid
         if !bid.is_committed {
+            Self::process_direct_bid(env, &mut auction, bidder, bid_amount, timestamp)?;
             AuctionStore::update(env, &auction)?;
         }
 
@@ -284,7 +296,7 @@ impl AuctionEngine {
 
         // Escrow funds now that bid is revealed
         asset_utils::transfer_tokens(
-            &auction.currency.contract,
+            &auction.currency,
             bidder,
             &env.current_contract_address(),
             bid_amount,
@@ -354,7 +366,7 @@ impl AuctionEngine {
             if let Some(ref losing_bidder) = auction.highest_bidder {
                 AuctionStore::mark_bid_refunded(env, auction_id, losing_bidder)?;
                 asset_utils::transfer_tokens(
-                    &auction.currency.contract,
+                    &auction.currency,
                     &env.current_contract_address(),
                     losing_bidder,
                     auction.highest_bid,
@@ -373,6 +385,50 @@ impl AuctionEngine {
             }
             (None, 0)
         };
+
+        if let Some(ref winning_bidder) = winner {
+            let platform_fee = FeeManager::calculate_fee(env, final_price, &auction.seller)?;
+            let fee_config = FeeManager::get_fee_config(env)?;
+            let royalty_distribution = RoyaltyDistributor::calculate_royalties(
+                env,
+                &auction.nft_address,
+                auction.token_id,
+                final_price,
+                platform_fee,
+                &auction.seller,
+                &fee_config.fee_recipient,
+            )?;
+            let distribution = RoyaltyDistributor::distribute_royalties(
+                env,
+                auction_id,
+                &royalty_distribution,
+                &auction.currency,
+                platform_fee,
+            )?;
+            FeeManager::collect_platform_fee(
+                env,
+                distribution.platform_amount,
+                &auction.currency,
+                winning_bidder,
+            )?;
+            asset_utils::transfer_nft(
+                &auction.nft_address,
+                &env.current_contract_address(),
+                winning_bidder,
+                auction.token_id,
+                env,
+            )?;
+            auction.royalty_info = royalty_distribution;
+            auction.platform_fee = platform_fee;
+        } else {
+            asset_utils::transfer_nft(
+                &auction.nft_address,
+                &env.current_contract_address(),
+                &auction.seller,
+                auction.token_id,
+                env,
+            )?;
+        }
 
         // Update auction state
         auction.state = TransactionState::Executed;
@@ -436,6 +492,13 @@ impl AuctionEngine {
         }
 
         auction.state = TransactionState::Cancelled;
+        asset_utils::transfer_nft(
+            &auction.nft_address,
+            &env.current_contract_address(),
+            &auction.seller,
+            auction.token_id,
+            env,
+        )?;
         AuctionStore::update(env, &auction)?;
 
         Ok(())
@@ -465,7 +528,7 @@ impl AuctionEngine {
         if let Some(ref bidder) = refunded_bidder {
             AuctionStore::mark_bid_refunded(env, auction_id, bidder)?;
             asset_utils::transfer_tokens(
-                &auction.currency.contract,
+                &auction.currency,
                 &env.current_contract_address(),
                 bidder,
                 refunded_amount,
@@ -482,6 +545,14 @@ impl AuctionEngine {
                 },
             );
         }
+
+        asset_utils::transfer_nft(
+            &auction.nft_address,
+            &env.current_contract_address(),
+            &auction.seller,
+            auction.token_id,
+            env,
+        )?;
 
         auction.state = TransactionState::Cancelled;
         AuctionStore::update(env, &auction)?;
@@ -538,7 +609,7 @@ impl AuctionEngine {
         AuctionStore::mark_bid_refunded(env, auction_id, bidder)?;
 
         asset_utils::transfer_tokens(
-            &auction.currency.contract,
+            &auction.currency,
             &env.current_contract_address(),
             bidder,
             amount,
@@ -691,7 +762,7 @@ impl AuctionEngine {
             let prev_amount = auction.highest_bid;
             AuctionStore::mark_bid_refunded(env, auction.auction_id, prev_bidder)?;
             asset_utils::transfer_tokens(
-                &auction.currency.contract,
+                &auction.currency,
                 &env.current_contract_address(),
                 prev_bidder,
                 prev_amount,

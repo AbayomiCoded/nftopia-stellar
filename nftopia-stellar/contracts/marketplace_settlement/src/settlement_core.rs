@@ -17,7 +17,7 @@ use crate::storage::{
 };
 use crate::types::{
     AdminConfig, Asset, AuctionTransaction, AuctionType, BundleTransaction, ExecutionResult,
-    FeeConfig, SaleTransaction, SwapTimeoutConfig, TradeTransaction,
+    FeeConfig, SaleTransaction, SwapTimeoutConfig, TokenAsset, TradeTransaction,
 };
 use crate::utils::{asset_utils, time_utils};
 use crate::version;
@@ -390,21 +390,23 @@ impl MarketplaceSettlement {
             )?;
 
             // Check NFT ownership
-            asset_utils::check_nft_ownership(&nft_address, token_id, &seller, &env)?;
+            if !asset_utils::check_nft_ownership(&nft_address, token_id, &seller, &env)? {
+                return Err(SettlementError::Unauthorized);
+            }
 
-            // Calculate royalties (with seller and platform addresses)
             let fee_config = FeeManager::get_fee_config(&env)?;
+            let platform_fee = FeeManager::calculate_fee(&env, price, &seller)?;
+
+            // Calculate royalties after reserving the configured platform fee.
             let royalty_distribution = RoyaltyDistributor::calculate_royalties(
                 &env,
                 &nft_address,
                 token_id,
                 price,
+                platform_fee,
                 &seller,
                 &fee_config.fee_recipient,
             )?;
-
-            // Calculate platform fee
-            let platform_fee = FeeManager::calculate_fee(&env, price, &seller)?;
 
             let transaction_id = SaleTransactionStore::next_id(&env);
 
@@ -437,6 +439,19 @@ impl MarketplaceSettlement {
                 &currency,
                 price,
                 duration_seconds,
+            )?;
+
+            let nft_asset = Asset::Token(TokenAsset {
+                contract: nft_address,
+                symbol: Symbol::new(&env, "NFT"),
+            });
+            AtomicSwapEngine::deposit_to_escrow(
+                &env,
+                transaction_id,
+                &seller,
+                &nft_asset,
+                token_id as i128,
+                true,
             )?;
 
             Ok(transaction_id)
@@ -484,7 +499,7 @@ impl MarketplaceSettlement {
             SaleTransactionStore::update(&env, &sale)?;
 
             // Execute atomic swap
-            AtomicSwapEngine::execute_swap(&env, transaction_id, &buyer)?;
+            AtomicSwapEngine::execute_sale_swap(&env, transaction_id, &buyer)?;
 
             // Distribute royalties and fees
             let distribution_result = RoyaltyDistributor::distribute_royalties(
@@ -492,10 +507,16 @@ impl MarketplaceSettlement {
                 transaction_id,
                 &sale.royalty_info,
                 &sale.currency,
+                sale.platform_fee,
             )?;
 
             // Collect platform fee
-            FeeManager::collect_platform_fee(&env, sale.platform_fee, &sale.currency, &buyer)?;
+            FeeManager::collect_platform_fee(
+                &env,
+                distribution_result.platform_amount,
+                &sale.currency,
+                &buyer,
+            )?;
 
             // Update final state
             sale.state = crate::types::TransactionState::Executed;
@@ -548,6 +569,10 @@ impl MarketplaceSettlement {
 
             // Validate asset
             asset_utils::validate_asset(&currency, &supported_assets, &env)?;
+            asset_utils::validate_nft_contract(&nft_address, &env)?;
+            if !asset_utils::check_nft_ownership(&nft_address, token_id, &seller, &env)? {
+                return Err(SettlementError::Unauthorized);
+            }
 
             AuctionEngine::create_auction(
                 &env,
@@ -857,6 +882,7 @@ impl MarketplaceSettlement {
                 if sale.state != crate::types::TransactionState::Pending {
                     return Err(SettlementError::InvalidState);
                 }
+                AtomicSwapEngine::cancel_swap(&env, transaction_id, &canceller)?;
                 sale.state = crate::types::TransactionState::Cancelled;
                 SaleTransactionStore::update(&env, &sale)?;
             } else {
@@ -1385,6 +1411,46 @@ impl MarketplaceSettlement {
         address: Address,
     ) -> Option<crate::storage::blocklist_store::BlockRecord> {
         crate::storage::blocklist_store::BlocklistStore::get_block_record(&env, &address)
+    }
+
+    // -------------------------------------------------------------------------
+    // Native XLM Configuration
+    // -------------------------------------------------------------------------
+
+    /// Update the native XLM Stellar Asset Contract (SAC) address (admin only).
+    ///
+    /// Use this to configure or update the XLM SAC address after initialization.
+    /// On mainnet, pass the canonical XLM SAC address.
+    pub fn set_native_xlm_sac(
+        env: Env,
+        admin: Address,
+        native_xlm_sac: Option<Address>,
+    ) -> Result<(), SettlementError> {
+        admin.require_auth();
+        let admin_config: AdminConfig = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("admin_cfg"))
+            .ok_or(SettlementError::Unauthorized)?;
+
+        if admin_config.admin != admin {
+            return Err(SettlementError::Unauthorized);
+        }
+
+        if let Some(address) = native_xlm_sac {
+            env.storage()
+                .instance()
+                .set(&symbol_short!("xlm_sac"), &address);
+        } else {
+            env.storage().instance().remove(&symbol_short!("xlm_sac"));
+        }
+
+        Ok(())
+    }
+
+    /// Get the configured native XLM SAC address (view function).
+    pub fn get_native_xlm_sac(env: Env) -> Option<Address> {
+        env.storage().instance().get(&symbol_short!("xlm_sac"))
     }
 
     // -------------------------------------------------------------------------
