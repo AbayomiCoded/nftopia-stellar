@@ -1,5 +1,11 @@
-import { UnauthorizedException } from '@nestjs/common';
-import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { RequestMethod, UnauthorizedException } from '@nestjs/common';
+import {
+  GUARDS_METADATA,
+  METHOD_METADATA,
+  PATH_METADATA,
+  SSE_METADATA,
+} from '@nestjs/common/constants';
+import { of } from 'rxjs';
 import { AiAgentController } from './ai-agent.controller';
 import { AiAgentService } from './ai-agent.service';
 import { AiUsageService } from './ai-usage.service';
@@ -9,6 +15,7 @@ import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.gua
 describe('AiAgentController', () => {
   const aiAgentService = {
     chat: jest.fn(),
+    chatStream: jest.fn(),
   };
 
   const aiUsageService = {
@@ -83,6 +90,68 @@ describe('AiAgentController', () => {
         controller.chat(makeRequest(undefined), { message: 'hi' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(aiAgentService.chat).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('chatStream', () => {
+    it('is registered as an SSE route on POST chat/stream', () => {
+      expect(Reflect.getMetadata(SSE_METADATA, controller.chatStream)).toBe(
+        true,
+      );
+      expect(Reflect.getMetadata(PATH_METADATA, controller.chatStream)).toBe(
+        'chat/stream',
+      );
+      expect(Reflect.getMetadata(METHOD_METADATA, controller.chatStream)).toBe(
+        RequestMethod.POST,
+      );
+    });
+
+    it('applies AiChatRateLimitGuard to the stream route', () => {
+      const guards = Reflect.getMetadata(
+        GUARDS_METADATA,
+        controller.chatStream,
+      ) as unknown[] | undefined;
+
+      expect(guards).toContain(AiChatRateLimitGuard);
+    });
+
+    it('delegates to AiAgentService.chatStream with the authenticated user id', () => {
+      const observable = of();
+      aiAgentService.chatStream.mockReturnValue(observable);
+
+      const result = controller.chatStream(makeRequest('user-1'), {
+        message: 'What NFTs are trending?',
+      });
+
+      expect(aiAgentService.chatStream).toHaveBeenCalledWith(
+        'user-1',
+        'What NFTs are trending?',
+        undefined,
+      );
+      expect(result).toBe(observable);
+    });
+
+    it('forwards conversation history to AiAgentService.chatStream', () => {
+      aiAgentService.chatStream.mockReturnValue(of());
+      const history = [{ role: 'user' as const, content: 'Hi' }];
+
+      controller.chatStream(makeRequest('user-1'), {
+        message: 'Tell me more',
+        history,
+      });
+
+      expect(aiAgentService.chatStream).toHaveBeenCalledWith(
+        'user-1',
+        'Tell me more',
+        history,
+      );
+    });
+
+    it('throws UnauthorizedException when no authenticated user is present', () => {
+      expect(() =>
+        controller.chatStream(makeRequest(undefined), { message: 'hi' }),
+      ).toThrow(UnauthorizedException);
+      expect(aiAgentService.chatStream).not.toHaveBeenCalled();
     });
   });
 
