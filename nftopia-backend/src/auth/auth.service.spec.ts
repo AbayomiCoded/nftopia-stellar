@@ -9,6 +9,7 @@ import { UserWallet } from './entities/user-wallet.entity';
 import { WalletSession } from './entities/wallet-session.entity';
 import { StellarSignatureStrategy } from './strategies/stellar.strategy';
 import { TwoFactorService } from './two-factor.service';
+import { EmailService } from '../modules/email/email.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -57,6 +58,13 @@ describe('AuthService', () => {
     createTwoFactorSession: jest.fn(),
   };
 
+  const emailService = {
+    sendVerificationEmail: jest.fn(),
+    sendPasswordResetEmail: jest.fn(),
+    sendBidNotificationEmail: jest.fn(),
+    sendAuctionWonEmail: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -90,6 +98,10 @@ describe('AuthService', () => {
         {
           provide: TwoFactorService,
           useValue: twoFactorService,
+        },
+        {
+          provide: EmailService,
+          useValue: emailService,
         },
       ],
     }).compile();
@@ -246,6 +258,45 @@ describe('AuthService', () => {
     expect(result.access_token).toBe('access-token-email');
     expect(result.refresh_token).toBe('refresh-token-email');
     expect(result.user.email).toBe('user@nftopia.io');
+    expect(cacheManager.set).toHaveBeenCalledWith(
+      expect.stringContaining('email-verify:'),
+      { userId: 'user-email-1' },
+      expect.any(Number),
+    );
+    expect(emailService.sendVerificationEmail).toHaveBeenCalledWith(
+      'user@nftopia.io',
+      expect.any(String),
+      'user1',
+    );
+  });
+
+  it('registration still succeeds when sending the verification email fails', async () => {
+    userRepository.findOne.mockResolvedValue(null);
+    userRepository.create.mockReturnValue({
+      email: 'user@nftopia.io',
+      username: 'user1',
+      passwordHash: 'salt:hash',
+    });
+    userRepository.save.mockResolvedValue({
+      id: 'user-email-2',
+      email: 'user@nftopia.io',
+      username: 'user1',
+      isEmailVerified: false,
+    });
+    jwtService.sign
+      .mockReturnValueOnce('access-token-email')
+      .mockReturnValueOnce('refresh-token-email');
+    emailService.sendVerificationEmail.mockRejectedValueOnce(
+      new Error('smtp down'),
+    );
+
+    const result = await service.registerWithEmail({
+      email: 'user@nftopia.io',
+      password: 'A_secure1!',
+      username: 'user1',
+    });
+
+    expect(result.access_token).toBe('access-token-email');
   });
 
   it('fails email registration when email already exists', async () => {
@@ -272,5 +323,101 @@ describe('AuthService', () => {
         password: 'WrongPassword1!',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  describe('verifyEmail', () => {
+    it('marks the user verified and deletes the token on success', async () => {
+      cacheManager.get.mockResolvedValue({ userId: 'user-1' });
+      userRepository.update.mockResolvedValue(undefined);
+      cacheManager.del.mockResolvedValue(undefined);
+
+      const result = await service.verifyEmail({ token: 'raw-token' });
+
+      expect(result).toEqual({ success: true });
+      expect(userRepository.update).toHaveBeenCalledWith(
+        { id: 'user-1' },
+        { isEmailVerified: true },
+      );
+      expect(cacheManager.del).toHaveBeenCalled();
+    });
+
+    it('rejects an invalid or expired token', async () => {
+      cacheManager.get.mockResolvedValue(undefined);
+
+      await expect(
+        service.verifyEmail({ token: 'bad-token' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  describe('requestPasswordReset', () => {
+    it('generates a token and emails the user when the account exists', async () => {
+      userRepository.findOne.mockResolvedValue({
+        id: 'user-1',
+        email: 'user@nftopia.io',
+        username: 'user1',
+      });
+      cacheManager.set.mockResolvedValue(undefined);
+
+      const result = await service.requestPasswordReset({
+        email: 'user@nftopia.io',
+      });
+
+      expect(result).toEqual({ success: true });
+      expect(cacheManager.set).toHaveBeenCalledWith(
+        expect.stringContaining('password-reset:'),
+        { userId: 'user-1' },
+        expect.any(Number),
+      );
+      expect(emailService.sendPasswordResetEmail).toHaveBeenCalledWith(
+        'user@nftopia.io',
+        expect.any(String),
+        'user1',
+      );
+    });
+
+    it('returns success without sending an email when the account does not exist', async () => {
+      userRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.requestPasswordReset({
+        email: 'nobody@nftopia.io',
+      });
+
+      expect(result).toEqual({ success: true });
+      expect(emailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('updates the password hash and deletes the token on success', async () => {
+      cacheManager.get.mockResolvedValue({ userId: 'user-1' });
+      userRepository.update.mockResolvedValue(undefined);
+      cacheManager.del.mockResolvedValue(undefined);
+
+      const result = await service.resetPassword({
+        token: 'raw-token',
+        newPassword: 'New_secure1!',
+      });
+
+      expect(result).toEqual({ success: true });
+      const [criteria, update] = userRepository.update.mock.calls[0] as [
+        { id: string },
+        { passwordHash: string },
+      ];
+      expect(criteria).toEqual({ id: 'user-1' });
+      expect(typeof update.passwordHash).toBe('string');
+      expect(cacheManager.del).toHaveBeenCalled();
+    });
+
+    it('rejects an invalid or expired token', async () => {
+      cacheManager.get.mockResolvedValue(undefined);
+
+      await expect(
+        service.resetPassword({
+          token: 'bad-token',
+          newPassword: 'New_secure1!',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
   });
 });

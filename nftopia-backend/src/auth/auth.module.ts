@@ -13,6 +13,7 @@ import { UserWallet } from './entities/user-wallet.entity';
 import { WalletSession } from './entities/wallet-session.entity';
 import { User } from '../users/user.entity';
 import { TwoFactorModule } from './two-factor.module';
+import { EmailModule } from '../modules/email/email.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { TwoFactorModule } from './two-factor.module';
     }),
     TypeOrmModule.forFeature([User, UserWallet, WalletSession]),
     forwardRef(() => TwoFactorModule),
+    EmailModule,
   ],
   controllers: [AuthController],
   providers: [
