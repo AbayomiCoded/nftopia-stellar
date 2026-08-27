@@ -16,7 +16,7 @@ describe('EmailService', () => {
     create: jest.fn((data: Partial<EmailLog>) => data as EmailLog),
     save: jest.fn(
       (data: EmailLog) =>
-        Promise.resolve({ id: 'log-1', ...data }) as Promise<EmailLog>,
+        Promise.resolve({ ...data, id: 'log-1' }) as Promise<EmailLog>,
     ),
     update: jest.fn(),
   };
