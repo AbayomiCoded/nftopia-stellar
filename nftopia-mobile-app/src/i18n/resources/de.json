@@ -79,7 +79,31 @@
     "testnet": "Testnet",
     "mainnet": "Mainnet",
     "noWallet": "Keine aktive Wallet",
-    "noWalletSubtitle": "Importieren oder erstellen Sie eine Wallet, um zu beginnen"
+    "noWalletSubtitle": "Importieren oder erstellen Sie eine Wallet, um zu beginnen",
+    "discovery": {
+      "categoriesTitle": "Kategorien durchsuchen",
+      "categories": {
+        "art": "Kunst",
+        "music": "Musik",
+        "gaming": "Gaming",
+        "photography": "Fotografie",
+        "collectibles": "Sammlerstücke",
+        "sports": "Sport",
+        "virtualWorlds": "Virtuelle Welten",
+        "utility": "Nützliches"
+      },
+      "trending": {
+        "title": "Angesagte Kollektionen",
+        "floorPrice": "Mindestpreis: {{amount}} XLM",
+        "empty": "Noch keine angesagten Kollektionen",
+        "error": "Angesagte Kollektionen konnten nicht geladen werden"
+      },
+      "newDrops": {
+        "title": "Neue Drops",
+        "empty": "Noch keine neuen Drops — schau bald wieder vorbei",
+        "error": "Neue Drops konnten nicht geladen werden"
+      }
+    }
   },
   "profile": {
     "title": "Profil",

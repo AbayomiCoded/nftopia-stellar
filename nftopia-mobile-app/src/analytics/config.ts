@@ -96,6 +96,13 @@ export const ANALYTICS_EVENTS = {
   COLLECTION_UPDATE: 'collection_update',
   COLLECTION_DELETE: 'collection_delete',
 
+  // Home discovery (category chips, trending carousel, new drops)
+  DISCOVERY_CATEGORY_SELECT: 'discovery_category_select',
+  DISCOVERY_TRENDING_IMPRESSION: 'discovery_trending_impression',
+  DISCOVERY_TRENDING_ITEM_CLICK: 'discovery_trending_item_click',
+  DISCOVERY_NEW_DROPS_IMPRESSION: 'discovery_new_drops_impression',
+  DISCOVERY_NEW_DROPS_ITEM_CLICK: 'discovery_new_drops_item_click',
+
   // Auction actions
   AUCTION_VIEW: 'auction_view',
   AUCTION_CREATE: 'auction_create',

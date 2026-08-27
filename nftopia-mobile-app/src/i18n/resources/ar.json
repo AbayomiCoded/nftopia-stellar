@@ -79,7 +79,31 @@
     "testnet": "شبكة الاختبار",
     "mainnet": "الشبكة الرئيسية",
     "noWallet": "لا توجد محفظة نشطة",
-    "noWalletSubtitle": "استورد أو أنشئ محفظة للبدء"
+    "noWalletSubtitle": "استورد أو أنشئ محفظة للبدء",
+    "discovery": {
+      "categoriesTitle": "تصفح الفئات",
+      "categories": {
+        "art": "فن",
+        "music": "موسيقى",
+        "gaming": "ألعاب",
+        "photography": "تصوير",
+        "collectibles": "مقتنيات",
+        "sports": "رياضة",
+        "virtualWorlds": "عوالم افتراضية",
+        "utility": "أدوات"
+      },
+      "trending": {
+        "title": "المجموعات الرائجة",
+        "floorPrice": "السعر الأدنى: {{amount}} XLM",
+        "empty": "لا توجد مجموعات رائجة بعد",
+        "error": "تعذر تحميل المجموعات الرائجة"
+      },
+      "newDrops": {
+        "title": "الإصدارات الجديدة",
+        "empty": "لا توجد إصدارات جديدة بعد — تحقق مرة أخرى قريباً",
+        "error": "تعذر تحميل الإصدارات الجديدة"
+      }
+    }
   },
   "profile": {
     "title": "الملف الشخصي",

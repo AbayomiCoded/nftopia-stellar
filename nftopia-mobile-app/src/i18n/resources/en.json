@@ -79,7 +79,31 @@
     "testnet": "Testnet",
     "mainnet": "Mainnet",
     "noWallet": "No Wallet Active",
-    "noWalletSubtitle": "Import or create a wallet to get started"
+    "noWalletSubtitle": "Import or create a wallet to get started",
+    "discovery": {
+      "categoriesTitle": "Browse Categories",
+      "categories": {
+        "art": "Art",
+        "music": "Music",
+        "gaming": "Gaming",
+        "photography": "Photography",
+        "collectibles": "Collectibles",
+        "sports": "Sports",
+        "virtualWorlds": "Virtual Worlds",
+        "utility": "Utility"
+      },
+      "trending": {
+        "title": "Trending Collections",
+        "floorPrice": "Floor: {{amount}} XLM",
+        "empty": "No trending collections yet",
+        "error": "Couldn't load trending collections"
+      },
+      "newDrops": {
+        "title": "New Drops",
+        "empty": "No new drops yet — check back soon",
+        "error": "Couldn't load new drops"
+      }
+    }
   },
   "profile": {
     "title": "Profile",

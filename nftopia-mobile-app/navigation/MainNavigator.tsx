@@ -40,7 +40,7 @@ export type MainStackParamList = {
   Transactions: undefined;
   Notifications: undefined;
   NotificationSettings: undefined;
-  Marketplace: undefined;
+  Marketplace: { category?: string } | undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();

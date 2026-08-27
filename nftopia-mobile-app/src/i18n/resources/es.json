@@ -79,7 +79,31 @@
     "testnet": "Testnet",
     "mainnet": "Mainnet",
     "noWallet": "Sin Cartera Activa",
-    "noWalletSubtitle": "Importa o crea una cartera para comenzar"
+    "noWalletSubtitle": "Importa o crea una cartera para comenzar",
+    "discovery": {
+      "categoriesTitle": "Explorar categorías",
+      "categories": {
+        "art": "Arte",
+        "music": "Música",
+        "gaming": "Videojuegos",
+        "photography": "Fotografía",
+        "collectibles": "Coleccionables",
+        "sports": "Deportes",
+        "virtualWorlds": "Mundos virtuales",
+        "utility": "Utilidad"
+      },
+      "trending": {
+        "title": "Colecciones en tendencia",
+        "floorPrice": "Precio mínimo: {{amount}} XLM",
+        "empty": "Aún no hay colecciones en tendencia",
+        "error": "No se pudieron cargar las colecciones en tendencia"
+      },
+      "newDrops": {
+        "title": "Novedades",
+        "empty": "Aún no hay novedades — vuelve pronto",
+        "error": "No se pudieron cargar las novedades"
+      }
+    }
   },
   "profile": {
     "title": "Perfil",

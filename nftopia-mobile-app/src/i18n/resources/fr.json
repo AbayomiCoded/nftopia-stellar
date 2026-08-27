@@ -79,7 +79,31 @@
     "testnet": "Testnet",
     "mainnet": "Mainnet",
     "noWallet": "Aucun Portefeuille Actif",
-    "noWalletSubtitle": "Importez ou créez un portefeuille pour commencer"
+    "noWalletSubtitle": "Importez ou créez un portefeuille pour commencer",
+    "discovery": {
+      "categoriesTitle": "Parcourir les catégories",
+      "categories": {
+        "art": "Art",
+        "music": "Musique",
+        "gaming": "Jeux",
+        "photography": "Photographie",
+        "collectibles": "Objets de collection",
+        "sports": "Sport",
+        "virtualWorlds": "Mondes virtuels",
+        "utility": "Utilitaire"
+      },
+      "trending": {
+        "title": "Collections tendances",
+        "floorPrice": "Prix plancher : {{amount}} XLM",
+        "empty": "Aucune collection tendance pour le moment",
+        "error": "Impossible de charger les collections tendances"
+      },
+      "newDrops": {
+        "title": "Nouveautés",
+        "empty": "Aucune nouveauté pour le moment — revenez bientôt",
+        "error": "Impossible de charger les nouveautés"
+      }
+    }
   },
   "profile": {
     "title": "Profil",

@@ -1,11 +1,13 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '@/navigation/MainNavigator';
 import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { useNFTs } from '@/hooks/useNFTs';
 import { NFT } from '@/types';
+import { findCategoryById } from '@/constants/categories';
 import { OptimizedImage } from '@/src/components/OptimizedImage';
 import { ErrorFallback } from '@/src/components/ErrorFallback';
 import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
@@ -18,9 +20,19 @@ import { analyticsService } from '@/src/analytics/analytics.service';
 import { errorLogger } from '@/src/errors/logger';
 
 function MarketplaceContent() {
+  const { t } = useTranslation();
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
+  const route = useRoute<RouteProp<MainStackParamList, 'Marketplace'>>();
   const { nfts, loading, error, loadMore, refetch } = useNFTs();
   const { track, trackScreenView, trackPerformance } = useAnalytics();
+
+  // Real server-side category filtering for the general NFT feed is
+  // tracked separately; for now the active category from Home's discovery
+  // chips is surfaced here as a visible, clearable filter indicator so the
+  // navigation contract ("routes into the marketplace pre-filtered") is
+  // honored end-to-end.
+  const activeCategoryId = route.params?.category;
+  const activeCategory = activeCategoryId ? findCategoryById(activeCategoryId) : undefined;
 
   const {
     isRefreshing,
@@ -39,6 +51,11 @@ function MarketplaceContent() {
     trackAnalytics: true,
     analyticsEvent: 'marketplace_refresh',
   });
+
+  const handleClearCategoryFilter = () => {
+    track('marketplace_category_filter_clear', { categoryId: activeCategoryId });
+    navigation.setParams({ category: undefined });
+  };
 
   useEffect(() => {
     trackScreenView('Marketplace');
@@ -131,7 +148,23 @@ function MarketplaceContent() {
         </TouchableOpacity>
         <Text style={styles.title}>Marketplace</Text>
       </View>
-      
+
+      {activeCategory && (
+        <View style={styles.categoryFilterBanner} testID="marketplace-category-filter">
+          <Text style={styles.categoryFilterText}>
+            {t(activeCategory.labelKey)}
+          </Text>
+          <TouchableOpacity
+            onPress={handleClearCategoryFilter}
+            accessibilityRole="button"
+            accessibilityLabel="Clear category filter"
+            testID="marketplace-category-filter-clear"
+          >
+            <Text style={styles.categoryFilterClear}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {isRefreshingState && nfts.length === 0 ? (
         <MarketplaceCardSkeleton count={3} animated={true} />
       ) : (
@@ -202,6 +235,29 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: colors.text,
+  },
+  categoryFilterBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surfaceElevated,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  categoryFilterText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  categoryFilterClear: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    paddingHorizontal: spacing.xs,
   },
   listContent: {
     padding: spacing.md,

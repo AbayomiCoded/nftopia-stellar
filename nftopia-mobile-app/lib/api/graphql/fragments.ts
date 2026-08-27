@@ -40,3 +40,32 @@ export const NFT_FIELDS_FRAGMENT = gql`
     }
   }
 `;
+
+// Card-sized field sets for Home discovery sections. Field names here match
+// the backend schema.graphql exactly (`image`, not `imageUrl`) since these
+// are new queries, not the legacy NFT_FIELDS_FRAGMENT above.
+export const COLLECTION_CARD_FIELDS_FRAGMENT = gql`
+  fragment CollectionCardFields on Collection {
+    id
+    name
+    image
+    floorPrice
+    totalVolume
+    totalSupply
+    isVerified
+  }
+`;
+
+export const LISTING_CARD_FIELDS_FRAGMENT = gql`
+  fragment ListingCardFields on Listing {
+    id
+    price
+    currency
+    createdAt
+    nft {
+      id
+      name
+      image
+    }
+  }
+`;

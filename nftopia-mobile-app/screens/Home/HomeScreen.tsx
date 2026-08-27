@@ -8,13 +8,25 @@ import { colors, spacing, borderRadius, shadows } from '@/constants/theme';
 import { useWalletConnect } from '@/hooks/useWalletConnect';
 import { useWalletStore } from '@/stores/walletStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useTrendingCollections } from '@/hooks/useTrendingCollections';
+import { useNewListings } from '@/hooks/useNewListings';
 import BalanceDisplay from '@/components/wallet/BalanceDisplay';
+import CategorySelector from '@/components/ui/CategorySelector';
+import TrendingCarousel from '@/components/ui/TrendingCarousel';
+import NewDropsSection from '@/components/ui/NewDropsSection';
+import type { Category } from '@/constants/categories';
+import type {
+  NewDropCard,
+  TrendingCollectionCard,
+} from '@/src/utils/discoveryViewModels';
 import { withErrorBoundary } from '@/src/hoc/withErrorBoundary';
 import { errorLogger } from '@/src/errors/logger';
 import { ErrorFallback } from '@/src/components/ErrorFallback';
 import { HomeSkeleton } from '@/src/components/skeletons';
 import { usePullToRefresh } from '@/src/hooks/usePullToRefresh';
 import { PullToRefresh } from '@/src/components/PullToRefresh';
+import { useAnalytics } from '@/src/hooks/useAnalytics';
+import { ANALYTICS_EVENTS } from '@/src/analytics/config';
 
 function HomeContent() {
   const { t } = useTranslation();
@@ -29,6 +41,21 @@ function HomeContent() {
     fetchBalances,
   } = useWalletConnect();
   const network = useWalletStore((s) => s.network);
+  const { track } = useAnalytics();
+
+  const {
+    collections: trendingCollections,
+    loading: trendingLoading,
+    error: trendingError,
+    refetch: refetchTrending,
+  } = useTrendingCollections();
+
+  const {
+    drops: newDrops,
+    loading: newDropsLoading,
+    error: newDropsError,
+    refetch: refetchNewDrops,
+  } = useNewListings();
 
   const {
     isRefreshing,
@@ -39,15 +66,67 @@ function HomeContent() {
     cooldownRemaining,
   } = usePullToRefresh({
     onRefresh: async () => {
-      if (activePublicKey) {
-        await fetchBalances(activePublicKey);
-      }
+      await Promise.all([
+        activePublicKey ? fetchBalances(activePublicKey) : Promise.resolve(),
+        refetchTrending(),
+        refetchNewDrops(),
+      ]);
     },
     cooldown: 2000,
     hapticFeedback: true,
     trackAnalytics: true,
     analyticsEvent: 'home_refresh',
   });
+
+  const handleSelectCategory = useCallback(
+    (category: Category) => {
+      track(ANALYTICS_EVENTS.DISCOVERY_CATEGORY_SELECT, {
+        categoryId: category.id,
+      });
+      navigation.navigate('Marketplace', { category: category.id });
+    },
+    [navigation, track]
+  );
+
+  const handleTrendingImpression = useCallback(
+    (items: TrendingCollectionCard[]) => {
+      track(ANALYTICS_EVENTS.DISCOVERY_TRENDING_IMPRESSION, {
+        count: items.length,
+        collectionIds: items.map((item) => item.id),
+      });
+    },
+    [track]
+  );
+
+  const handleTrendingItemPress = useCallback(
+    (item: TrendingCollectionCard) => {
+      track(ANALYTICS_EVENTS.DISCOVERY_TRENDING_ITEM_CLICK, {
+        collectionId: item.id,
+      });
+      navigation.navigate('Marketplace');
+    },
+    [navigation, track]
+  );
+
+  const handleNewDropsImpression = useCallback(
+    (items: NewDropCard[]) => {
+      track(ANALYTICS_EVENTS.DISCOVERY_NEW_DROPS_IMPRESSION, {
+        count: items.length,
+        nftIds: items.map((item) => item.nftId),
+      });
+    },
+    [track]
+  );
+
+  const handleNewDropPress = useCallback(
+    (item: NewDropCard) => {
+      track(ANALYTICS_EVENTS.DISCOVERY_NEW_DROPS_ITEM_CLICK, {
+        nftId: item.nftId,
+      });
+      navigation.navigate('NFTDetail', { nftId: item.nftId });
+    },
+    [navigation, track]
+  );
 
   useEffect(() => {
     if (activePublicKey) {
@@ -118,6 +197,38 @@ function HomeContent() {
           onRefresh={handleRefresh}
           publicKey={activePublicKey ?? undefined}
         />
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('home.discovery.categoriesTitle')}</Text>
+          <CategorySelector
+            onSelectCategory={handleSelectCategory}
+            testID="home-category-selector"
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('home.discovery.trending.title')}</Text>
+          <TrendingCarousel
+            data={trendingCollections}
+            loading={trendingLoading}
+            error={Boolean(trendingError)}
+            onItemPress={handleTrendingItemPress}
+            onImpression={handleTrendingImpression}
+            testID="home-trending-carousel"
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('home.discovery.newDrops.title')}</Text>
+          <NewDropsSection
+            data={newDrops}
+            loading={newDropsLoading}
+            error={Boolean(newDropsError)}
+            onItemPress={handleNewDropPress}
+            onImpression={handleNewDropsImpression}
+            testID="home-new-drops"
+          />
+        </View>
 
         <View style={styles.actions}>
           <TouchableOpacity 
@@ -196,6 +307,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.textSecondary,
+  },
+  section: {
+    gap: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text,
   },
   actions: {
     flexDirection: 'row',
