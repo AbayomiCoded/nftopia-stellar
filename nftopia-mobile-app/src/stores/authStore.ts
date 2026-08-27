@@ -19,6 +19,14 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      sessionExpiryTime: null,
+      warningThreshold: 300, // 5 minutes in seconds
+      showExpiryWarning: false,
+      isLocked: false,
+      lockTimeout: 60, // 1 minute in seconds
+      failedUnlockAttempts: 0,
+      lockoutUntil: null,
+      appLockEnabled: true,
 
       // Simple setters
       setUser: (user) => set({ user }),
@@ -27,6 +35,14 @@ export const useAuthStore = create<AuthState>()(
       setLoading: (value) => set({ isLoading: value }),
       setError: (error) => set({ error }),
       clearError: () => set({ error: null }),
+      setSessionExpiryTime: (time) => set({ sessionExpiryTime: time }),
+      setShowExpiryWarning: (show) => set({ showExpiryWarning: show }),
+      setWarningThreshold: (seconds) => set({ warningThreshold: seconds }),
+      setLocked: (locked) => set({ isLocked: locked }),
+      setLockTimeout: (seconds) => set({ lockTimeout: seconds }),
+      setFailedUnlockAttempts: (attempts) => set({ failedUnlockAttempts: attempts }),
+      setLockoutUntil: (time) => set({ lockoutUntil: time }),
+      setAppLockEnabled: (enabled) => set({ appLockEnabled: enabled }),
 
       // Login with email and password
       loginWithEmail: async (email, password) => {
@@ -59,11 +75,13 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         try {
           await secureStorage.saveWallet(wallet);
-          set({ wallet, isAuthenticated: true });
-          
+          const now = Math.floor(Date.now() / 1000);
+          // Set session expiry to 1 hour from now (configurable)
+          set({ wallet, isAuthenticated: true, sessionExpiryTime: now + 3600 });
+
           // Notify deep link service
           deepLinkService.setAuthenticated(true);
-          
+
           // Check for pending deep link
           const pendingLink = deepLinkService.getPendingDeepLink();
           if (pendingLink) {
@@ -128,17 +146,17 @@ export const useAuthStore = create<AuthState>()(
             // const user = await authService.validateToken(token);
             // set({ user, isAuthenticated: true });
             set({ isAuthenticated: true });
-            
+
             // Notify deep link service
             deepLinkService.setAuthenticated(true);
-            
+
             // Check for pending deep link
             const pendingLink = deepLinkService.getPendingDeepLink();
             if (pendingLink) {
               deepLinkService.processDeepLink(pendingLink);
               deepLinkService.clearPendingDeepLink();
             }
-            
+
             return true;
           }
 
@@ -146,24 +164,24 @@ export const useAuthStore = create<AuthState>()(
           if (hasWallet) {
             const wallet = await secureStorage.getWallet();
             set({ wallet, isAuthenticated: true });
-            
+
             // Notify deep link service
             deepLinkService.setAuthenticated(true);
-            
+
             // Check for pending deep link
             const pendingLink = deepLinkService.getPendingDeepLink();
             if (pendingLink) {
               deepLinkService.processDeepLink(pendingLink);
               deepLinkService.clearPendingDeepLink();
             }
-            
+
             return true;
           }
 
           set({ isAuthenticated: false });
           // Notify deep link service
           deepLinkService.setAuthenticated(false);
-          
+
           return false;
         } catch (err) {
           set({ error: (err as Error).message, isAuthenticated: false });
@@ -173,6 +191,104 @@ export const useAuthStore = create<AuthState>()(
         } finally {
           set({ isLoading: false });
         }
+      },
+
+      // Extend the current session
+      extendSession: async () => {
+        try {
+          // TODO: Implement token refresh with auth service
+          // const newToken = await authService.refreshToken();
+          // await AsyncStorage.setItem(AUTH_TOKEN_KEY, newToken);
+          // Update session expiry time
+          const now = Math.floor(Date.now() / 1000);
+          // Assuming 1 hour session extension
+          set({ sessionExpiryTime: now + 3600, showExpiryWarning: false });
+        } catch (err) {
+          set({ error: (err as Error).message });
+        }
+      },
+
+      // Get time remaining until session expiry (in seconds)
+      getSessionTimeRemaining: () => {
+        const { sessionExpiryTime } = get();
+        if (!sessionExpiryTime) return null;
+
+        const now = Math.floor(Date.now() / 1000);
+        const remaining = sessionExpiryTime - now;
+        return remaining > 0 ? remaining : 0;
+      },
+
+      // Check if session is expired
+      checkSessionExpiry: () => {
+        const remaining = get().getSessionTimeRemaining();
+        return remaining === null ? false : remaining <= 0;
+      },
+
+      // Lock the app
+      lockApp: () => {
+        set({ isLocked: true });
+      },
+
+      // Unlock the app
+      unlockApp: async (pin?: string): Promise<boolean> => {
+        const { isInLockout, failedUnlockAttempts, appLockEnabled } = get();
+
+        // Check if app lock is enabled
+        if (!appLockEnabled) {
+          set({ isLocked: false });
+          return true;
+        }
+
+        // Check if in lockout period
+        if (isInLockout()) {
+          return false;
+        }
+
+        // TODO: Implement PIN verification when PIN is set
+        // For now, accept any PIN or biometric success
+        try {
+          // If PIN is provided, verify it (when PIN storage is implemented)
+          if (pin) {
+            // PIN verification logic would go here
+            // For now, we'll just increment attempts on failure
+            set({ failedUnlockAttempts: failedUnlockAttempts + 1 });
+
+            // If too many failed attempts, trigger lockout
+            if (failedUnlockAttempts + 1 >= 5) {
+              const lockoutTime = Date.now() + 30000; // 30 seconds lockout
+              set({ lockoutUntil: lockoutTime, failedUnlockAttempts: 0 });
+              return false;
+            }
+            return false;
+          }
+
+          // If no PIN provided, assume biometric success (handled by the UI component)
+          set({ isLocked: false, failedUnlockAttempts: 0 });
+          return true;
+        } catch (error) {
+          set({ error: (error as Error).message });
+          return false;
+        }
+      },
+
+      // Reset failed unlock attempts
+      resetFailedAttempts: () => {
+        set({ failedUnlockAttempts: 0, lockoutUntil: null });
+      },
+
+      // Check if currently in lockout period
+      isInLockout: () => {
+        const { lockoutUntil } = get();
+        if (!lockoutUntil) return false;
+        return Date.now() < lockoutUntil;
+      },
+
+      // Get remaining lockout time in seconds
+      getLockoutRemaining: () => {
+        const { lockoutUntil } = get();
+        if (!lockoutUntil) return 0;
+        const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+        return remaining > 0 ? remaining : 0;
       },
     }),
     {
@@ -204,6 +320,8 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
+        appLockEnabled: state.appLockEnabled,
+        lockTimeout: state.lockTimeout,
       }),
     },
   ),

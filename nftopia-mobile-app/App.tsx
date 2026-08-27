@@ -4,6 +4,11 @@ import { ApolloProvider, ApolloClient, NormalizedCacheObject } from '@apollo/cli
 import AppNavigator from './navigation/AppNavigator';
 import AppLayout from './app/_layout';
 import ToastProvider from './components/Toast';
+import { ConnectivityBanner } from './src/components/ConnectivityBanner';
+import { NetworkStatusManager } from './src/components/NetworkStatusManager';
+import { SessionManager } from './src/components/SessionManager';
+import { AppLockManager } from './src/components/AppLockManager';
+import { PrivacyOverlay } from './src/components/PrivacyOverlay';
 import { setupApollo } from './lib/api/apolloClient';
 
 export default function App() {
@@ -24,11 +29,17 @@ export default function App() {
   return (
     <ApolloProvider client={client}>
       <AppLayout>
-        <SafeAreaView style={styles.container}>
-          <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-          <AppNavigator />
-          <ToastProvider />
-        </SafeAreaView>
+        <PrivacyOverlay />
+        <AppLockManager>
+          <SafeAreaView style={styles.container}>
+            <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+            <NetworkStatusManager />
+            <SessionManager />
+            <ConnectivityBanner />
+            <AppNavigator />
+            <ToastProvider />
+          </SafeAreaView>
+        </AppLockManager>
       </AppLayout>
     </ApolloProvider>
   );
