@@ -7,6 +7,7 @@ import { CollectionModule } from '../collection/collection.module';
 import { AiAgentService } from './ai-agent.service';
 import { AiAgentController } from './ai-agent.controller';
 import { AiUsageService } from './ai-usage.service';
+import { AiAgentHealthService } from './ai-agent-health.service';
 import { AiUsageRecord } from './entities/ai-usage-record.entity';
 import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.guard';
 import { aiChatRateLimiterProvider } from '../../common/guards/ai-chat-rate-limiter.provider';
@@ -22,6 +23,7 @@ import { aiChatRateLimiterProvider } from '../../common/guards/ai-chat-rate-limi
   providers: [
     AiAgentService,
     AiUsageService,
+    AiAgentHealthService,
     AiChatRateLimitGuard,
     aiChatRateLimiterProvider,
   ],

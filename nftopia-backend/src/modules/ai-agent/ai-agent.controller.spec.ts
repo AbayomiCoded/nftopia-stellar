@@ -9,6 +9,7 @@ import { of } from 'rxjs';
 import { AiAgentController } from './ai-agent.controller';
 import { AiAgentService } from './ai-agent.service';
 import { AiUsageService } from './ai-usage.service';
+import { AiAgentHealthService } from './ai-agent-health.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.guard';
 
@@ -22,9 +23,14 @@ describe('AiAgentController', () => {
     getUsageSummary: jest.fn(),
   };
 
+  const aiAgentHealthService = {
+    getHealth: jest.fn(),
+  };
+
   const controller = new AiAgentController(
     aiAgentService as unknown as AiAgentService,
     aiUsageService as unknown as AiUsageService,
+    aiAgentHealthService as unknown as AiAgentHealthService,
   );
 
   const makeRequest = (userId?: string) =>
@@ -34,20 +40,38 @@ describe('AiAgentController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  it('applies JwtAuthGuard at the controller level', () => {
+  it('applies no class-level guard (health must stay reachable without a JWT)', () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, AiAgentController) as
+      | unknown[]
+      | undefined;
+
+    expect(guards).toBeUndefined();
+  });
+
+  it('applies JwtAuthGuard and AiChatRateLimitGuard to the chat route', () => {
+    const guards = Reflect.getMetadata(GUARDS_METADATA, controller.chat) as
+      | unknown[]
+      | undefined;
+
+    expect(guards).toContain(JwtAuthGuard);
+    expect(guards).toContain(AiChatRateLimitGuard);
+  });
+
+  it('applies JwtAuthGuard to the usage route', () => {
+    const guards = Reflect.getMetadata(GUARDS_METADATA, controller.getUsage) as
       | unknown[]
       | undefined;
 
     expect(guards).toContain(JwtAuthGuard);
   });
 
-  it('applies AiChatRateLimitGuard to the chat route', () => {
-    const guards = Reflect.getMetadata(GUARDS_METADATA, controller.chat) as
-      | unknown[]
-      | undefined;
+  it('applies no guard to the health route', () => {
+    const guards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      controller.getHealth,
+    ) as unknown[] | undefined;
 
-    expect(guards).toContain(AiChatRateLimitGuard);
+    expect(guards).toBeUndefined();
   });
 
   describe('chat', () => {
@@ -108,12 +132,13 @@ describe('AiAgentController', () => {
       );
     });
 
-    it('applies AiChatRateLimitGuard to the stream route', () => {
+    it('applies JwtAuthGuard and AiChatRateLimitGuard to the stream route', () => {
       const guards = Reflect.getMetadata(
         GUARDS_METADATA,
         controller.chatStream,
       ) as unknown[] | undefined;
 
+      expect(guards).toContain(JwtAuthGuard);
       expect(guards).toContain(AiChatRateLimitGuard);
     });
 
@@ -188,6 +213,36 @@ describe('AiAgentController', () => {
         controller.getUsage(makeRequest(undefined)),
       ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(aiUsageService.getUsageSummary).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('health', () => {
+    it('delegates to AiAgentHealthService.getHealth', async () => {
+      aiAgentHealthService.getHealth.mockResolvedValue({
+        status: 'up',
+        timestamp: '2026-08-27T00:00:00.000Z',
+      });
+
+      const result = await controller.getHealth();
+
+      expect(aiAgentHealthService.getHealth).toHaveBeenCalledWith();
+      expect(result).toEqual({
+        status: 'up',
+        timestamp: '2026-08-27T00:00:00.000Z',
+      });
+    });
+
+    it('does not require an authenticated user (no user on the request at all)', async () => {
+      aiAgentHealthService.getHealth.mockResolvedValue({
+        status: 'unconfigured',
+        timestamp: '2026-08-27T00:00:00.000Z',
+      });
+
+      // getHealth() takes no request/user argument, unlike every other route.
+      await expect(controller.getHealth()).resolves.toEqual({
+        status: 'unconfigured',
+        timestamp: '2026-08-27T00:00:00.000Z',
+      });
     });
   });
 });
