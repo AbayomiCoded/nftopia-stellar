@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { BidEventListener } from './bid-event.listener';
 import { Bid, BidSorobanStatus } from '../../auction/entities/bid.entity';
+import { User } from '../../../users/user.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { BID_CACHE_PREFIX } from '../interfaces/bid.interface';
 
@@ -10,6 +11,10 @@ describe('BidEventListener', () => {
   let listener: BidEventListener;
 
   const bidRepo = {
+    findOne: jest.fn(),
+  };
+
+  const userRepo = {
     findOne: jest.fn(),
   };
 
@@ -21,6 +26,7 @@ describe('BidEventListener', () => {
   const notificationsService = {
     notifyUser: jest.fn(),
     broadcastBidUpdate: jest.fn(),
+    notifyBidReceivedByEmail: jest.fn(),
   };
 
   const payload = {
@@ -39,11 +45,17 @@ describe('BidEventListener', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    userRepo.findOne.mockResolvedValue({
+      id: 'seller-1',
+      email: 'seller@nftopia.io',
+      username: 'seller1',
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BidEventListener,
         { provide: getRepositoryToken(Bid), useValue: bidRepo },
+        { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: CACHE_MANAGER, useValue: cacheManager },
         { provide: NotificationsService, useValue: notificationsService },
       ],
@@ -83,6 +95,24 @@ describe('BidEventListener', () => {
         bidderId: payload.bidderId,
       }),
     );
+
+    expect(notificationsService.notifyBidReceivedByEmail).toHaveBeenCalledWith(
+      'seller@nftopia.io',
+      payload.auctionId,
+      payload.amount,
+      'seller1',
+    );
+  });
+
+  it('skips the seller email when the seller has no email on file', async () => {
+    cacheManager.get.mockResolvedValue(null);
+    userRepo.findOne.mockResolvedValueOnce({ id: 'seller-1', email: null });
+
+    await listener.handleBidPlaced(payload);
+
+    expect(
+      notificationsService.notifyBidReceivedByEmail,
+    ).not.toHaveBeenCalled();
   });
 
   it('does not overwrite cache when existing highest bid is greater', async () => {

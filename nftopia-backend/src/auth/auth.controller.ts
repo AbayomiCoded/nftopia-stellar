@@ -23,7 +23,13 @@ import {
   WalletUnlinkDto,
   WalletVerifyDto,
 } from './dto/wallet-auth.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import {
+  RequestPasswordResetDto,
+  ResetPasswordDto,
+} from './dto/password-reset.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { EmailRateLimitGuard } from '../modules/email/email-rate-limit.guard';
 
 type RequestWithUser = Request & {
   user?: {
@@ -44,10 +50,48 @@ export class AuthController {
     };
   }
 
+  @UseGuards(EmailRateLimitGuard)
   @Post('register')
   @ApiOperation({ summary: 'Register with email and password' })
   async register(@Body() dto: EmailRegisterDto) {
     const res = await this.authService.registerWithEmail(dto);
+    return {
+      data: {
+        success: true,
+        data: res,
+      },
+    };
+  }
+
+  @Post('verify-email')
+  @ApiOperation({ summary: 'Verify email address using confirmation token' })
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    const res = await this.authService.verifyEmail(dto);
+    return {
+      data: {
+        success: true,
+        data: res,
+      },
+    };
+  }
+
+  @UseGuards(EmailRateLimitGuard)
+  @Post('password-reset/request')
+  @ApiOperation({ summary: 'Request a password reset email' })
+  async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+    const res = await this.authService.requestPasswordReset(dto);
+    return {
+      data: {
+        success: true,
+        data: res,
+      },
+    };
+  }
+
+  @Post('password-reset/confirm')
+  @ApiOperation({ summary: 'Reset password using a reset token' })
+  async confirmPasswordReset(@Body() dto: ResetPasswordDto) {
+    const res = await this.authService.resetPassword(dto);
     return {
       data: {
         success: true,

@@ -15,10 +15,12 @@ import { AuctionQueryDto } from './dto/auction-query.dto';
 import { AuctionStatus } from './interfaces/auction.interface';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { StellarNft } from '../../nft/entities/stellar-nft.entity';
+import { User } from '../../users/user.entity';
 import { ConfigService } from '@nestjs/config';
 import { MarketplaceSettlementClient } from '../stellar/marketplace-settlement.client';
 import { TransactionService } from '../transaction/transaction.service';
 import { TransactionState } from '../transaction/enums/transaction-state.enum';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AuctionService {
@@ -31,9 +33,12 @@ export class AuctionService {
     private readonly bidRepo: Repository<Bid>,
     @InjectRepository(StellarNft)
     private readonly nftRepo: Repository<StellarNft>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly configService: ConfigService,
     private readonly settlementClient: MarketplaceSettlementClient,
     private readonly transactionService: TransactionService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(createDto: CreateAuctionDto, sellerId: string) {
@@ -299,6 +304,12 @@ export class AuctionService {
         : AuctionStatus.COMPLETED;
     await this.auctionRepo.save(auction);
 
+    await this.notifyAuctionWon(
+      auction,
+      highest.bidderId,
+      Number(highest.amount),
+    );
+
     return {
       settled: transaction.state === TransactionState.COMPLETED,
       winner: highest.bidderId,
@@ -325,6 +336,52 @@ export class AuctionService {
           `Failed to settle auction ${a.id}: ${(e as Error).message}`,
         );
       }
+    }
+  }
+
+  /**
+   * Notify the winning bidder that they won — real-time toast plus an
+   * email fallback. Failures here must never fail the settlement itself.
+   */
+  private async notifyAuctionWon(
+    auction: Auction,
+    winnerId: string,
+    amount: number,
+  ): Promise<void> {
+    try {
+      const winner = await this.userRepo.findOne({ where: { id: winnerId } });
+      if (!winner) {
+        return;
+      }
+
+      const nft = await this.nftRepo.findOne({
+        where: {
+          contractId: auction.nftContractId,
+          tokenId: auction.nftTokenId,
+        },
+      });
+      const nftName = nft?.metadata?.name || `NFT ${auction.nftTokenId}`;
+
+      this.notificationsService.notifyUser(
+        winnerId,
+        'auction.won',
+        'You Won!',
+        `You won the auction for ${nftName} at ${amount} XLM`,
+        { auctionId: auction.id, nftName, amount },
+      );
+
+      if (winner.email) {
+        await this.notificationsService.notifyAuctionWonByEmail(
+          winner.email,
+          auction.id,
+          nftName,
+          winner.username ?? undefined,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `Failed to notify auction winner for auction ${auction.id}: ${(err as Error).message}`,
+      );
     }
   }
 }

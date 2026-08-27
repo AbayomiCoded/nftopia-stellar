@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import type { Server } from 'socket.io';
 import { NotificationsService } from './notifications.service';
 import { NotificationsGateway } from './notifications.gateway';
+import { EmailService } from '../email/email.service';
 import type { BidUpdatePayload } from './interfaces/notification.interface';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -39,16 +40,25 @@ describe('NotificationsService', () => {
   let room: ReturnType<typeof makeRoom>;
   let mockServer: jest.Mocked<Server>;
   let mockGateway: jest.Mocked<NotificationsGateway>;
+  let emailService: {
+    sendBidNotificationEmail: jest.Mock;
+    sendAuctionWonEmail: jest.Mock;
+  };
 
   beforeEach(async () => {
     room = makeRoom();
     mockServer = makeServer(room);
     mockGateway = makeGateway(mockServer);
+    emailService = {
+      sendBidNotificationEmail: jest.fn().mockResolvedValue(undefined),
+      sendAuctionWonEmail: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotificationsService,
         { provide: NotificationsGateway, useValue: mockGateway },
+        { provide: EmailService, useValue: emailService },
       ],
     }).compile();
 
@@ -215,6 +225,70 @@ describe('NotificationsService', () => {
     it('emits once per call', () => {
       service.broadcastBidUpdate('auction-1', makeBidUpdate());
       expect(room.emit).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── notifyBidReceivedByEmail ─────────────────────────────────────────────
+
+  describe('notifyBidReceivedByEmail', () => {
+    it('delegates to EmailService.sendBidNotificationEmail', async () => {
+      await service.notifyBidReceivedByEmail(
+        'seller@nftopia.io',
+        'auction-1',
+        150,
+        'seller1',
+      );
+
+      expect(emailService.sendBidNotificationEmail).toHaveBeenCalledWith(
+        'seller@nftopia.io',
+        'auction-1',
+        150,
+        'seller1',
+      );
+    });
+
+    it('swallows errors from the email service', async () => {
+      emailService.sendBidNotificationEmail.mockRejectedValueOnce(
+        new Error('smtp down'),
+      );
+
+      await expect(
+        service.notifyBidReceivedByEmail('seller@nftopia.io', 'auction-1', 150),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  // ── notifyAuctionWonByEmail ───────────────────────────────────────────────
+
+  describe('notifyAuctionWonByEmail', () => {
+    it('delegates to EmailService.sendAuctionWonEmail', async () => {
+      await service.notifyAuctionWonByEmail(
+        'winner@nftopia.io',
+        'auction-1',
+        'Stellar Punk #7',
+        'winner1',
+      );
+
+      expect(emailService.sendAuctionWonEmail).toHaveBeenCalledWith(
+        'winner@nftopia.io',
+        'auction-1',
+        'Stellar Punk #7',
+        'winner1',
+      );
+    });
+
+    it('swallows errors from the email service', async () => {
+      emailService.sendAuctionWonEmail.mockRejectedValueOnce(
+        new Error('smtp down'),
+      );
+
+      await expect(
+        service.notifyAuctionWonByEmail(
+          'winner@nftopia.io',
+          'auction-1',
+          'Stellar Punk #7',
+        ),
+      ).resolves.toBeUndefined();
     });
   });
 });

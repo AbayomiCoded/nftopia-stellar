@@ -4,6 +4,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
   Inject,
@@ -26,11 +27,17 @@ import {
   WalletUnlinkDto,
   WalletVerifyDto,
 } from './dto/wallet-auth.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import {
+  RequestPasswordResetDto,
+  ResetPasswordDto,
+} from './dto/password-reset.dto';
 import { WalletSession } from './entities/wallet-session.entity';
 import { UserWallet } from './entities/user-wallet.entity';
 import { User } from '../users/user.entity';
 import { StellarSignatureStrategy } from './strategies/stellar.strategy';
 import { TwoFactorService } from './two-factor.service';
+import { EmailService } from '../modules/email/email.service';
 
 type JwtUserPayload = {
   sub: string;
@@ -64,6 +71,15 @@ const scryptAsync = promisify(crypto.scrypt);
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  private readonly emailVerificationTtlSeconds = parseInt(
+    process.env.EMAIL_VERIFICATION_TTL_SECONDS || '86400',
+    10,
+  );
+  private readonly passwordResetTtlSeconds = parseInt(
+    process.env.PASSWORD_RESET_TTL_SECONDS || '3600',
+    10,
+  );
   private readonly challengeTtlSeconds = parseInt(
     process.env.WALLET_CHALLENGE_TTL_SECONDS || '300',
     10,
@@ -101,6 +117,7 @@ export class AuthService {
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     @Inject(forwardRef(() => TwoFactorService))
     private readonly twoFactorService: TwoFactorService,
+    private readonly emailService: EmailService,
   ) {}
 
   async registerWithEmail(dto: EmailRegisterDto) {
@@ -126,7 +143,90 @@ export class AuthService {
       }),
     );
 
+    await this.issueEmailVerificationToken(user);
+
     return this.buildAuthResponse(user);
+  }
+
+  /**
+   * Verify a user's email using the token issued at registration
+   * (or via resend). Tokens are single-use and expire after
+   * EMAIL_VERIFICATION_TTL_SECONDS.
+   */
+  async verifyEmail(dto: VerifyEmailDto): Promise<{ success: boolean }> {
+    const key = `email-verify:${this.hashToken(dto.token)}`;
+    const cached = await this.cacheManager.get<{ userId: string }>(key);
+
+    if (!cached) {
+      throw new UnauthorizedException('Invalid or expired verification token');
+    }
+
+    await this.userRepository.update(
+      { id: cached.userId },
+      { isEmailVerified: true },
+    );
+    await this.cacheManager.del(key);
+
+    return { success: true };
+  }
+
+  /**
+   * Generate a password reset token and email it to the user.
+   * Always resolves with { success: true } regardless of whether the
+   * email is registered, to avoid leaking account existence.
+   */
+  async requestPasswordReset(
+    dto: RequestPasswordResetDto,
+  ): Promise<{ success: boolean }> {
+    const normalizedEmail = this.normalizeEmail(dto.email);
+    const user = await this.userRepository.findOne({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user || !user.email) {
+      return { success: true };
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const key = `password-reset:${this.hashToken(token)}`;
+
+    await this.cacheManager.set(
+      key,
+      { userId: user.id },
+      this.passwordResetTtlSeconds * 1000,
+    );
+
+    try {
+      await this.emailService.sendPasswordResetEmail(
+        user.email,
+        token,
+        user.username ?? undefined,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to send password reset email to ${user.email}: ${(err as Error).message}`,
+      );
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Consume a password reset token and update the user's password hash.
+   */
+  async resetPassword(dto: ResetPasswordDto): Promise<{ success: boolean }> {
+    const key = `password-reset:${this.hashToken(dto.token)}`;
+    const cached = await this.cacheManager.get<{ userId: string }>(key);
+
+    if (!cached) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    const passwordHash = await this.hashPassword(dto.newPassword);
+    await this.userRepository.update({ id: cached.userId }, { passwordHash });
+    await this.cacheManager.del(key);
+
+    return { success: true };
   }
 
   async loginWithEmail(dto: EmailLoginDto) {
@@ -675,6 +775,38 @@ export class AuthService {
         walletConnectedAt: new Date(),
       },
     );
+  }
+
+  private async issueEmailVerificationToken(user: User): Promise<void> {
+    if (!user.email) {
+      return;
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const key = `email-verify:${this.hashToken(token)}`;
+
+    await this.cacheManager.set(
+      key,
+      { userId: user.id },
+      this.emailVerificationTtlSeconds * 1000,
+    );
+
+    try {
+      await this.emailService.sendVerificationEmail(
+        user.email,
+        token,
+        user.username ?? undefined,
+      );
+    } catch (err) {
+      // Registration must succeed even if the email provider is down.
+      this.logger.error(
+        `Failed to send verification email to ${user.email}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 
   private normalizeEmail(email: string): string {

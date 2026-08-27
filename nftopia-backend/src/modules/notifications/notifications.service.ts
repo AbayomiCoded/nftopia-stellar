@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { NotificationsGateway } from './notifications.gateway';
+import { EmailService } from '../email/email.service';
 import {
   BID_UPDATE_EVENT,
   NOTIFICATION_EVENT,
@@ -32,7 +33,10 @@ import {
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private readonly gateway: NotificationsGateway) {}
+  constructor(
+    private readonly gateway: NotificationsGateway,
+    private readonly emailService: EmailService,
+  ) {}
 
   /**
    * Send a `notification` event to a single authenticated user.
@@ -81,6 +85,56 @@ export class NotificationsService {
     this.logger.debug(
       `[bid_update] auction=${auctionId} amount=${payload.amountXlm} XLM bidder=${payload.bidderId}`,
     );
+  }
+
+  /**
+   * Email fallback for a new bid — sent to the auction's seller in addition
+   * to the real-time `notification` toast. Never throws: a failed send is
+   * logged and swallowed so it can't take down the caller's request/event
+   * handler.
+   */
+  async notifyBidReceivedByEmail(
+    to: string,
+    auctionId: string,
+    amount: number,
+    username?: string,
+  ): Promise<void> {
+    try {
+      await this.emailService.sendBidNotificationEmail(
+        to,
+        auctionId,
+        amount,
+        username,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to send bid notification email to ${to}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Email fallback for an auction being won — sent to the winning bidder.
+   * Never throws, matching notifyBidReceivedByEmail.
+   */
+  async notifyAuctionWonByEmail(
+    to: string,
+    auctionId: string,
+    nftName: string,
+    username?: string,
+  ): Promise<void> {
+    try {
+      await this.emailService.sendAuctionWonEmail(
+        to,
+        auctionId,
+        nftName,
+        username,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to send auction won email to ${to}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // ── private helpers ────────────────────────────────────────────────────────

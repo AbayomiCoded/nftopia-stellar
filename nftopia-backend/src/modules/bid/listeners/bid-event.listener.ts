@@ -6,6 +6,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 
 import { Bid } from '../../auction/entities/bid.entity';
+import { User } from '../../../users/user.entity';
 import {
   BID_PLACED_EVENT,
   BID_CACHE_PREFIX,
@@ -32,6 +33,8 @@ export class BidEventListener {
   constructor(
     @InjectRepository(Bid)
     private readonly bidRepo: Repository<Bid>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly notificationsService: NotificationsService,
@@ -42,6 +45,7 @@ export class BidEventListener {
     try {
       await this.refreshHighestBidCache(event);
       this.notifySeller(event);
+      await this.notifySellerByEmail(event);
       this.broadcastBidUpdate(event);
       this.logBidAuditEntry(event);
     } catch (err) {
@@ -97,6 +101,24 @@ export class BidEventListener {
         bidderId: event.bidderId,
         amountXlm: event.amountXlm,
       },
+    );
+  }
+
+  /** Email the seller as a fallback/complement to the WebSocket toast. */
+  private async notifySellerByEmail(event: BidPlacedEvent): Promise<void> {
+    const seller = await this.userRepo.findOne({
+      where: { id: event.sellerId },
+    });
+
+    if (!seller?.email) {
+      return;
+    }
+
+    await this.notificationsService.notifyBidReceivedByEmail(
+      seller.email,
+      event.auctionId,
+      event.amount,
+      seller.username ?? undefined,
     );
   }
 
