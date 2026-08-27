@@ -11,6 +11,7 @@ import { ListingService } from '../listing/listing.service';
 import { CollectionService } from '../collection/collection.service';
 import { buildMarketplaceTools } from './tools/marketplace.tools';
 import { ChatTurnDto } from './dto/chat-request.dto';
+import { AiUsageService } from './ai-usage.service';
 
 const SYSTEM_PROMPT = `You are the NFTopia marketplace assistant. You help users find NFTs, \
 listings, and collections on the NFTopia Stellar marketplace using the tools available to you. \
@@ -26,9 +27,16 @@ export class AiAgentService {
     private readonly nftService: NftService,
     private readonly listingService: ListingService,
     private readonly collectionService: CollectionService,
+    private readonly aiUsageService: AiUsageService,
   ) {}
 
-  async chat(message: string, history: ChatTurnDto[] = []): Promise<string> {
+  async chat(
+    userId: string,
+    message: string,
+    history: ChatTurnDto[] = [],
+  ): Promise<string> {
+    await this.aiUsageService.assertWithinCap(userId);
+
     const tools = buildMarketplaceTools({
       nftService: this.nftService,
       listingService: this.listingService,
@@ -50,6 +58,17 @@ export class AiAgentService {
         tools,
         messages,
       });
+
+      // Fire-and-forget: recordUsage never throws, and the reply must not
+      // wait on the write. finalMessage.usage reflects the final turn of
+      // the tool-calling loop (the Anthropic SDK does not expose a
+      // pre-summed cross-iteration total on the tool runner's result).
+      void this.aiUsageService.recordUsage(
+        userId,
+        finalMessage.model,
+        finalMessage.usage.input_tokens,
+        finalMessage.usage.output_tokens,
+      );
 
       const textBlocks = finalMessage.content.filter(
         (block): block is Extract<typeof block, { type: 'text' }> =>

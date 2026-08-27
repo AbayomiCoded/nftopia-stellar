@@ -1,21 +1,54 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.guard';
 import { AiAgentService } from './ai-agent.service';
+import { AiUsageService, type UsageSummary } from './ai-usage.service';
 import { ChatRequestDto } from './dto/chat-request.dto';
+
+type RequestWithUser = Request & { user?: { userId: string } };
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
 export class AiAgentController {
-  constructor(private readonly aiAgentService: AiAgentService) {}
+  constructor(
+    private readonly aiAgentService: AiAgentService,
+    private readonly aiUsageService: AiUsageService,
+  ) {}
 
   // JwtAuthGuard (controller-scoped) runs before this route-scoped guard,
   // so req.user.userId is populated by the time AiChatRateLimitGuard keys
   // the per-user limiter.
   @UseGuards(AiChatRateLimitGuard)
   @Post('chat')
-  async chat(@Body() dto: ChatRequestDto): Promise<{ reply: string }> {
-    const reply = await this.aiAgentService.chat(dto.message, dto.history);
+  async chat(
+    @Req() req: RequestWithUser,
+    @Body() dto: ChatRequestDto,
+  ): Promise<{ reply: string }> {
+    if (!req.user?.userId) {
+      throw new UnauthorizedException('Invalid JWT payload');
+    }
+    const reply = await this.aiAgentService.chat(
+      req.user.userId,
+      dto.message,
+      dto.history,
+    );
     return { reply };
+  }
+
+  @Get('usage')
+  async getUsage(@Req() req: RequestWithUser): Promise<UsageSummary> {
+    if (!req.user?.userId) {
+      throw new UnauthorizedException('Invalid JWT payload');
+    }
+    return this.aiUsageService.getUsageSummary(req.user.userId);
   }
 }
