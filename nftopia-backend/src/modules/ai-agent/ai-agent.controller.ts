@@ -18,8 +18,17 @@ import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.gua
 import { AiAgentService } from './ai-agent.service';
 import { AiUsageService, type UsageSummary } from './ai-usage.service';
 import { ChatRequestDto } from './dto/chat-request.dto';
+import type { ToolSetName } from './tools/tool-set.types';
 
 type RequestWithUser = Request & { user?: { userId: string } };
+
+/**
+ * The only tool set this controller is allowed to use — see
+ * src/modules/ai-agent/tools/README.md for the full endpoint mapping.
+ * Both chat and chatStream request this set explicitly; neither takes it
+ * from the caller, so a request body can't widen what tools run.
+ */
+const TOOL_SET: ToolSetName = 'marketplace-assistant';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
@@ -43,6 +52,7 @@ export class AiAgentController {
     }
     const reply = await this.aiAgentService.chat(
       req.user.userId,
+      TOOL_SET,
       dto.message,
       dto.history,
     );
@@ -63,6 +73,7 @@ export class AiAgentController {
     }
     return this.aiAgentService.chatStream(
       req.user.userId,
+      TOOL_SET,
       dto.message,
       dto.history,
     );

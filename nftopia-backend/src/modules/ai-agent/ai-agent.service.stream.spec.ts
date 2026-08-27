@@ -138,7 +138,11 @@ describe('AiAgentService.chatStream', () => {
       mockToolRunner(runner);
 
       const { events, error } = await collect(
-        service.chatStream('user-1', 'What NFTs are trending?'),
+        service.chatStream(
+          'user-1',
+          'marketplace-assistant',
+          'What NFTs are trending?',
+        ),
       );
 
       expect(error).toBeUndefined();
@@ -171,7 +175,7 @@ describe('AiAgentService.chatStream', () => {
       mockToolRunner(runner);
 
       const { events } = await collect(
-        service.chatStream('user-1', 'Find rare NFTs'),
+        service.chatStream('user-1', 'marketplace-assistant', 'Find rare NFTs'),
       );
 
       const toolCallEvents = events.filter((e) => e.type === 'tool_call');
@@ -199,7 +203,9 @@ describe('AiAgentService.chatStream', () => {
       ]);
       mockToolRunner(runner);
 
-      await collect(service.chatStream('user-7', 'hi'));
+      await collect(
+        service.chatStream('user-7', 'marketplace-assistant', 'hi'),
+      );
 
       expect(aiUsageService.recordUsage).toHaveBeenCalledWith(
         'user-7',
@@ -234,7 +240,11 @@ describe('AiAgentService.chatStream', () => {
       mockToolRunner(runner);
 
       const { events, error } = await collect(
-        service.chatStream('user-1', 'Do a deep multi-source search'),
+        service.chatStream(
+          'user-1',
+          'marketplace-assistant',
+          'Do a deep multi-source search',
+        ),
       );
 
       expect(error).toBeUndefined();
@@ -288,7 +298,11 @@ describe('AiAgentService.chatStream', () => {
       mockToolRunner(runner);
 
       const { events, error } = await collect(
-        service.chatStream('user-1', 'Long multi-step task'),
+        service.chatStream(
+          'user-1',
+          'marketplace-assistant',
+          'Long multi-step task',
+        ),
       );
 
       expect(error).toBeUndefined();
@@ -307,7 +321,7 @@ describe('AiAgentService.chatStream', () => {
       const toolRunner = mockToolRunner(makeFakeStreamingRunner([]));
 
       const { events, error } = await collect(
-        service.chatStream('user-1', 'hi'),
+        service.chatStream('user-1', 'marketplace-assistant', 'hi'),
       );
 
       expect(events).toHaveLength(0);
@@ -346,7 +360,7 @@ describe('AiAgentService.chatStream', () => {
       mockToolRunner(runner);
 
       const { events, error } = await collect(
-        service.chatStream('user-1', 'hi'),
+        service.chatStream('user-1', 'marketplace-assistant', 'hi'),
       );
 
       expect(events).toHaveLength(0);

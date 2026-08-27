@@ -15,7 +15,8 @@ import type {
 import { NftService } from '../nft/nft.service';
 import { ListingService } from '../listing/listing.service';
 import { CollectionService } from '../collection/collection.service';
-import { buildMarketplaceTools } from './tools/marketplace.tools';
+import { resolveToolSet } from './tools/tool-set.registry';
+import type { ToolSetName } from './tools/tool-set.types';
 import { ChatTurnDto } from './dto/chat-request.dto';
 import { AiUsageService } from './ai-usage.service';
 
@@ -38,12 +39,13 @@ export class AiAgentService {
 
   async chat(
     userId: string,
+    toolSet: ToolSetName,
     message: string,
     history: ChatTurnDto[] = [],
   ): Promise<string> {
     await this.aiUsageService.assertWithinCap(userId);
 
-    const tools = buildMarketplaceTools({
+    const tools = resolveToolSet(toolSet, {
       nftService: this.nftService,
       listingService: this.listingService,
       collectionService: this.collectionService,
@@ -105,6 +107,7 @@ export class AiAgentService {
    */
   chatStream(
     userId: string,
+    toolSet: ToolSetName,
     message: string,
     history: ChatTurnDto[] = [],
   ): Observable<MessageEvent> {
@@ -115,7 +118,7 @@ export class AiAgentService {
         try {
           await this.aiUsageService.assertWithinCap(userId);
 
-          const tools = buildMarketplaceTools({
+          const tools = resolveToolSet(toolSet, {
             nftService: this.nftService,
             listingService: this.listingService,
             collectionService: this.collectionService,

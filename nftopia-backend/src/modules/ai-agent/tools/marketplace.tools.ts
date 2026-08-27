@@ -6,15 +6,35 @@ import type { CollectionService } from '../../collection/collection.service';
 import { ListingStatus } from '../../listing/interfaces/listing.interface';
 
 /**
+ * The exact tool names this builder is allowed to return — registered as
+ * this set's ownership in tool-set.registry.ts. If a tool here is renamed
+ * or a new tool is added without updating this list, resolveToolSet()
+ * throws instead of silently exposing it under the 'marketplace-assistant'
+ * name. Keep this in sync with the `name` passed to each betaZodTool below.
+ */
+export const MARKETPLACE_TOOL_NAMES = [
+  'search_nfts',
+  'get_nft',
+  'search_listings',
+  'get_listing',
+  'search_collections',
+  'get_collection',
+  'get_collection_stats',
+  'get_top_collections',
+] as const;
+
+export interface MarketplaceToolsDeps {
+  nftService: NftService;
+  listingService: ListingService;
+  collectionService: CollectionService;
+}
+
+/**
  * Read-only tool surface for the marketplace assistant. Every tool wraps an
  * existing service method directly (in-process) so the agent shares the same
  * DB connection, entities, and business rules as the REST/GraphQL surfaces.
  */
-export function buildMarketplaceTools(deps: {
-  nftService: NftService;
-  listingService: ListingService;
-  collectionService: CollectionService;
-}) {
+export function buildMarketplaceTools(deps: MarketplaceToolsDeps) {
   const { nftService, listingService, collectionService } = deps;
 
   const searchNfts = betaZodTool({

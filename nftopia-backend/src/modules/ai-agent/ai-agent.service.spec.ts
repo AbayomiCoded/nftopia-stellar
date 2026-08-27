@@ -7,6 +7,9 @@ import { ForbiddenException } from '@nestjs/common';
 process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
 
 import { AiAgentService } from './ai-agent.service';
+import { registerToolSet, unregisterToolSet } from './tools/tool-set.registry';
+import { MARKETPLACE_TOOL_NAMES } from './tools/marketplace.tools';
+import type { RunnableToolLike } from './tools/tool-set.types';
 import type { NftService } from '../nft/nft.service';
 import type { ListingService } from '../listing/listing.service';
 import type { CollectionService } from '../collection/collection.service';
@@ -56,7 +59,11 @@ describe('AiAgentService', () => {
       const toolRunner = mockToolRunner(makeFinalMessage());
 
       await expect(
-        service.chat('user-1', 'What NFTs are trending?'),
+        service.chat(
+          'user-1',
+          'marketplace-assistant',
+          'What NFTs are trending?',
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(aiUsageService.assertWithinCap).toHaveBeenCalledWith('user-1');
@@ -67,7 +74,11 @@ describe('AiAgentService', () => {
     it('proceeds to call the Anthropic API when the caller is under their cap', async () => {
       const toolRunner = mockToolRunner(makeFinalMessage());
 
-      const reply = await service.chat('user-1', 'What NFTs are trending?');
+      const reply = await service.chat(
+        'user-1',
+        'marketplace-assistant',
+        'What NFTs are trending?',
+      );
 
       expect(aiUsageService.assertWithinCap).toHaveBeenCalledWith('user-1');
       expect(toolRunner).toHaveBeenCalled();
@@ -84,7 +95,11 @@ describe('AiAgentService', () => {
         }),
       );
 
-      await service.chat('user-42', 'Find me a rare NFT');
+      await service.chat(
+        'user-42',
+        'marketplace-assistant',
+        'Find me a rare NFT',
+      );
 
       expect(aiUsageService.recordUsage).toHaveBeenCalledWith(
         'user-42',
@@ -100,7 +115,9 @@ describe('AiAgentService', () => {
       );
       mockToolRunner(makeFinalMessage());
 
-      await expect(service.chat('user-1', 'hi')).rejects.toThrow();
+      await expect(
+        service.chat('user-1', 'marketplace-assistant', 'hi'),
+      ).rejects.toThrow();
 
       expect(aiUsageService.recordUsage).not.toHaveBeenCalled();
     });
@@ -114,7 +131,7 @@ describe('AiAgentService', () => {
       );
       mockToolRunner(makeFinalMessage());
 
-      const reply = await service.chat('user-1', 'hi');
+      const reply = await service.chat('user-1', 'marketplace-assistant', 'hi');
 
       expect(reply).toBe('Here are the top listings.');
       // recordUsage's promise is still pending — proves chat() didn't await it.
@@ -132,9 +149,42 @@ describe('AiAgentService', () => {
         }),
       );
 
-      const reply = await service.chat('user-1', 'hi');
+      const reply = await service.chat('user-1', 'marketplace-assistant', 'hi');
 
       expect(reply).toBe('First line.\nSecond line.');
+    });
+  });
+
+  describe('tool set scoping (#492)', () => {
+    afterEach(() => {
+      unregisterToolSet('creator-copilot');
+    });
+
+    it('never passes tools from another registered tool set to the Anthropic API', async () => {
+      registerToolSet(
+        'creator-copilot',
+        () => [{ name: 'draft_listing' } as unknown as RunnableToolLike],
+        ['draft_listing'],
+      );
+      const toolRunner = mockToolRunner(makeFinalMessage());
+
+      await service.chat('user-1', 'marketplace-assistant', 'hi');
+
+      const [requestArgs] = toolRunner.mock.calls[0] as [
+        { tools: RunnableToolLike[] },
+      ];
+      const requestedToolNames = requestArgs.tools.map((tool) => tool.name);
+
+      expect(requestedToolNames).not.toContain('draft_listing');
+      expect(requestedToolNames.sort()).toEqual(
+        [...MARKETPLACE_TOOL_NAMES].sort(),
+      );
+    });
+
+    it('rejects a request for a tool set with no registered builder', async () => {
+      await expect(service.chat('user-1', 'moderation', 'hi')).rejects.toThrow(
+        /not registered/,
+      );
     });
   });
 });

@@ -60,6 +60,7 @@ describe('AiAgentController', () => {
 
       expect(aiAgentService.chat).toHaveBeenCalledWith(
         'user-1',
+        'marketplace-assistant',
         'What NFTs are trending?',
         undefined,
       );
@@ -80,6 +81,7 @@ describe('AiAgentController', () => {
 
       expect(aiAgentService.chat).toHaveBeenCalledWith(
         'user-1',
+        'marketplace-assistant',
         'Tell me more',
         history,
       );
@@ -125,6 +127,7 @@ describe('AiAgentController', () => {
 
       expect(aiAgentService.chatStream).toHaveBeenCalledWith(
         'user-1',
+        'marketplace-assistant',
         'What NFTs are trending?',
         undefined,
       );
@@ -142,6 +145,7 @@ describe('AiAgentController', () => {
 
       expect(aiAgentService.chatStream).toHaveBeenCalledWith(
         'user-1',
+        'marketplace-assistant',
         'Tell me more',
         history,
       );
