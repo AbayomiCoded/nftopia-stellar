@@ -103,6 +103,10 @@
         "empty": "Aucune nouveauté pour le moment — revenez bientôt",
         "error": "Impossible de charger les nouveautés"
       }
+    },
+    "recentlyViewed": {
+      "title": "Vus récemment",
+      "clear": "Effacer"
     }
   },
   "profile": {

@@ -103,6 +103,10 @@
         "empty": "Noch keine neuen Drops — schau bald wieder vorbei",
         "error": "Neue Drops konnten nicht geladen werden"
       }
+    },
+    "recentlyViewed": {
+      "title": "Kürzlich angesehen",
+      "clear": "Löschen"
     }
   },
   "profile": {

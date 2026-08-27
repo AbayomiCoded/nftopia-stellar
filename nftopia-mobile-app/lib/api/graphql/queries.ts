@@ -4,6 +4,7 @@ import {
   TRANSFER_EVENT_FIELDS_FRAGMENT,
   COLLECTION_CARD_FIELDS_FRAGMENT,
   LISTING_CARD_FIELDS_FRAGMENT,
+  NFT_CARD_FIELDS_FRAGMENT,
 } from './fragments';
 
 export const GET_NFTS_QUERY = gql`
@@ -66,6 +67,16 @@ export const GET_NEW_LISTINGS_QUERY = gql`
         endCursor
       }
       totalCount
+    }
+  }
+`;
+
+// Recently viewed row: minimal per-card lookup by id (name + image only).
+export const GET_NFT_CARD_QUERY = gql`
+  ${NFT_CARD_FIELDS_FRAGMENT}
+  query GetNFTCard($id: ID!) {
+    nft(id: $id) {
+      ...NFTCardFields
     }
   }
 `;

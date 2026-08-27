@@ -103,6 +103,10 @@
         "empty": "Aún no hay novedades — vuelve pronto",
         "error": "No se pudieron cargar las novedades"
       }
+    },
+    "recentlyViewed": {
+      "title": "Vistos recientemente",
+      "clear": "Borrar"
     }
   },
   "profile": {

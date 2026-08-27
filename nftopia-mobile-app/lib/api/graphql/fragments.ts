@@ -69,3 +69,11 @@ export const LISTING_CARD_FIELDS_FRAGMENT = gql`
     }
   }
 `;
+
+export const NFT_CARD_FIELDS_FRAGMENT = gql`
+  fragment NFTCardFields on NFT {
+    id
+    name
+    image
+  }
+`;

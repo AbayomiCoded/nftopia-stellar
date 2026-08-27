@@ -14,6 +14,7 @@ import BalanceDisplay from '@/components/wallet/BalanceDisplay';
 import CategorySelector from '@/components/ui/CategorySelector';
 import TrendingCarousel from '@/components/ui/TrendingCarousel';
 import NewDropsSection from '@/components/ui/NewDropsSection';
+import RecentlyViewedRow from '@/components/ui/RecentlyViewedRow';
 import type { Category } from '@/constants/categories';
 import type {
   NewDropCard,
@@ -229,6 +230,8 @@ function HomeContent() {
             testID="home-new-drops"
           />
         </View>
+
+        <RecentlyViewedRow testID="home-recently-viewed" />
 
         <View style={styles.actions}>
           <TouchableOpacity 

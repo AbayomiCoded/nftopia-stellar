@@ -103,6 +103,10 @@
         "empty": "No new drops yet — check back soon",
         "error": "Couldn't load new drops"
       }
+    },
+    "recentlyViewed": {
+      "title": "Recently Viewed",
+      "clear": "Clear"
     }
   },
   "profile": {
