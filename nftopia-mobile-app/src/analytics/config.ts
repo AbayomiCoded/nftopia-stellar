@@ -134,6 +134,15 @@ export const ANALYTICS_EVENTS = {
   WALLET_SEND_SUCCESS: 'wallet_send_success',
   WALLET_SEND_FAILURE: 'wallet_send_failure',
   WALLET_RECEIVE: 'wallet_receive',
+  WALLET_CONNECT_PAIRING_INITIATED: 'wallet_connect_pairing_initiated',
+
+  // QR scanner
+  QR_CAMERA_PERMISSION_REQUESTED: 'qr_camera_permission_requested',
+  QR_CAMERA_PERMISSION_GRANTED: 'qr_camera_permission_granted',
+  QR_CAMERA_PERMISSION_DENIED: 'qr_camera_permission_denied',
+  QR_SCAN_SUCCESS: 'qr_scan_success',
+  QR_SCAN_UNRECOGNIZED: 'qr_scan_unrecognized',
+  QR_MANUAL_ENTRY: 'qr_manual_entry',
 
   // Errors
   ERROR_OCCURRED: 'error_occurred',
