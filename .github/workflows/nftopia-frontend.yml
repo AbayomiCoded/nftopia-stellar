@@ -112,3 +112,152 @@ jobs:
           else
             npm run build
           fi
+
+  # ============================================================
+  # E2E job – runs the Playwright purchase-flow suite
+  # ============================================================
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+
+    defaults:
+      run:
+        working-directory: ./nftopia-frontend
+
+    env:
+      # E2E_WALLET_ADDRESS must be set as a repository secret.
+      # It identifies a throwaway Stellar testnet account that Friendbot will
+      # fund before the suite runs.  Never use a mainnet key here.
+      E2E_WALLET_ADDRESS: ${{ secrets.E2E_WALLET_ADDRESS }}
+
+      # Point Playwright at the production build started by `next start`.
+      PLAYWRIGHT_BASE_URL: 'http://localhost:5000'
+
+      # Feed the Next.js app the env it needs at runtime.
+      NEXT_PUBLIC_API_URL: 'http://localhost:3000/api/v1'
+      NEXT_PUBLIC_GRAPHQL_URL: 'http://localhost:3001/graphql'
+      NEXT_PUBLIC_STELLAR_NETWORK: 'testnet'
+      NEXT_PUBLIC_SOROBAN_RPC_URL: 'https://soroban-testnet.stellar.org'
+
+    steps:
+      # ----------------------------------
+      # Checkout repository
+      # ----------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ----------------------------------
+      # Detect package manager
+      # ----------------------------------
+      - name: Detect package manager
+        id: detect
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "manager=pnpm" >> $GITHUB_OUTPUT
+          elif [ -f package-lock.json ]; then
+            echo "manager=npm" >> $GITHUB_OUTPUT
+          else
+            echo "No lockfile found. CI requires a lockfile."
+            exit 1
+          fi
+
+      # ----------------------------------
+      # Setup Node
+      # ----------------------------------
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: ${{ steps.detect.outputs.manager }}
+          cache-dependency-path: |
+            nftopia-frontend/pnpm-lock.yaml
+            nftopia-frontend/package-lock.json
+
+      # ----------------------------------
+      # Setup pnpm if needed
+      # ----------------------------------
+      - name: Setup pnpm
+        if: steps.detect.outputs.manager == 'pnpm'
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      # ----------------------------------
+      # Install dependencies
+      # ----------------------------------
+      - name: Install dependencies (pnpm)
+        if: steps.detect.outputs.manager == 'pnpm'
+        run: pnpm install --frozen-lockfile
+
+      - name: Install dependencies (npm)
+        if: steps.detect.outputs.manager == 'npm'
+        run: npm ci
+
+      # ----------------------------------
+      # Install Playwright browsers
+      # ----------------------------------
+      - name: Install Playwright browsers
+        run: |
+          if [ "${{ steps.detect.outputs.manager }}" = "pnpm" ]; then
+            pnpm run e2e:install
+          else
+            npm run e2e:install
+          fi
+
+      # ----------------------------------
+      # Fund testnet wallet via Friendbot
+      # Skipped when the secret is not set (e.g. forks without secrets access).
+      # ----------------------------------
+      - name: Fund testnet wallet
+        if: ${{ env.E2E_WALLET_ADDRESS != '' }}
+        run: |
+          curl -sf "https://friendbot.stellar.org?addr=$E2E_WALLET_ADDRESS" \
+            -o /dev/null \
+            && echo "Friendbot funded $E2E_WALLET_ADDRESS" \
+            || echo "Friendbot returned an error (account may already be funded)"
+
+      # ----------------------------------
+      # Build the app
+      # ----------------------------------
+      - name: Build Next.js for e2e
+        run: |
+          if [ "${{ steps.detect.outputs.manager }}" = "pnpm" ]; then
+            pnpm run build
+          else
+            npm run build
+          fi
+
+      # ----------------------------------
+      # Start the production server in the background
+      # ----------------------------------
+      - name: Start Next.js server
+        run: |
+          if [ "${{ steps.detect.outputs.manager }}" = "pnpm" ]; then
+            pnpm run start &
+          else
+            npm run start &
+          fi
+          # Wait until the server accepts connections (up to 30 s)
+          npx wait-on http://localhost:5000 --timeout 30000
+
+      # ----------------------------------
+      # Run Playwright e2e suite
+      # ----------------------------------
+      - name: Run e2e tests
+        run: |
+          if [ "${{ steps.detect.outputs.manager }}" = "pnpm" ]; then
+            pnpm run e2e
+          else
+            npm run e2e
+          fi
+
+      # ----------------------------------
+      # Upload Playwright report on failure
+      # ----------------------------------
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: nftopia-frontend/playwright-report/
+          retention-days: 7
