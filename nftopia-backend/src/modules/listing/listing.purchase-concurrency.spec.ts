@@ -119,11 +119,11 @@ describe('ListingService purchase concurrency', () => {
 
     manager = {
       // Returns a snapshot, like a real SELECT.
-      findOne: jest.fn(async () => ({ ...row })),
+      findOne: jest.fn(() => Promise.resolve({ ...row })),
       // Commits the write and bumps the optimistic-lock version.
-      save: jest.fn(async (_entity: unknown, value: ListingRow) => {
+      save: jest.fn((_entity: unknown, value: ListingRow) => {
         Object.assign(row, value, { version: row.version + 1 });
-        return { ...row };
+        return Promise.resolve({ ...row });
       }),
     };
 
@@ -141,15 +141,13 @@ describe('ListingService purchase concurrency', () => {
     };
 
     listingRepo = {
-      findOne: jest.fn(async () => ({ ...row })),
-      update: jest.fn(
-        async (_criteria: unknown, patch: Partial<ListingRow>) => {
-          Object.assign(row, patch);
-          return { affected: 1 };
-        },
-      ),
-      save: jest.fn(async (entity: ListingRow) => entity),
-      find: jest.fn(async () => []),
+      findOne: jest.fn(() => Promise.resolve({ ...row })),
+      update: jest.fn((_criteria: unknown, patch: Partial<ListingRow>) => {
+        Object.assign(row, patch);
+        return Promise.resolve({ affected: 1 });
+      }),
+      save: jest.fn((entity: ListingRow) => Promise.resolve(entity)),
+      find: jest.fn(() => Promise.resolve([])),
       create: jest.fn(),
       createQueryBuilder: jest.fn(),
     };
@@ -187,8 +185,7 @@ describe('ListingService purchase concurrency', () => {
         result.status === 'fulfilled',
     );
     const rejected = results.filter(
-      (result): result is PromiseRejectedResult =>
-        result.status === 'rejected',
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
     );
 
     // Exactly one success, exactly one clear, specific rejection.
