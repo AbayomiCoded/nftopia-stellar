@@ -60,6 +60,7 @@ describe('AuthService', () => {
 
   const jwtService = {
     sign: jest.fn(),
+    verify: jest.fn(),
   };
 
   const stellarStrategy = {
