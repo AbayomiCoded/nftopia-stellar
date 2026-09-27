@@ -7,6 +7,9 @@ import { AuthService } from './auth.service';
 import { User } from '../users/user.entity';
 import { UserWallet } from './entities/user-wallet.entity';
 import { WalletSession } from './entities/wallet-session.entity';
+import { RefreshToken } from './entities/refresh-token.entity';
+import { RefreshTokenFamily } from './entities/refresh-token-family.entity';
+import { DataSource } from 'typeorm';
 import { StellarSignatureStrategy } from './strategies/stellar.strategy';
 import { TwoFactorService } from './two-factor.service';
 import { EmailService } from '../modules/email/email.service';
@@ -39,8 +42,25 @@ describe('AuthService', () => {
     delete: jest.fn(),
   };
 
+  const refreshTokenRepository = {
+    create: jest.fn(),
+    save: jest.fn(),
+    findOne: jest.fn(),
+  };
+
+  const refreshTokenFamilyRepository = {
+    create: jest.fn(),
+    save: jest.fn(),
+    findOne: jest.fn(),
+  };
+
+  const dataSource = {
+    transaction: jest.fn(),
+  };
+
   const jwtService = {
     sign: jest.fn(),
+    verify: jest.fn(),
   };
 
   const stellarStrategy = {
@@ -68,6 +88,41 @@ describe('AuthService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    refreshTokenFamilyRepository.create.mockImplementation(
+      (value: Partial<RefreshTokenFamily>) => value,
+    );
+    refreshTokenFamilyRepository.save.mockImplementation(
+      (value: Partial<RefreshTokenFamily>) => ({
+        id: value.id ?? 'family-1',
+        ...value,
+      }),
+    );
+    refreshTokenRepository.create.mockImplementation(
+      (value: Partial<RefreshToken>) => value,
+    );
+    refreshTokenRepository.save.mockImplementation(
+      (value: Partial<RefreshToken>) => value,
+    );
+    dataSource.transaction.mockImplementation(
+      (callback: (manager: {
+        getRepository: (
+          entity: unknown,
+        ) =>
+          | typeof refreshTokenRepository
+          | typeof refreshTokenFamilyRepository;
+      }) => unknown) =>
+        Promise.resolve(
+          callback({
+            getRepository: (entity: unknown) => {
+              if (entity === RefreshToken) return refreshTokenRepository;
+              if (entity === RefreshTokenFamily)
+                return refreshTokenFamilyRepository;
+              throw new Error('Unexpected transactional repository');
+            },
+          }),
+        ),
+    );
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -90,6 +145,18 @@ describe('AuthService', () => {
         {
           provide: getRepositoryToken(WalletSession),
           useValue: walletSessionRepository,
+        },
+        {
+          provide: getRepositoryToken(RefreshToken),
+          useValue: refreshTokenRepository,
+        },
+        {
+          provide: getRepositoryToken(RefreshTokenFamily),
+          useValue: refreshTokenFamilyRepository,
+        },
+        {
+          provide: DataSource,
+          useValue: dataSource,
         },
         {
           provide: CACHE_MANAGER,
@@ -420,4 +487,173 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
+  describe('refreshTokens', () => {
+    const user = {
+      id: 'user-refresh-1',
+      email: 'refresh@nftopia.io',
+      username: 'refresh-user',
+      walletAddress: null,
+      address: null,
+    };
+
+    beforeEach(() => {
+      userRepository.findOne.mockResolvedValue(user);
+    });
+
+    it('rotates a refresh token and records the old token as used', async () => {
+      const oldToken = 'refresh-token-1';
+      const newToken = 'refresh-token-2';
+
+      jwtService.verify.mockReturnValue({
+        sub: user.id,
+        type: 'refresh',
+        jti: 'jti-1',
+        familyId: 'family-1',
+      });
+      jwtService.sign
+        .mockReturnValueOnce('access-token-2')
+        .mockReturnValueOnce(newToken);
+
+      refreshTokenRepository.findOne.mockResolvedValue({
+        id: 'refresh-row-1',
+        jti: 'jti-1',
+        familyId: 'family-1',
+        userId: user.id,
+        tokenHash: service['hashToken'](oldToken),
+        expiresAt: new Date(Date.now() + 60_000),
+        usedAt: null,
+        revokedAt: null,
+      });
+      refreshTokenFamilyRepository.findOne.mockResolvedValue({
+        id: 'family-1',
+        userId: user.id,
+        revokedAt: null,
+      });
+
+      const result = await service.refreshTokens(oldToken);
+
+      expect(result).toEqual({
+        access_token: 'access-token-2',
+        refresh_token: newToken,
+      });
+      const saveCalls = refreshTokenRepository.save.mock.calls as unknown as
+        Array<[RefreshToken]>;
+      const savedToken = saveCalls[0]?.[0];
+      expect(savedToken?.id).toBe('refresh-row-1');
+      expect(savedToken?.usedAt).toBeInstanceOf(Date);
+
+      const createCalls = refreshTokenRepository.create.mock.calls as unknown as
+        Array<[RefreshToken]>;
+      const createdToken = createCalls[0]?.[0];
+      expect(createdToken?.familyId).toBe('family-1');
+      expect(createdToken?.userId).toBe(user.id);
+      expect(createdToken?.jti).toEqual(expect.any(String));
+      expect(createdToken?.tokenHash).toBe(service['hashToken'](newToken));
+    });
+
+    it('revokes the whole family when a rotated token is reused', async () => {
+      const reusedToken = 'refresh-token-reused';
+
+      jwtService.verify.mockReturnValue({
+        sub: user.id,
+        type: 'refresh',
+        jti: 'jti-used',
+        familyId: 'family-1',
+      });
+
+      refreshTokenRepository.findOne.mockResolvedValue({
+        id: 'refresh-row-used',
+        jti: 'jti-used',
+        familyId: 'family-1',
+        userId: user.id,
+        tokenHash: service['hashToken'](reusedToken),
+        expiresAt: new Date(Date.now() + 60_000),
+        usedAt: new Date(Date.now() - 1_000),
+        revokedAt: null,
+      });
+      const family = {
+        id: 'family-1',
+        userId: user.id,
+        revokedAt: null,
+      };
+      refreshTokenFamilyRepository.findOne.mockResolvedValue(family);
+
+      await expect(service.refreshTokens(reusedToken)).rejects.toThrow(
+        'Refresh token reuse detected',
+      );
+
+      const familySaveCalls =
+        refreshTokenFamilyRepository.save.mock.calls as unknown as
+          Array<[RefreshTokenFamily]>;
+      const revokedFamily = familySaveCalls[0]?.[0];
+      expect(revokedFamily?.id).toBe('family-1');
+      expect(revokedFamily?.revokedAt).toBeInstanceOf(Date);
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects an already revoked family', async () => {
+      const token = 'refresh-token-revoked-family';
+
+      jwtService.verify.mockReturnValue({
+        sub: user.id,
+        type: 'refresh',
+        jti: 'jti-revoked',
+        familyId: 'family-1',
+      });
+      refreshTokenRepository.findOne.mockResolvedValue({
+        id: 'refresh-row-revoked',
+        jti: 'jti-revoked',
+        familyId: 'family-1',
+        userId: user.id,
+        tokenHash: service['hashToken'](token),
+        expiresAt: new Date(Date.now() + 60_000),
+        usedAt: null,
+        revokedAt: null,
+      });
+      refreshTokenFamilyRepository.findOne.mockResolvedValue({
+        id: 'family-1',
+        userId: user.id,
+        revokedAt: new Date(),
+      });
+
+      await expect(service.refreshTokens(token)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects an expired refresh token without rotating it', async () => {
+      const token = 'refresh-token-expired';
+
+      jwtService.verify.mockReturnValue({
+        sub: user.id,
+        type: 'refresh',
+        jti: 'jti-expired',
+        familyId: 'family-1',
+      });
+      refreshTokenRepository.findOne.mockResolvedValue({
+        id: 'refresh-row-expired',
+        jti: 'jti-expired',
+        familyId: 'family-1',
+        userId: user.id,
+        tokenHash: service['hashToken'](token),
+        expiresAt: new Date(Date.now() - 1_000),
+        usedAt: null,
+        revokedAt: null,
+      });
+      refreshTokenFamilyRepository.findOne.mockResolvedValue({
+        id: 'family-1',
+        userId: user.id,
+        revokedAt: null,
+      });
+
+      await expect(service.refreshTokens(token)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
+    });
+  });
+
 });
