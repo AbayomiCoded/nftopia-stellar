@@ -49,10 +49,12 @@
     "react-native-gesture-handler": "~2.14.0",
     "react-native-metrics": "^1.0.0-alpha.2",
     "react-native-performance": "^6.0.0",
+    "react-native-qrcode-svg": "^6.3.26",
     "react-native-reanimated": "~3.6.2",
     "react-native-safe-area-context": "^5.1.0",
     "react-native-screens": "^4.6.0",
     "react-native-shared-element": "^0.8.9",
+    "react-native-svg": "15.12.1",
     "stellar-hd-wallet": "^1.0.2",
     "stellar-sdk": "^12.3.0",
     "zustand": "^5.0.2"
