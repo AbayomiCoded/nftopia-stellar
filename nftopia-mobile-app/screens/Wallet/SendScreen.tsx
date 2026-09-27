@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,18 @@ export function SendScreen({ navigation, route, onSend }: SendScreenProps) {
   const [showPicker, setShowPicker] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
   const [addressError, setAddressError] = useState<string | null>(null);
+
+  // `route.params.prefilledAddress` changes when the QR scanner navigates
+  // back to this same (already-mounted) screen instance with a new scan —
+  // the `useState` initializer above only runs once, so it can't pick that
+  // up on its own.
+  useEffect(() => {
+    const prefilled = route?.params?.prefilledAddress;
+    if (prefilled && prefilled !== recipient) {
+      setRecipient(prefilled);
+      setAddressError(null);
+    }
+  }, [route?.params?.prefilledAddress]);
 
   const recentFiltered = useMemo(() => {
     // Exclude saved addresses from recent suggestions
@@ -109,7 +121,7 @@ export function SendScreen({ navigation, route, onSend }: SendScreenProps) {
   };
 
   const handleScan = () => {
-    Alert.alert('Scan', 'QR scan would be implemented via expo-barcode-scanner');
+    navigation?.navigate?.('QRScanner');
   };
 
   return (
