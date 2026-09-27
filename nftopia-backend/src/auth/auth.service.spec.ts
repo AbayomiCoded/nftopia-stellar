@@ -88,21 +88,39 @@ describe('AuthService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    refreshTokenFamilyRepository.create.mockImplementation((value) => value);
-    refreshTokenFamilyRepository.save.mockImplementation(async (value) => ({
-      id: value.id || 'family-1',
-      ...value,
-    }));
-    refreshTokenRepository.create.mockImplementation((value) => value);
-    refreshTokenRepository.save.mockImplementation(async (value) => value);
-    dataSource.transaction.mockImplementation(async (callback) =>
-      callback({
-        getRepository: (entity: unknown) => {
-          if (entity === RefreshToken) return refreshTokenRepository;
-          if (entity === RefreshTokenFamily) return refreshTokenFamilyRepository;
-          throw new Error('Unexpected transactional repository');
-        },
+    refreshTokenFamilyRepository.create.mockImplementation(
+      (value: Partial<RefreshTokenFamily>) => value,
+    );
+    refreshTokenFamilyRepository.save.mockImplementation(
+      async (value: Partial<RefreshTokenFamily>) => ({
+        id: value.id ?? 'family-1',
+        ...value,
       }),
+    );
+    refreshTokenRepository.create.mockImplementation(
+      (value: Partial<RefreshToken>) => value,
+    );
+    refreshTokenRepository.save.mockImplementation(
+      async (value: Partial<RefreshToken>) => value,
+    );
+    dataSource.transaction.mockImplementation(
+      (callback: (manager: {
+        getRepository: (
+          entity: unknown,
+        ) =>
+          | typeof refreshTokenRepository
+          | typeof refreshTokenFamilyRepository;
+      }) => unknown) =>
+        Promise.resolve(
+          callback({
+            getRepository: (entity: unknown) => {
+              if (entity === RefreshToken) return refreshTokenRepository;
+              if (entity === RefreshTokenFamily)
+                return refreshTokenFamilyRepository;
+              throw new Error('Unexpected transactional repository');
+            },
+          }),
+        ),
     );
 
     const moduleRef = await Test.createTestingModule({
@@ -518,20 +536,19 @@ describe('AuthService', () => {
         access_token: 'access-token-2',
         refresh_token: newToken,
       });
-      expect(refreshTokenRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'refresh-row-1',
-          usedAt: expect.any(Date),
-        }),
-      );
-      expect(refreshTokenRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          familyId: 'family-1',
-          userId: user.id,
-          jti: expect.any(String),
-          tokenHash: service['hashToken'](newToken),
-        }),
-      );
+      const savedToken = refreshTokenRepository.save.mock.calls[0]?.[0] as
+        | RefreshToken
+        | undefined;
+      expect(savedToken?.id).toBe('refresh-row-1');
+      expect(savedToken?.usedAt).toBeInstanceOf(Date);
+
+      const createdToken = refreshTokenRepository.create.mock.calls[0]?.[0] as
+        | RefreshToken
+        | undefined;
+      expect(createdToken?.familyId).toBe('family-1');
+      expect(createdToken?.userId).toBe(user.id);
+      expect(createdToken?.jti).toEqual(expect.any(String));
+      expect(createdToken?.tokenHash).toBe(service['hashToken'](newToken));
     });
 
     it('revokes the whole family when a rotated token is reused', async () => {
@@ -565,12 +582,12 @@ describe('AuthService', () => {
         'Refresh token reuse detected',
       );
 
-      expect(refreshTokenFamilyRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'family-1',
-          revokedAt: expect.any(Date),
-        }),
-      );
+      const revokedFamily =
+        refreshTokenFamilyRepository.save.mock.calls[0]?.[0] as
+          | RefreshTokenFamily
+          | undefined;
+      expect(revokedFamily?.id).toBe('family-1');
+      expect(revokedFamily?.revokedAt).toBeInstanceOf(Date);
       expect(refreshTokenRepository.create).not.toHaveBeenCalled();
     });
 
