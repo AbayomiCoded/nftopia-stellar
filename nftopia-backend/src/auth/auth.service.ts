@@ -645,7 +645,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const tokenRepository = manager.getRepository(RefreshToken);
       const familyRepository = manager.getRepository(RefreshTokenFamily);
 
@@ -678,7 +678,7 @@ export class AuthService {
       if (token.usedAt || token.revokedAt) {
         family.revokedAt = new Date();
         await familyRepository.save(family);
-        throw new UnauthorizedException('Refresh token reuse detected');
+        return { reuseDetected: true as const };
       }
 
       const presentedHash = this.hashToken(refreshToken);
@@ -695,18 +695,27 @@ export class AuthService {
       token.usedAt = new Date();
       await tokenRepository.save(token);
 
-      return this.issueTokenPair(
-        {
-          sub: user.id,
-          username: user.username,
-          email: user.email ?? undefined,
-          walletAddress: user.walletAddress ?? user.address ?? undefined,
-          twoFactorVerified: true,
-        },
-        family.id,
-        tokenRepository,
-      );
+      return {
+        reuseDetected: false as const,
+        tokenPair: await this.issueTokenPair(
+          {
+            sub: user.id,
+            username: user.username,
+            email: user.email ?? undefined,
+            walletAddress: user.walletAddress ?? user.address ?? undefined,
+            twoFactorVerified: true,
+          },
+          family.id,
+          tokenRepository,
+        ),
+      };
     });
+
+    if (result.reuseDetected) {
+      throw new UnauthorizedException('Refresh token reuse detected');
+    }
+
+    return result.tokenPair;
   }
 
   private async createRefreshTokenFamily(
