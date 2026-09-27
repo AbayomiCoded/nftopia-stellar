@@ -227,7 +227,7 @@ export class TwoFactorController {
     }
 
     // Generate full JWT tokens
-    const authResponse = this.authService.buildAuthResponse(result.user);
+    const authResponse = await this.authService.buildAuthResponse(result.user);
 
     return {
       data: authResponse,
