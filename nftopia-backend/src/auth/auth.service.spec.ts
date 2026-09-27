@@ -128,6 +128,18 @@ describe('AuthService', () => {
           useValue: walletSessionRepository,
         },
         {
+          provide: getRepositoryToken(RefreshToken),
+          useValue: refreshTokenRepository,
+        },
+        {
+          provide: getRepositoryToken(RefreshTokenFamily),
+          useValue: refreshTokenFamilyRepository,
+        },
+        {
+          provide: DataSource,
+          useValue: dataSource,
+        },
+        {
           provide: CACHE_MANAGER,
           useValue: cacheManager,
         },
