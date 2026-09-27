@@ -97,7 +97,7 @@ describe('ListingService', () => {
    */
   const manager = {
     findOne: jest.fn(
-      (..._args: unknown[]): Promise<Listing | null> =>
+      (): Promise<Listing | null> =>
         listingRepo.findOne() as Promise<Listing | null>,
     ),
     save: jest.fn(
@@ -107,8 +107,8 @@ describe('ListingService', () => {
   };
 
   const dataSource = {
-    transaction: jest.fn(
-      (work: (m: typeof manager) => unknown): unknown => work(manager),
+    transaction: jest.fn((work: (m: typeof manager) => unknown): unknown =>
+      work(manager),
     ),
   };
 
@@ -536,14 +536,14 @@ describe('ListingService', () => {
 
     expect(result.status).toBe(ListingStatus.CANCELLED);
     // Conditional update: only cancels while still ACTIVE and unreserved.
-    expect(listingRepo.update).toHaveBeenCalledWith(
-      {
-        id: 'listing-1',
-        status: ListingStatus.ACTIVE,
-        reservedAt: expect.anything(),
-      },
-      { status: ListingStatus.CANCELLED },
-    );
+    const [whereArg, patchArg] = listingRepo.update.mock.calls[0] as [
+      Record<string, unknown>,
+      Record<string, unknown>,
+    ];
+    expect(whereArg.id).toBe('listing-1');
+    expect(whereArg.status).toBe(ListingStatus.ACTIVE);
+    expect(whereArg.reservedAt).toBeDefined();
+    expect(patchArg).toEqual({ status: ListingStatus.CANCELLED });
   });
 
   it('cancel refuses to cancel a listing with an in-flight purchase', async () => {
@@ -872,13 +872,13 @@ describe('ListingService', () => {
 
     // Availability check + reservation write share one row-locked transaction.
     expect(dataSource.transaction).toHaveBeenCalled();
-    expect(manager.save).toHaveBeenCalledWith(
-      Listing,
-      expect.objectContaining({
-        reservedBy: 'buyer-1',
-        reservedAt: expect.any(Date),
-      }),
-    );
+    const [savedClass, savedEntity] = manager.save.mock.calls[0] as [
+      typeof Listing,
+      { reservedBy: string; reservedAt: unknown },
+    ];
+    expect(savedClass).toBe(Listing);
+    expect(savedEntity.reservedBy).toBe('buyer-1');
+    expect(savedEntity.reservedAt).toBeInstanceOf(Date);
     // Winner flips the listing to SOLD and clears the reservation.
     expect(listingRepo.update).toHaveBeenCalledWith(
       { id: 'listing-1' },
@@ -950,10 +950,13 @@ describe('ListingService', () => {
     await service.expireListings();
 
     expect(qb.andWhere).toHaveBeenCalledWith('l.reservedAt IS NOT NULL');
-    expect(listingRepo.update).toHaveBeenCalledWith(
-      { id: expect.anything(), status: ListingStatus.ACTIVE },
-      { reservedAt: null, reservedBy: null },
-    );
+    const [whereArg, patchArg] = listingRepo.update.mock.calls[0] as [
+      Record<string, unknown>,
+      Record<string, unknown>,
+    ];
+    expect(whereArg.id).toBeDefined();
+    expect(whereArg.status).toBe(ListingStatus.ACTIVE);
+    expect(patchArg).toEqual({ reservedAt: null, reservedBy: null });
   });
 
   it('expireListings skips the reservation sweep when nothing is stale', async () => {
