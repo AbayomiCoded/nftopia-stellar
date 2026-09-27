@@ -536,15 +536,15 @@ describe('AuthService', () => {
         access_token: 'access-token-2',
         refresh_token: newToken,
       });
-      const savedToken = refreshTokenRepository.save.mock.calls[0]?.[0] as
-        | RefreshToken
-        | undefined;
+      const saveCalls = refreshTokenRepository.save.mock.calls as unknown as
+        Array<[RefreshToken]>;
+      const savedToken = saveCalls[0]?.[0];
       expect(savedToken?.id).toBe('refresh-row-1');
       expect(savedToken?.usedAt).toBeInstanceOf(Date);
 
-      const createdToken = refreshTokenRepository.create.mock.calls[0]?.[0] as
-        | RefreshToken
-        | undefined;
+      const createCalls = refreshTokenRepository.create.mock.calls as unknown as
+        Array<[RefreshToken]>;
+      const createdToken = createCalls[0]?.[0];
       expect(createdToken?.familyId).toBe('family-1');
       expect(createdToken?.userId).toBe(user.id);
       expect(createdToken?.jti).toEqual(expect.any(String));
@@ -582,10 +582,10 @@ describe('AuthService', () => {
         'Refresh token reuse detected',
       );
 
-      const revokedFamily =
-        refreshTokenFamilyRepository.save.mock.calls[0]?.[0] as
-          | RefreshTokenFamily
-          | undefined;
+      const familySaveCalls =
+        refreshTokenFamilyRepository.save.mock.calls as unknown as
+          Array<[RefreshTokenFamily]>;
+      const revokedFamily = familySaveCalls[0]?.[0];
       expect(revokedFamily?.id).toBe('family-1');
       expect(revokedFamily?.revokedAt).toBeInstanceOf(Date);
       expect(refreshTokenRepository.create).not.toHaveBeenCalled();
