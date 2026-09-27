@@ -92,7 +92,7 @@ describe('AuthService', () => {
       (value: Partial<RefreshTokenFamily>) => value,
     );
     refreshTokenFamilyRepository.save.mockImplementation(
-      async (value: Partial<RefreshTokenFamily>) => ({
+      (value: Partial<RefreshTokenFamily>) => ({
         id: value.id ?? 'family-1',
         ...value,
       }),
@@ -101,7 +101,7 @@ describe('AuthService', () => {
       (value: Partial<RefreshToken>) => value,
     );
     refreshTokenRepository.save.mockImplementation(
-      async (value: Partial<RefreshToken>) => value,
+      (value: Partial<RefreshToken>) => value,
     );
     dataSource.transaction.mockImplementation(
       (callback: (manager: {
