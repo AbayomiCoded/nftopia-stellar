@@ -13,6 +13,7 @@ import { AiUsageService } from './ai-usage.service';
 import { AiAgentHealthService } from './ai-agent-health.service';
 import { ChatSessionService } from './chat-session.service';
 import { AiUsageRecord } from './entities/ai-usage-record.entity';
+import { UserAiCapOverride } from './entities/user-ai-cap-override.entity';
 import { ChatSession } from './entities/chat-session.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { ContentFlag } from './entities/content-flag.entity';
@@ -30,6 +31,7 @@ import { PromptInjectionService } from './prompt-injection.service';
     ConfigModule,
     TypeOrmModule.forFeature([
       AiUsageRecord,
+      UserAiCapOverride,
       ChatSession,
       ChatMessage,
       ContentFlag,
