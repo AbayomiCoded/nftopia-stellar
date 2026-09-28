@@ -116,6 +116,8 @@ export function TodaysPicks() {
             {nftItems.map((item) => (
               <div
                 key={item.id}
+                data-testid="nft-card"
+                data-listing-id={item.id}
                 className="bg-[#1E1A45] rounded-2xl overflow-hidden border border-purple-900/30 transition-all hover:shadow-lg hover:shadow-purple-500/10 hover:-translate-y-1"
               >
                 <div className="relative">
@@ -167,6 +169,7 @@ export function TodaysPicks() {
                     <Button
                       size="sm"
                       variant="ghost"
+                      data-testid="buy-now-btn"
                       className="text-purple-400 hover:bg-transparent hover:text-purple-300 rounded-full px-4 py-1 text-xs"
                       onClick={() => setSelectedNFT(item)}
                     >
