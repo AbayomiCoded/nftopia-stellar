@@ -12,6 +12,7 @@ import { AiUsageService } from './ai-usage.service';
 import { AiAgentHealthService } from './ai-agent-health.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
 
 describe('AiAgentController', () => {
   const aiAgentService = {
@@ -22,6 +23,8 @@ describe('AiAgentController', () => {
 
   const aiUsageService = {
     getUsageSummary: jest.fn(),
+    setCapOverride: jest.fn(),
+    clearCapOverride: jest.fn(),
   };
 
   const aiAgentHealthService = {
@@ -291,13 +294,19 @@ describe('AiAgentController', () => {
     });
   });
   describe('getToolLogs', () => {
-    it('applies JwtAuthGuard and Roles guard to the tool logs route', () => {
+    it('applies JwtAuthGuard and RolesGuard to the tool logs route', () => {
+      // Regression check (#529): this route previously had @Roles(ADMIN)
+      // with no RolesGuard in @UseGuards, which meant the decorator's
+      // metadata was never read by anything — any authenticated user could
+      // call it. This test previously only checked for JwtAuthGuard, which
+      // is exactly how that gap went unnoticed.
       const guards = Reflect.getMetadata(
         GUARDS_METADATA,
         controller.getToolLogs,
       ) as unknown[] | undefined;
 
       expect(guards).toContain(JwtAuthGuard);
+      expect(guards).toContain(RolesGuard);
     });
 
     it('delegates to AiAgentService.getToolLogs with defaults', async () => {
@@ -336,6 +345,101 @@ describe('AiAgentController', () => {
         limit: 20,
       });
       expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('admin cap override endpoints (#529)', () => {
+    it('applies JwtAuthGuard and RolesGuard to getUsageForAdmin', () => {
+      const guards = Reflect.getMetadata(
+        GUARDS_METADATA,
+        controller.getUsageForAdmin,
+      ) as unknown[] | undefined;
+
+      expect(guards).toContain(JwtAuthGuard);
+      expect(guards).toContain(RolesGuard);
+    });
+
+    it('applies JwtAuthGuard and RolesGuard to setCapOverride', () => {
+      const guards = Reflect.getMetadata(
+        GUARDS_METADATA,
+        controller.setCapOverride,
+      ) as unknown[] | undefined;
+
+      expect(guards).toContain(JwtAuthGuard);
+      expect(guards).toContain(RolesGuard);
+    });
+
+    it('applies JwtAuthGuard and RolesGuard to clearCapOverride', () => {
+      const guards = Reflect.getMetadata(
+        GUARDS_METADATA,
+        controller.clearCapOverride,
+      ) as unknown[] | undefined;
+
+      expect(guards).toContain(JwtAuthGuard);
+      expect(guards).toContain(RolesGuard);
+    });
+
+    it('getUsageForAdmin delegates to AiUsageService.getUsageSummary for the target user', async () => {
+      const summary = { daily: {}, monthly: {}, hasOverride: false };
+      aiUsageService.getUsageSummary.mockResolvedValue(summary);
+
+      const result = await controller.getUsageForAdmin('target-user');
+
+      expect(aiUsageService.getUsageSummary).toHaveBeenCalledWith(
+        'target-user',
+      );
+      expect(result).toBe(summary);
+    });
+
+    it('setCapOverride passes the admin caller id as grantedBy', async () => {
+      const created = { userId: 'target-user' };
+      aiUsageService.setCapOverride.mockResolvedValue(created);
+
+      const result = await controller.setCapOverride(
+        'target-user',
+        { dailyTokenCap: 50_000, reason: 'VIP' },
+        makeRequest('admin-1'),
+      );
+
+      expect(aiUsageService.setCapOverride).toHaveBeenCalledWith(
+        'target-user',
+        {
+          dailyTokenCap: 50_000,
+          monthlyTokenCap: undefined,
+          dailySpendCapUsd: undefined,
+          monthlySpendCapUsd: undefined,
+          reason: 'VIP',
+          grantedBy: 'admin-1',
+          expiresAt: undefined,
+        },
+      );
+      expect(result).toBe(created);
+    });
+
+    it('setCapOverride converts an ISO expiresAt string to a Date', async () => {
+      aiUsageService.setCapOverride.mockResolvedValue({});
+
+      await controller.setCapOverride(
+        'target-user',
+        { expiresAt: '2026-12-31T00:00:00.000Z' },
+        makeRequest('admin-1'),
+      );
+
+      const [, params] = aiUsageService.setCapOverride.mock.calls[0] as [
+        string,
+        { expiresAt?: Date },
+      ];
+      expect(params.expiresAt).toBeInstanceOf(Date);
+      expect(params.expiresAt?.toISOString()).toBe('2026-12-31T00:00:00.000Z');
+    });
+
+    it('clearCapOverride delegates to AiUsageService.clearCapOverride', async () => {
+      const result = await controller.clearCapOverride('target-user');
+
+      expect(aiUsageService.clearCapOverride).toHaveBeenCalledWith(
+        'target-user',
+      );
+      expect(result).toEqual({ cleared: true });
     });
   });
 });
