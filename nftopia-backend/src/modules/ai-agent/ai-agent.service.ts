@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -24,6 +25,7 @@ import type { ToolSetName } from './tools/tool-set.types';
 import { AiUsageService } from './ai-usage.service';
 import { ChatSessionService } from './chat-session.service';
 import { AiToolCallLog } from './entities/ai-tool-call-log.entity';
+import { PromptInjectionService } from './prompt-injection.service';
 
 const SYSTEM_PROMPT = `You are the NFTopia marketplace assistant. You help users find NFTs, \
 listings, and collections on the NFTopia Stellar marketplace, answer questions about the \
@@ -49,6 +51,7 @@ export class AiAgentService {
     private readonly chatSessionService: ChatSessionService,
     @InjectRepository(AiToolCallLog)
     private readonly toolCallLogRepo: Repository<AiToolCallLog>,
+    private readonly promptInjectionService: PromptInjectionService,
   ) {}
 
   private getToolLogger(userId: string, sessionId: string) {
@@ -91,6 +94,21 @@ export class AiAgentService {
     sessionId?: string,
   ): Promise<{ reply: string; sessionId: string }> {
     await this.aiUsageService.assertWithinCap(userId);
+
+    // Screen the message for prompt-injection / jailbreak attempts before
+    // touching the session or forwarding anything to the model.  We use a
+    // placeholder session id in the log if no session exists yet, because
+    // the real id is only known after loadOrCreateSession.
+    const screening = this.promptInjectionService.screen(message);
+    if (screening.flagged) {
+      this.promptInjectionService.logFlagged(
+        userId,
+        sessionId ?? 'pre-session',
+        screening.category!,
+        message,
+      );
+      throw new BadRequestException(screening.reason);
+    }
 
     // History always comes from the database — never from client input —
     // and ownership of an existing session is enforced here too (#487).
@@ -177,6 +195,19 @@ export class AiAgentService {
       void (async () => {
         try {
           await this.aiUsageService.assertWithinCap(userId);
+
+          // Screen for injection/jailbreak before opening the session or
+          // the streaming connection to the model.
+          const screening = this.promptInjectionService.screen(message);
+          if (screening.flagged) {
+            this.promptInjectionService.logFlagged(
+              userId,
+              sessionId ?? 'pre-session',
+              screening.category!,
+              message,
+            );
+            throw new BadRequestException(screening.reason);
+          }
 
           const { session, history } =
             await this.chatSessionService.loadOrCreateSession(

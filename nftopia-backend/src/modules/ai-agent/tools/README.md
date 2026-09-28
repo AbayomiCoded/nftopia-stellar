@@ -74,3 +74,67 @@ PR.
    `'marketplace-assistant'` for a different endpoint's capability.
 5. Add or extend the tests in `tool-set.registry.spec.ts` covering the new
    set's ownership boundary.
+
+---
+
+## Prompt-injection / jailbreak detection (#569)
+
+`PromptInjectionService` (`prompt-injection.service.ts`) runs a lightweight
+heuristic pre-screening step **before** any user message reaches the Anthropic
+API — in both `AiAgentService.chat()` and `AiAgentService.chatStream()`.
+
+### How it works
+
+The service holds a prioritised list of compiled `RegExp` rules, each tagged
+with a coarse **category** name. `screen(message)` tests the rules in order
+and returns on the first match (short-circuit evaluation). A match causes
+`AiAgentService` to throw a `BadRequestException` and write a `WARN`-level
+log entry via `logFlagged()` — the raw message text is never forwarded to the
+model.
+
+### Detection categories
+
+| Category                | What it catches                                        |
+|-------------------------|--------------------------------------------------------|
+| `system-prompt-override`| Attempts to view, replace, or reveal the system prompt |
+| `instruction-override`  | "Ignore all previous instructions" and close variants  |
+| `role-play-jailbreak`   | "DAN", "you are now unrestricted", mode-switch framing |
+| `tool-exfiltration`     | Requests to enumerate or describe available tools      |
+| `delimiter-injection`   | Raw XML/JSON/markdown structural delimiters in input   |
+| `context-manipulation`  | Injected fake `System:`/`Assistant:`/`Human:` turns    |
+
+### Logging
+
+Flagged attempts are logged at `WARN` level with:
+- `userId`
+- `sessionId` (or `pre-session` if no session exists yet)
+- `category`
+- The first 80 characters of the message (truncated to avoid retaining full
+  injection payloads in the log stream)
+
+No raw message content beyond the 80-character preview is written to any
+persistent store.
+
+### Limitations — this is a mitigation, not a guarantee
+
+- **Pattern evasion**: A sufficiently obfuscated or multilingual payload may
+  not match these regex patterns. Adversaries who know the exact ruleset can
+  craft inputs that slip through.
+- **False positives**: The patterns are anchored to structural injection
+  markers rather than topic words, keeping the false-positive rate low on
+  ordinary marketplace queries — but novel phrasing can still hit them. If a
+  legitimate use-case is blocked, add a regression test and refine the
+  offending pattern in `prompt-injection.service.ts`.
+- **Complementary layers still required**: This service is a first-line
+  defence that complements — and does not replace — the model-level system
+  prompt, the tool-set allowlist (#492), and the content-flag review pipeline.
+  A message that clears the pre-screener is still constrained by all those
+  other controls.
+
+### Adding or tuning patterns
+
+1. Edit the `rules` array in `prompt-injection.service.ts`.
+2. Add a test case in `prompt-injection.service.spec.ts` covering the new
+   pattern (adversarial) **and** at least one legitimate message that is
+   structurally similar but should pass (to guard against regressions).
+3. Run `pnpm test --filter nftopia-backend` and confirm all tests pass.
