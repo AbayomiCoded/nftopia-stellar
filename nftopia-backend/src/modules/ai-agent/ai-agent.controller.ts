@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Post,
   Req,
   RequestMethod,
@@ -24,11 +26,15 @@ import {
   type AnthropicHealthStatus,
 } from './ai-agent-health.service';
 import { ChatRequestDto } from './dto/chat-request.dto';
+import { SetCapOverrideDto } from './dto/set-cap-override.dto';
 import type { ToolSetName } from './tools/tool-set.types';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { UserRole } from '../../common/enums/user-role.enum';
 
-type RequestWithUser = Request & { user?: { userId: string } };
+type RequestWithUser = Request & {
+  user?: { userId: string; role?: string };
+};
 
 /**
  * The only tool set this controller is allowed to use — see
@@ -119,7 +125,13 @@ export class AiAgentController {
     return this.aiUsageService.getUsageSummary(req.user.userId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  // NOTE: this route previously had only @Roles(UserRole.ADMIN) with no
+  // RolesGuard in @UseGuards — that decorator sets metadata RolesGuard
+  // reads, so without the guard actually running, it was inert and this
+  // endpoint was reachable by any authenticated user. Fixed alongside
+  // #529's own admin endpoints below, which use the same (correct)
+  // pairing every other admin controller in this codebase already uses.
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('admin/tool-logs')
   async getToolLogs(
@@ -136,5 +148,56 @@ export class AiAgentController {
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? parseInt(limit, 10) : 50,
     });
+  }
+
+  // ── Admin: AI chat spend cap overrides (#529) ────────────────────────
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('admin/usage/:userId')
+  @ApiOperation({
+    summary:
+      "Inspect a user's current AI usage/cap standing (admin support tool)",
+  })
+  async getUsageForAdmin(
+    @Param('userId') userId: string,
+  ): Promise<UsageSummary> {
+    return this.aiUsageService.getUsageSummary(userId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('admin/usage/:userId/override')
+  @ApiOperation({
+    summary:
+      "Set (replacing any existing) an override of a user's AI chat spend caps",
+  })
+  async setCapOverride(
+    @Param('userId') userId: string,
+    @Body() dto: SetCapOverrideDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.aiUsageService.setCapOverride(userId, {
+      dailyTokenCap: dto.dailyTokenCap,
+      monthlyTokenCap: dto.monthlyTokenCap,
+      dailySpendCapUsd: dto.dailySpendCapUsd,
+      monthlySpendCapUsd: dto.monthlySpendCapUsd,
+      reason: dto.reason,
+      grantedBy: req.user?.userId,
+      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Delete('admin/usage/:userId/override')
+  @ApiOperation({
+    summary: "Clear a user's cap override, reverting them to the default caps",
+  })
+  async clearCapOverride(
+    @Param('userId') userId: string,
+  ): Promise<{ cleared: true }> {
+    await this.aiUsageService.clearCapOverride(userId);
+    return { cleared: true };
   }
 }
