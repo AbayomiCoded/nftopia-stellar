@@ -83,6 +83,7 @@
     "socket.io": "^4.8.3",
     "speakeasy": "^2.0.0",
     "stellar-sdk": "^13.3.0",
+    "stripe": "^22.6.2",
     "swagger-ui-express": "^5.0.1",
     "typeorm": "^0.3.28",
     "uuid": "^9.0.1",
