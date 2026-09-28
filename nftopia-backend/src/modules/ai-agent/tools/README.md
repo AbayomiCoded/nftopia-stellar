@@ -74,3 +74,24 @@ PR.
    `'marketplace-assistant'` for a different endpoint's capability.
 5. Add or extend the tests in `tool-set.registry.spec.ts` covering the new
    set's ownership boundary.
+
+## Chat Session Lifecycle, Pruning & Retention Policy
+
+Chat sessions and messages are persisted in PostgreSQL (`chat_sessions`, `chat_messages`) with automatic lifecycle management:
+
+### 1. Inactive Session Pruning & Retention Window
+- **Retention Period:** Default `30` days, configurable via `AI_CHAT_SESSION_RETENTION_DAYS`.
+- **Cleanup Trigger:** Automatic scheduled cron job (`handleScheduledCleanup` running daily at midnight via `@Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)`), or programmatically via `chatSessionService.pruneInactiveSessions()`.
+- **Cascading:** Stale sessions older than the retention window based on `updatedAt` are deleted along with their corresponding `chat_messages` and `ai_tool_call_logs` (`ON DELETE CASCADE`).
+- **Data Privacy & Compliance:** Inactive conversations are permanently removed to minimize PII surface area and control long-term storage overhead.
+
+### 2. Per-Session Message Count Cap
+- **Per-Session Limit:** Default `50` messages, configurable via `AI_CHAT_MAX_SESSION_MESSAGES`.
+- **Eviction Behavior:** When a session accumulates more messages than the cap, the oldest messages are pruned from the database during `appendExchange`, preventing unbounded table growth for long conversations.
+
+### 3. In-Context History Summarization & Truncation
+- **Summarization Threshold:** Default `10` messages, configurable via `AI_CHAT_SUMMARIZATION_THRESHOLD`.
+- **Token Estimation Limit:** Default `4000` tokens, configurable via `AI_CHAT_MAX_HISTORY_TOKENS`.
+- **Recent Messages Kept:** Default `6` messages (3 turns), configurable via `AI_CHAT_RECENT_MESSAGES_COUNT`.
+- **Mechanism:** When loaded for model context, long histories are summarized into concise conversational context turns (`[Summary of earlier conversation in this session]`), drastically reducing per-turn token spend against user token caps while preserving prompt context and alternating user/assistant message roles.
+
