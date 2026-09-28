@@ -10,6 +10,11 @@ const _secretsResult = loadDockerSecrets();
 // Log the result after the Pino logger is available (see bootstrap()).
 
 import 'dotenv/config';
+// Must load before AppModule (and therefore before TypeORM/pg, ioredis, and
+// any HTTP client) so OpenTelemetry's auto-instrumentation can patch those
+// modules the first time they're required. See src/tracing.ts and
+// docs/tracing.md.
+import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
