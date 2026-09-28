@@ -1,30 +1,18 @@
-import { toast } from "@/lib/toast";
+import { fetchWithAuth } from '@/lib/api/fetchWithAuth';
+import { API_CONFIG } from '@/lib/config';
+import type { ReportReason, ReportTargetType } from '@/src/lib/constants';
 
 export interface ReportPayload {
-  targetType: 'nft' | 'collection' | 'profile';
+  targetType: ReportTargetType;
   targetId: string;
-  reason: string;
+  reason: ReportReason;
   details?: string;
 }
 
-export async function submitReport(payload: ReportPayload): Promise<boolean> {
-  try {
-    const response = await fetch('/api/reports', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to submit report');
-    }
-
-    toast.success('Report submitted successfully');
-    return true;
-  } catch (error) {
-    toast.error('Failed to submit report. Please try again.');
-    return false;
-  }
+export async function submitReport(payload: ReportPayload): Promise<void> {
+  await fetchWithAuth(`${API_CONFIG.baseUrl}/moderation/reports`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }

@@ -1,15 +1,17 @@
 export const REPORT_REASONS_LIST = [
   'spam',
-  'ip_violation',
-  'offensive_content',
+  'copyright',
+  'offensive',
   'scam',
+  'other',
 ] as const;
 
 export type ReportReason = typeof REPORT_REASONS_LIST[number];
 
-export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
-  spam: 'Spam',
-  ip_violation: 'Intellectual Property Violation',
-  offensive_content: 'Offensive Content',
-  scam: 'Scam',
-};
+export const REPORT_TARGET_TYPES = ['nft', 'collection', 'profile'] as const;
+
+export type ReportTargetType = typeof REPORT_TARGET_TYPES[number];
+
+export function isReportReason(value: string): value is ReportReason {
+  return (REPORT_REASONS_LIST as readonly string[]).includes(value);
+}

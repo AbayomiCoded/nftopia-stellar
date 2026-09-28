@@ -1,47 +1,33 @@
 import React, { useState } from 'react';
-import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Flag, Loader2 } from 'lucide-react';
-import { ReportModal } from '@/components/common/ReportModal';
+import { Flag } from 'lucide-react';
+import { useTranslation } from '@/hooks/useTranslation';
+import { useReport } from '@/src/hooks/useReport';
+import { ReportModal } from '@/src/components/ReportModal';
 
 interface CollectionPageProps {
   collectionId: string;
-  collectionData: any; // Replace with actual type
+  collectionData: any;
 }
 
 export const CollectionPage: React.FC<CollectionPageProps> = ({ collectionId, collectionData }) => {
-  const { toast } = useToast();
+  const { t } = useTranslation();
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasReported, setHasReported] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  const { isSubmitting, hasReported, submitReport } = useReport('collection', collectionId, {
+    onSuccess: () => setSuccess(true),
+  });
 
   const handleReportClick = () => {
-    if (hasReported) return;
+    if (hasReported || isSubmitting) return;
+    setSuccess(false);
     setIsReportModalOpen(true);
   };
 
-  const handleReportSubmit = async (reason: string, comment?: string) => {
-    setIsSubmitting(true);
-    try {
-      // TODO: Implement actual API call to report endpoint
-      // await api.reportContent({ type: 'collection', id: collectionId, reason, comment });
-      
-      // Simulate success for now
-      setHasReported(true);
-      toast({
-        title: "Report Submitted",
-        description: "Thank you for helping keep our community safe.",
-      });
-    } catch (error) {
-      toast({
-        title: "Failed to submit report",
-        description: "Please try again later.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
-      setIsReportModalOpen(false);
-    }
+  const handleCloseReportModal = () => {
+    setIsReportModalOpen(false);
+    setSuccess(false);
   };
 
   return (
@@ -53,30 +39,28 @@ export const CollectionPage: React.FC<CollectionPageProps> = ({ collectionId, co
           size="sm"
           onClick={handleReportClick}
           disabled={hasReported || isSubmitting}
-          className={hasReported ? 'opacity-50 cursor-not-allowed' : ''}
         >
           {hasReported ? (
-            <span>Reported</span>
+            <span>{t('report.alreadyReported')}</span>
           ) : (
             <>
-              <Flag className="w-4 h-4 mr-2" />
-              Report
+              <Flag className="w-4 h-4 mr-2" aria-hidden="true" />
+              {t('report.action')}
             </>
           )}
         </Button>
       </div>
 
-      {/* Placeholder for collection content */}
       <div className="border rounded p-4">
         <p>Collection details go here...</p>
       </div>
 
       <ReportModal
         isOpen={isReportModalOpen}
-        onClose={() => setIsReportModalOpen(false)}
-        onSubmit={handleReportSubmit}
-        itemType="collection"
-        itemId={collectionId}
+        onClose={handleCloseReportModal}
+        onSubmit={submitReport}
+        isLoading={isSubmitting}
+        success={success}
       />
     </div>
   );

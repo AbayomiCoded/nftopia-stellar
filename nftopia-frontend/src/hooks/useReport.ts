@@ -1,16 +1,32 @@
-import { useState, useCallback } from 'react';
-import { useToast } from '@/hooks/use-toast';
-import { api } from '@/lib/api';
+"use client";
 
-export type ReportReason = 'spam' | 'scam' | 'offensive' | 'ip_violation' | 'other';
+import { useCallback, useEffect, useState } from 'react';
+import { useToast } from '@/lib/stores';
+import { useTranslation } from '@/hooks/useTranslation';
+import { submitReport } from '@/src/lib/api';
+import type { ReportReason, ReportTargetType } from '@/src/lib/constants';
 
-export const REPORT_REASON_TAXONOMY: Record<ReportReason, string> = {
-  spam: 'Spam or misleading content',
-  scam: 'Scam or fraudulent activity',
-  offensive: 'Offensive or inappropriate content',
-  ip_violation: 'Intellectual property violation',
-  other: 'Other',
-};
+function reportStorageKey(targetType: ReportTargetType, targetId: string): string {
+  return `report:${targetType}:${targetId}`;
+}
+
+function readReported(targetType: ReportTargetType, targetId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return sessionStorage.getItem(reportStorageKey(targetType, targetId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeReported(targetType: ReportTargetType, targetId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(reportStorageKey(targetType, targetId), '1');
+  } catch {
+    // sessionStorage unavailable (private mode) — fall back to in-memory state
+  }
+}
 
 interface UseReportOptions {
   onSuccess?: () => void;
@@ -20,68 +36,69 @@ interface UseReportOptions {
 interface UseReportReturn {
   isSubmitting: boolean;
   hasReported: boolean;
-  submitReport: (reason: ReportReason, description?: string) => Promise<void>;
+  submitReport: (reason: ReportReason, details?: string) => Promise<void>;
   resetReport: () => void;
 }
 
 export function useReport(
-  entityType: 'nft' | 'collection' | 'profile',
+  targetType: ReportTargetType,
   entityId: string,
   options: UseReportOptions = {}
 ): UseReportReturn {
-  const { toast } = useToast();
+  const { showSuccess, showError } = useToast();
+  const { t } = useTranslation();
+  const { onSuccess, onError } = options;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasReported, setHasReported] = useState(false);
 
-  const submitReport = useCallback(
-    async (reason: ReportReason, description?: string) => {
+  useEffect(() => {
+    setHasReported(readReported(targetType, entityId));
+  }, [targetType, entityId]);
+
+  const submitReportHandler = useCallback(
+    async (reason: ReportReason, details?: string) => {
       if (hasReported || isSubmitting) return;
 
       setIsSubmitting(true);
       try {
-        await api.post('/reports', {
-          entityType,
-          entityId,
-          reason,
-          description,
-        });
+        await submitReport({ targetType, targetId: entityId, reason, details });
 
+        writeReported(targetType, entityId);
         setHasReported(true);
-        toast({
-          title: 'Report submitted',
-          description: 'Thank you for your report. We will review it shortly.',
-          variant: 'default',
-        });
+        showSuccess(t('report.success'));
 
-        if (options.onSuccess) {
-          options.onSuccess();
+        if (onSuccess) {
+          onSuccess();
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to submit report';
-        toast({
-          title: 'Report failed',
-          description: errorMessage,
-          variant: 'destructive',
-        });
+        const err = error instanceof Error ? error : new Error('Failed to submit report');
+        showError(t('report.error'));
 
-        if (options.onError) {
-          options.onError(error instanceof Error ? error : new Error(errorMessage));
+        if (onError) {
+          onError(err);
         }
       } finally {
         setIsSubmitting(false);
       }
     },
-    [entityType, entityId, hasReported, isSubmitting, toast, options]
+    [targetType, entityId, hasReported, isSubmitting, showSuccess, showError, t, onSuccess, onError]
   );
 
   const resetReport = useCallback(() => {
     setHasReported(false);
-  }, []);
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(reportStorageKey(targetType, entityId));
+      } catch {
+        // ignore
+      }
+    }
+  }, [targetType, entityId]);
 
   return {
     isSubmitting,
     hasReported,
-    submitReport,
+    submitReport: submitReportHandler,
     resetReport,
   };
 }
