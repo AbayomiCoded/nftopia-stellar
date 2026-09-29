@@ -22,6 +22,7 @@ import OwnerCardSkeleton from "@/components/Skeleton/OwnerCardSkeleton";
 import TransferHistorySkeleton from "@/components/nft/TransferHistorySkeleton";
 import { useNFTByIdQuery, useNFTTransferHistoryQuery } from "@/hooks/graphql/useNFTQueries";
 import TransferHistory from "@/components/nft/TransferHistory";
+import { ReportButton } from "@/src/components/ReportButton";
 
 // Helper function to format address
 function formatAddress(address: string | null | undefined): string {
@@ -229,14 +230,17 @@ export default function NFTDetailClient({
       <CircuitBackground />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back Button */}
-        <Link
-          href="/marketplace"
-          className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-6"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span>Back to Marketplace</span>
-        </Link>
+        {/* Back Button + Report Action */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <Link
+            href="/marketplace"
+            className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back to Marketplace</span>
+          </Link>
+          <ReportButton targetType="nft" targetId={nftId} />
+        </div>
 
         {/* NFT Detail Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

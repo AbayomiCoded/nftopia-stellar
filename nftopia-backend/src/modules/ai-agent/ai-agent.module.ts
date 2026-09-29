@@ -23,6 +23,7 @@ import { ListingCreatedListener } from './listeners/listing-created.listener';
 import { AI_MODERATION_QUEUE_NAME } from './listeners/ai-moderation.types';
 import { ContentFlagService } from './content-flag.service';
 import { AuditModule } from '../../common/audit/audit.module';
+import { PromptInjectionService } from './prompt-injection.service';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { AuditModule } from '../../common/audit/audit.module';
     aiChatRateLimiterProvider,
     ListingCreatedListener,
     ContentFlagService,
+    PromptInjectionService,
   ],
   controllers: [AiAgentController],
   exports: [AiAgentService, AiUsageService],
