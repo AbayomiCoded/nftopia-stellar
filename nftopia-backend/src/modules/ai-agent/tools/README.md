@@ -51,7 +51,7 @@ is no default, so a new endpoint-specific method cannot forget to pick one.
 | ----------------------- | ---------------------------------------- | ----------- | ------------ | ----------- |
 | `marketplace-assistant` | `POST /ai/chat`, `POST /ai/chat/stream`  | Any authenticated user | Read-only    | Implemented (`marketplace.tools.ts`) |
 | `creator-copilot`       | `POST /ai/copilot/draft-listing`         | NFT creator/owner (ownership verified before the model is ever called) | Write-capable (drafts, but never publishes, a listing for the caller's own NFT) | Implemented (`creator-copilot.tools.ts`, #528) |
-| `moderation`            | Not chat-driven — the `ListingCreatedListener` enqueues a job on the `ai-moderation` Bull queue; a *planned* processor (follow-up issue) resolves this tool set and runs the moderation agent per job. Findings surface via `GET /admin/ai/flags` / `PATCH /admin/ai/flags/:id`. | System (queue worker) only | Write-capable (`flag_content` persists to `content_flags`) | Tool implemented (`moderation.tools.ts`); queue consumer not yet built |
+| `moderation`            | Not chat-driven — the `ListingCreatedListener` enqueues a job on the `ai-moderation` Bull queue, consumed by `AiModerationProcessor`. Findings surface via `GET /admin/ai/flags` / `PATCH /admin/ai/flags/:id`. | System (queue worker) only | Write-capable (`flag_content` persists to `content_flags`) | Implemented (`moderation.tools.ts` + `ai-moderation.processor.ts`, #527) |
 | `trading`               | *Planned:* trading-proposal endpoints    | Any authenticated user, scoped to their own orders | Write-capable (proposes trades) | Not yet implemented |
 
 `marketplace-assistant`, `moderation`, and `creator-copilot` are the tool
@@ -81,6 +81,45 @@ known NFT rather than a conversation.
   (`copilot-rate-limit.guard.ts`) uses its own Redis key prefix and points
   budget (`AI_COPILOT_RATE_LIMIT_POINTS`/`AI_COPILOT_RATE_LIMIT_TTL`) so
   drafting listings can't starve, or be starved by, chat usage.
+
+### `moderation` (#527)
+
+`ListingCreatedListener` (`listeners/listing-created.listener.ts`) reacts
+to the `listing.created` event by enqueuing a job on the `ai-moderation`
+Bull queue — deliberately off the request path, so a slow or unavailable
+moderation agent never delays listing creation.
+`AiModerationProcessor` (`ai-moderation.processor.ts`) consumes that
+queue: it fetches the listing's NFT content (name/description/attributes),
+makes a single non-agentic call to Anthropic with `flag_content`
+available but **not forced** (`tool_choice: 'auto'`) — unlike
+`draftListing`'s forced call, moderation must be free to conclude "no
+violation" and call nothing — and persists a `ContentFlag` only if the
+model actually calls `flag_content`.
+
+- **Idempotent under redelivery**: before ever calling Anthropic, the
+  processor checks `ContentFlagService.findExistingFlag('listing',
+  listingId)` and skips (no duplicate flag, no wasted API call) if the
+  listing has already been flagged.
+- **Never trusts the model's echoed entity**: same pattern as
+  `creator-copilot`'s `expectedNftId` — `flag_content` is built with
+  `expectedEntity: { entityType: 'listing', entityId: listingId }` closed
+  over server-side, and rejects a flag for any other entity the model
+  might echo.
+- **Bounded retry/backoff**: the enqueued job carries `attempts: 3` with
+  exponential backoff (`listing-created.listener.ts`'s
+  `MODERATION_JOB_OPTIONS`) — a transient Anthropic failure (rate limit,
+  timeout) retries rather than failing permanently on the first attempt;
+  the processor rethrows on failure so Bull drives the retry.
+- **Observability**: structured `Logger` output per job (attempt count,
+  outcome) plus the `ai_moderation_jobs_processed_total` Prometheus
+  counter, labeled by outcome (`flagged`/`clean`/`skipped`/`error`).
+- **On-chain-only listings**: a listing created via the
+  `ENABLE_ONCHAIN_SETTLEMENT` path has no persisted `listings` row (its
+  id is an on-chain sale id, not a UUID). `flag_content`'s schema requires
+  a UUID `entityId`, so if the agent would flag such a listing, the
+  processor logs a warning and skips recording the flag rather than
+  forcing an invalid id through — a pre-existing gap in that settlement
+  path's data model, not something this processor can resolve on its own.
 
 ## Adding a new tool set
 
