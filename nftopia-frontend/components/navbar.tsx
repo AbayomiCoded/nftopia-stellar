@@ -21,9 +21,11 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { WalletConnector } from "@/components/wallet/WalletConnector";
 import { UserDropdown } from "./user-dropdown";
 import { AccountEntryMenu } from "./account-entry-menu";
+import { NotificationDropdown } from "./notifications/notification-dropdown";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageSwitcher, MobileLanguageSwitcher } from "./LanguageSwitcher";
+
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -177,6 +179,9 @@ export function Navbar() {
               <LanguageSwitcher />
             </div>
 
+            {/* Notification Center Dropdown */}
+            <NotificationDropdown />
+
             {/* Desktop: UserDropdown if logged in, WalletConnector + AccountEntryMenu if not */}
             {!loading && (
               isAuthenticated
@@ -188,6 +193,7 @@ export function Navbar() {
                   </div>
                 )
             )}
+
 
             {/* Mobile hamburger */}
             <button
