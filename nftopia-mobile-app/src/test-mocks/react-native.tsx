@@ -12,6 +12,22 @@ export const Text = 'RNText';
 export const TouchableOpacity = 'RNTouchableOpacity';
 export const Pressable = 'RNPressable';
 export const ActivityIndicator = 'RNActivityIndicator';
+export const TextInput = 'RNTextInput';
+export const Modal = 'RNModal';
+
+/** Minimal stand-in: no actual animation, `.start()` fires its callback synchronously so tests don't need fake timers. */
+export const Animated = {
+  Value: class AnimatedValueMock {
+    constructor(_initial: number) {}
+  },
+  spring: (
+    _value: unknown,
+    _config: { toValue: number },
+  ): { start: (cb?: () => void) => void } => ({
+    start: (cb?: () => void) => cb?.(),
+  }),
+  View: 'RNAnimatedView',
+};
 
 export const StyleSheet = {
   create: <T extends Record<string, unknown>>(styles: T): T => styles,
