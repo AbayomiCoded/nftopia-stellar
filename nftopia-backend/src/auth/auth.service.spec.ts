@@ -5,6 +5,7 @@ import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { AuthService } from './auth.service';
 import { User } from '../users/user.entity';
+import { UserRole } from '../common/enums/user-role.enum';
 import { UserWallet } from './entities/user-wallet.entity';
 import { WalletSession } from './entities/wallet-session.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -390,6 +391,29 @@ describe('AuthService', () => {
         password: 'WrongPassword1!',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('includes the user role claim in the access token and auth response', async () => {
+    jwtService.sign
+      .mockReturnValueOnce('access-token-admin')
+      .mockReturnValueOnce('refresh-token-admin');
+
+    const result = await service.buildAuthResponse({
+      id: 'admin-1',
+      email: 'admin@nftopia.io',
+      username: 'admin',
+      role: UserRole.ADMIN,
+    } as User);
+
+    expect(jwtService.sign).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sub: 'admin-1',
+        role: UserRole.ADMIN,
+        type: 'access',
+      }),
+    );
+    expect(result.user.role).toBe(UserRole.ADMIN);
   });
 
   describe('verifyEmail', () => {
