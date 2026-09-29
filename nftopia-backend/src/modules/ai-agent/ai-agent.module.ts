@@ -13,12 +13,15 @@ import { AiUsageService } from './ai-usage.service';
 import { AiAgentHealthService } from './ai-agent-health.service';
 import { ChatSessionService } from './chat-session.service';
 import { AiUsageRecord } from './entities/ai-usage-record.entity';
+import { UserAiCapOverride } from './entities/user-ai-cap-override.entity';
 import { ChatSession } from './entities/chat-session.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { ContentFlag } from './entities/content-flag.entity';
 import { AiToolCallLog } from './entities/ai-tool-call-log.entity';
 import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.guard';
 import { aiChatRateLimiterProvider } from '../../common/guards/ai-chat-rate-limiter.provider';
+import { CopilotRateLimitGuard } from '../../common/guards/copilot-rate-limit.guard';
+import { copilotRateLimiterProvider } from '../../common/guards/copilot-rate-limiter.provider';
 import { ListingCreatedListener } from './listeners/listing-created.listener';
 import { AI_MODERATION_QUEUE_NAME } from './listeners/ai-moderation.types';
 import { ContentFlagService } from './content-flag.service';
@@ -30,6 +33,7 @@ import { PromptInjectionService } from './prompt-injection.service';
     ConfigModule,
     TypeOrmModule.forFeature([
       AiUsageRecord,
+      UserAiCapOverride,
       ChatSession,
       ChatMessage,
       ContentFlag,
@@ -50,6 +54,8 @@ import { PromptInjectionService } from './prompt-injection.service';
     ChatSessionService,
     AiChatRateLimitGuard,
     aiChatRateLimiterProvider,
+    CopilotRateLimitGuard,
+    copilotRateLimiterProvider,
     ListingCreatedListener,
     ContentFlagService,
     PromptInjectionService,
