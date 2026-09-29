@@ -50,15 +50,37 @@ is no default, so a new endpoint-specific method cannot forget to pick one.
 | Tool set               | Endpoint(s)                              | Access      | Capability   | Status      |
 | ----------------------- | ---------------------------------------- | ----------- | ------------ | ----------- |
 | `marketplace-assistant` | `POST /ai/chat`, `POST /ai/chat/stream`  | Any authenticated user | Read-only    | Implemented (`marketplace.tools.ts`) |
-| `creator-copilot`       | *Planned:* `POST /ai/copilot/draft-listing` | NFT creator/owner | Write-capable (drafts a listing on the caller's own NFT) | Not yet implemented |
+| `creator-copilot`       | `POST /ai/copilot/draft-listing`         | NFT creator/owner (ownership verified before the model is ever called) | Write-capable (drafts, but never publishes, a listing for the caller's own NFT) | Implemented (`creator-copilot.tools.ts`, #528) |
 | `moderation`            | Not chat-driven — the `ListingCreatedListener` enqueues a job on the `ai-moderation` Bull queue; a *planned* processor (follow-up issue) resolves this tool set and runs the moderation agent per job. Findings surface via `GET /admin/ai/flags` / `PATCH /admin/ai/flags/:id`. | System (queue worker) only | Write-capable (`flag_content` persists to `content_flags`) | Tool implemented (`moderation.tools.ts`); queue consumer not yet built |
 | `trading`               | *Planned:* trading-proposal endpoints    | Any authenticated user, scoped to their own orders | Write-capable (proposes trades) | Not yet implemented |
 
-`marketplace-assistant` and `moderation` are the tool sets with a
-registered builder today; requesting `creator-copilot` or `trading` from
-`resolveToolSet` throws until their tools files register one. When one of
+`marketplace-assistant`, `moderation`, and `creator-copilot` are the tool
+sets with a registered builder today; requesting `trading` from
+`resolveToolSet` throws until its tools file registers one. When one of
 the planned sets is implemented, add its entry to this table in the same
 PR.
+
+### `creator-copilot` (#528)
+
+`POST /ai/copilot/draft-listing` (`{ nftId }` in the body) drafts a
+title/description/suggested-price for one of the caller's own NFTs via a
+single forced-tool-choice call to `draft_listing` — never the open-ended
+`chat`/`chatStream` loop, since this is one-shot structured output for a
+known NFT rather than a conversation.
+
+- **Ownership is checked twice**: `AiAgentService.draftListing` verifies
+  `nft.ownerId === userId` *before* the model is ever called (fast-fail,
+  no wasted spend); `draft_listing` itself then rejects a model-returned
+  `nftId` that doesn't match the NFT it was asked to draft for, in case the
+  model drifts — the same "never trust identity from tool input" pattern as
+  `userId` in `marketplace.tools.ts`'s `search_orders`/`get_order`.
+- **Never auto-published**: the tool only returns the drafted fields as
+  JSON for the creator to review and edit; creating the actual listing is
+  a separate, explicit call to the existing listing-creation endpoint.
+- **Rate-limited independently of `/ai/chat`**: `CopilotRateLimitGuard`
+  (`copilot-rate-limit.guard.ts`) uses its own Redis key prefix and points
+  budget (`AI_COPILOT_RATE_LIMIT_POINTS`/`AI_COPILOT_RATE_LIMIT_TTL`) so
+  drafting listings can't starve, or be starved by, chat usage.
 
 ## Adding a new tool set
 
