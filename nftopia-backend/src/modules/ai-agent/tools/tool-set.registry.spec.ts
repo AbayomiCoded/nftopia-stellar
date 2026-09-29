@@ -29,6 +29,7 @@ const fakeDeps = {
 
 const fakeModerationDeps = {
   contentFlagService: {} as never,
+  expectedEntity: { entityType: 'listing' as const, entityId: 'listing-1' },
 };
 
 const fakeCreatorCopilotDeps = {
