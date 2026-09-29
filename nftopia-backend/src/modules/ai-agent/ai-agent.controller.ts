@@ -19,6 +19,7 @@ import type { Request } from 'express';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.guard';
+import { CopilotRateLimitGuard } from '../../common/guards/copilot-rate-limit.guard';
 import { AiAgentService } from './ai-agent.service';
 import { AiUsageService, type UsageSummary } from './ai-usage.service';
 import {
@@ -27,6 +28,8 @@ import {
 } from './ai-agent-health.service';
 import { ChatRequestDto } from './dto/chat-request.dto';
 import { SetCapOverrideDto } from './dto/set-cap-override.dto';
+import { DraftListingRequestDto } from './dto/draft-listing-request.dto';
+import type { DraftListingResult } from './tools/creator-copilot.tools';
 import type { ToolSetName } from './tools/tool-set.types';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -114,6 +117,29 @@ export class AiAgentController {
       dto.message,
       dto.sessionId,
     );
+  }
+
+  // Dedicated rate limit bucket (#528) — separate from /ai/chat's, so a
+  // creator drafting listings can't be starved by (or starve) chat usage.
+  // Ownership of the NFT is verified inside AiAgentService.draftListing,
+  // before the model is ever called; this route never trusts a client-sent
+  // owner id, only the JWT-derived userId.
+  @UseGuards(JwtAuthGuard, CopilotRateLimitGuard)
+  @Post('copilot/draft-listing')
+  @ApiOperation({
+    summary:
+      'Draft a marketplace listing (title/description/suggested price) for ' +
+      "an NFT the caller owns. Returns a draft for the creator's review — " +
+      'nothing is published.',
+  })
+  async draftListing(
+    @Req() req: RequestWithUser,
+    @Body() dto: DraftListingRequestDto,
+  ): Promise<DraftListingResult> {
+    if (!req.user?.userId) {
+      throw new UnauthorizedException('Invalid JWT payload');
+    }
+    return this.aiAgentService.draftListing(req.user.userId, dto.nftId);
   }
 
   @UseGuards(JwtAuthGuard)
