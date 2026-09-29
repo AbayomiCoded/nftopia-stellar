@@ -25,7 +25,14 @@ describe('AnalyticsEventService (integration, #531)', () => {
   let service: AnalyticsEventService;
 
   beforeAll(async () => {
-    mongod = await MongoMemoryServer.create();
+    mongod = await MongoMemoryServer.create({
+      // The default 10s launch timeout is comfortably enough in isolation,
+      // but can be exceeded under `npm test`'s full-suite parallelism
+      // (many Jest workers contending for CPU/IO at once slows down the
+      // in-memory mongod's own startup) — raised to keep this test stable
+      // under that load rather than under isolation only.
+      instance: { launchTimeout: 30_000 },
+    });
     connection = await mongoose.createConnection(mongod.getUri()).asPromise();
     // Untyped .model() call, same as what @nestjs/mongoose's own
     // InjectModel does under the hood — forcing the <AnalyticsEventDocument>
@@ -44,7 +51,9 @@ describe('AnalyticsEventService (integration, #531)', () => {
   afterAll(async () => {
     await connection?.close();
     await mongod?.stop();
-  });
+    // Default 5s hook timeout is too tight under full-suite parallelism —
+    // see the launchTimeout comment above for why.
+  }, 30_000);
 
   afterEach(async () => {
     await model.deleteMany({});
