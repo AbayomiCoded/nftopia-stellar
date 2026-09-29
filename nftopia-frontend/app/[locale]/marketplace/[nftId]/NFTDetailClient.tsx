@@ -22,6 +22,7 @@ import OwnerCardSkeleton from "@/components/Skeleton/OwnerCardSkeleton";
 import TransferHistorySkeleton from "@/components/nft/TransferHistorySkeleton";
 import { useNFTByIdQuery, useNFTTransferHistoryQuery } from "@/hooks/graphql/useNFTQueries";
 import TransferHistory from "@/components/nft/TransferHistory";
+import { FavoriteButton } from "@/components/ui/FavoriteButton";
 import { ReportButton } from "@/src/components/ReportButton";
 
 // Helper function to format address
@@ -283,7 +284,10 @@ export default function NFTDetailClient({
           <div className="space-y-6">
             {/* NFT Name & Token ID */}
             <div>
-              <h1 className="text-3xl font-bold text-white mb-2">{nft.name}</h1>
+              <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
+                <h1 className="text-3xl font-bold text-white">{nft.name}</h1>
+                <FavoriteButton id={nftId} itemType="nft" name={nft.name} variant="button" size="md" />
+              </div>
               <div className="flex items-center gap-3 text-sm text-gray-400">
                 <span>Token ID: <span className="font-mono text-gray-300">{nft.tokenId}</span></span>
                 <button

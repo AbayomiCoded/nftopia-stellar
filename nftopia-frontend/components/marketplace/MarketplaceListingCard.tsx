@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { OptimizedImage } from "@/components/image";
+import { FavoriteButton } from "@/components/ui/FavoriteButton";
 import { formatAmount } from "@/components/marketplace/format";
 import { cn } from "@/lib/utils";
 import type { MarketplaceListing } from "@/features/marketplace/api/marketplace-listings";
@@ -31,11 +32,11 @@ export function MarketplaceListingCard({
         containIntrinsicSize: "320px",
       }}
     >
-      <Link
-        href={`/marketplace/${listing.nftId}`}
-        className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
-      >
-        <div className="relative aspect-square w-full overflow-hidden bg-[#120f2e]">
+      <div className="relative aspect-square w-full overflow-hidden bg-[#120f2e]">
+        <Link
+          href={`/marketplace/${listing.nftId}`}
+          className="block h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+        >
           <OptimizedImage
             src={listing.image || "/nftopia-03.svg"}
             alt={listing.name}
@@ -44,18 +45,27 @@ export function MarketplaceListingCard({
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             fallbackSrc="/nftopia-03.svg"
           />
-          {!isActive ? (
-            <span
-              className={cn(
-                "absolute left-2 top-2 rounded-full px-2 py-0.5 text-xs font-medium",
-                "bg-zinc-900/80 text-zinc-200",
-              )}
-            >
-              {listing.status}
-            </span>
-          ) : null}
+        </Link>
+        <div className="absolute right-2 top-2 z-20">
+          <FavoriteButton
+            id={String(listing.nftId)}
+            itemType="nft"
+            name={listing.name}
+            variant="overlay"
+            size="sm"
+          />
         </div>
-      </Link>
+        {!isActive ? (
+          <span
+            className={cn(
+              "absolute left-2 top-2 rounded-full px-2 py-0.5 text-xs font-medium z-10",
+              "bg-zinc-900/80 text-zinc-200",
+            )}
+          >
+            {listing.status}
+          </span>
+        ) : null}
+      </div>
 
       <div className="flex flex-1 flex-col gap-1 p-3">
         <h3 className="truncate text-sm font-semibold text-white">
