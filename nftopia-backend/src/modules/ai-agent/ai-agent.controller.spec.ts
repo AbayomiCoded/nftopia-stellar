@@ -1,4 +1,8 @@
-import { RequestMethod, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  RequestMethod,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   GUARDS_METADATA,
   METHOD_METADATA,
@@ -12,6 +16,7 @@ import { AiUsageService } from './ai-usage.service';
 import { AiAgentHealthService } from './ai-agent-health.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.guard';
+import { CopilotRateLimitGuard } from '../../common/guards/copilot-rate-limit.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
 describe('AiAgentController', () => {
@@ -19,6 +24,7 @@ describe('AiAgentController', () => {
     chat: jest.fn(),
     chatStream: jest.fn(),
     getToolLogs: jest.fn(),
+    draftListing: jest.fn(),
   };
 
   const aiUsageService = {
@@ -440,6 +446,71 @@ describe('AiAgentController', () => {
         'target-user',
       );
       expect(result).toEqual({ cleared: true });
+    });
+  });
+
+  describe('draftListing (#528)', () => {
+    const NFT_ID = '123e4567-e89b-12d3-a456-426614174000';
+
+    it('applies JwtAuthGuard and CopilotRateLimitGuard (not AiChatRateLimitGuard) to the route', () => {
+      const guards = Reflect.getMetadata(
+        GUARDS_METADATA,
+        controller.draftListing,
+      ) as unknown[] | undefined;
+
+      expect(guards).toContain(JwtAuthGuard);
+      expect(guards).toContain(CopilotRateLimitGuard);
+      expect(guards).not.toContain(AiChatRateLimitGuard);
+    });
+
+    it('is registered as POST copilot/draft-listing', () => {
+      expect(Reflect.getMetadata(PATH_METADATA, controller.draftListing)).toBe(
+        'copilot/draft-listing',
+      );
+      expect(
+        Reflect.getMetadata(METHOD_METADATA, controller.draftListing),
+      ).toBe(RequestMethod.POST);
+    });
+
+    it('delegates to AiAgentService.draftListing with the authenticated user id and requested nftId', async () => {
+      const draft = {
+        nftId: NFT_ID,
+        title: 'Cosmic Ape #7',
+        description: 'A rare cosmic ape.',
+        suggestedPrice: 250,
+        currency: 'XLM' as const,
+        reasoning: 'Priced above the collection floor.',
+      };
+      aiAgentService.draftListing.mockResolvedValue(draft);
+
+      const result = await controller.draftListing(makeRequest('user-1'), {
+        nftId: NFT_ID,
+      });
+
+      expect(aiAgentService.draftListing).toHaveBeenCalledWith(
+        'user-1',
+        NFT_ID,
+      );
+      expect(result).toEqual(draft);
+    });
+
+    it('rejects with UnauthorizedException when no authenticated user is present', async () => {
+      await expect(
+        controller.draftListing(makeRequest(undefined), { nftId: NFT_ID }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(aiAgentService.draftListing).not.toHaveBeenCalled();
+    });
+
+    it('propagates rejection (e.g. ownership failure) from AiAgentService.draftListing unchanged', async () => {
+      aiAgentService.draftListing.mockRejectedValue(
+        new ForbiddenException(
+          'You can only draft a listing for an NFT you own.',
+        ),
+      );
+
+      await expect(
+        controller.draftListing(makeRequest('user-1'), { nftId: NFT_ID }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 });
