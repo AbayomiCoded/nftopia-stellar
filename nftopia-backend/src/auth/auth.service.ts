@@ -46,6 +46,7 @@ type JwtUserPayload = {
   username?: string;
   email?: string;
   walletAddress?: string;
+  role?: string;
   twoFactorVerified?: boolean;
 };
 
@@ -68,6 +69,7 @@ type AuthResponse = {
     walletProvider?: string | null;
     avatarUrl?: string | null;
     bannerUrl?: string | null;
+    role?: string | null;
   };
 };
 
@@ -592,6 +594,7 @@ export class AuthService {
         username: user.username,
         email: resolvedEmail,
         walletAddress: resolvedWalletAddress,
+        role: user.role,
         twoFactorVerified: true,
       },
       family.id,
@@ -609,6 +612,7 @@ export class AuthService {
         walletProvider: user.walletProvider,
         avatarUrl: user.avatarUrl ?? null,
         bannerUrl: user.bannerUrl ?? null,
+        role: user.role ?? null,
       },
     };
   }
@@ -703,6 +707,7 @@ export class AuthService {
             username: user.username,
             email: user.email ?? undefined,
             walletAddress: user.walletAddress ?? user.address ?? undefined,
+            role: user.role,
             twoFactorVerified: true,
           },
           family.id,
@@ -738,6 +743,7 @@ export class AuthService {
       username: user.username,
       email: user.email,
       walletAddress: user.walletAddress,
+      role: user.role,
       twoFactorVerified: user.twoFactorVerified || false,
       type: 'access',
     });
@@ -1001,6 +1007,7 @@ export class AuthService {
       username: user.username,
       email: user.email,
       walletAddress: user.walletAddress,
+      role: user.role,
       twoFactorVerified: user.twoFactorVerified || false,
       type: 'access',
     });
