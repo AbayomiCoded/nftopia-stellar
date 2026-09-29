@@ -262,9 +262,43 @@ export interface AppActions {
 
 export type AppStore = AppState & AppActions;
 
+// Notification Store Types
+export type NotificationType = 'bid' | 'sale' | 'follow' | 'system' | 'like' | 'auction';
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  type: NotificationType;
+  timestamp: string;
+  read: boolean;
+  link?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface NotificationState {
+  notifications: NotificationItem[];
+  isHydrated: boolean;
+}
+
+export interface NotificationActions {
+  addNotification: (
+    notification: Omit<NotificationItem, 'id' | 'timestamp' | 'read'> & Partial<Pick<NotificationItem, 'id' | 'timestamp' | 'read'>>
+  ) => void;
+  markAsRead: (id: string) => void;
+  markAllAsRead: () => void;
+  removeNotification: (id: string) => void;
+  clearAll: () => void;
+  setHydrated: (hydrated: boolean) => void;
+}
+
+export type NotificationStore = NotificationState & NotificationActions;
+
 export interface RootStore {
   auth: AuthStore;
   collections: CollectionStore;
   preferences: PreferencesStore;
   app: AppStore;
+  notifications: NotificationStore;
 }
+

@@ -33,6 +33,14 @@ export {
   useToast,
 } from "./app-store";
 
+// Notification Store
+export {
+  useNotificationStore,
+  useUnreadCount,
+  useNotificationActions,
+} from "./notification-store";
+
+
 export { useMarketplace } from "../../features/marketplace/store/marketplaceStore";
 export { useNFTs } from "../../features/nft/store/nftStore";
 export { useUser, useUserProfile } from "../../features/user/store/userStore";
