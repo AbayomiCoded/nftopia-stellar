@@ -208,6 +208,7 @@ export interface PreferencesState {
   timezone: string;
   recentSearches: string[];
   favoriteCollections: string[];
+  favoriteNFTs: string[];
   watchlist: string[];
   isHydrated: boolean;
 }
@@ -222,6 +223,9 @@ export interface PreferencesActions {
   clearRecentSearches: () => void;
   addToFavorites: (collectionId: string) => void;
   removeFromFavorites: (collectionId: string) => void;
+  addToFavoriteNFTs: (nftId: string) => void;
+  removeFromFavoriteNFTs: (nftId: string) => void;
+  toggleFavoriteNFT: (nftId: string) => void;
   addToWatchlist: (nftId: string) => void;
   removeFromWatchlist: (nftId: string) => void;
   resetPreferences: () => void;
