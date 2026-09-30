@@ -59,7 +59,7 @@ export interface BottomSheetProps {
   /** Announced to screen readers as the sheet's label; also where focus moves to on open. */
   accessibilityLabel?: string;
   /** Ref to the element that triggered the sheet (e.g. the button that opened it) — screen-reader focus restores to it on close, if given. */
-  restoreFocusRef?: React.RefObject<View>;
+  restoreFocusRef?: React.RefObject<View | null>;
   testID?: string;
 }
 
