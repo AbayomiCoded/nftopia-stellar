@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, AccessibilityInfo } from 'react-native';
 import { colors } from '@/constants/theme';
+import { haptics } from '@/lib/haptics';
 
 export interface ValidationErrorProps {
   message: string | null | undefined;
@@ -19,6 +20,7 @@ export default function ValidationError({ message, testID }: ValidationErrorProp
       // Android live regions don't reliably fire on iOS, so announce explicitly
       // to make sure VoiceOver/TalkBack both pick up the new error text.
       AccessibilityInfo.announceForAccessibility(message);
+      haptics.error();
     }
   }, [message]);
 
