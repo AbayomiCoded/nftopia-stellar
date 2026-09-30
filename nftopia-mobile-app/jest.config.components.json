@@ -9,6 +9,9 @@
   "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json"],
   "testMatch": ["**/__tests__/**/*.test.tsx", "**/*.test.tsx"],
   "testPathIgnorePatterns": ["/node_modules/"],
+  "globals": {
+    "__DEV__": false
+  },
   "moduleNameMapper": {
     "^react-native$": "<rootDir>/src/test-mocks/react-native.tsx",
     "^@react-native-async-storage/async-storage$": "<rootDir>/src/test-mocks/async-storage.ts",
