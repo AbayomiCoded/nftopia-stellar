@@ -14,6 +14,7 @@ export const Pressable = 'RNPressable';
 export const ActivityIndicator = 'RNActivityIndicator';
 export const TextInput = 'RNTextInput';
 export const Modal = 'RNModal';
+export const ScrollView = 'RNScrollView';
 
 /** Minimal stand-in: no actual animation, `.start()` fires its callback synchronously so tests don't need fake timers. */
 export const Animated = {
