@@ -1,8 +1,8 @@
 import React, { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
-import * as Haptics from 'expo-haptics';
 import { colors, spacing, borderRadius } from '@/constants/theme';
 import BottomSheet from '@/components/ui/BottomSheet';
+import { haptics } from '@/lib/haptics';
 
 interface ConfirmationDialogProps {
   visible: boolean;
@@ -10,7 +10,13 @@ interface ConfirmationDialogProps {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  onConfirm: () => void;
+  /**
+   * May return a Promise (#467) — if it does, and it rejects, an error
+   * haptic fires. Callers that already handle their own errors (e.g.
+   * SendScreen, which shows its own "Send failed" alert) can keep
+   * catching internally; this is purely a fallback for callers that don't.
+   */
+  onConfirm: () => void | Promise<void>;
   onCancel: () => void;
   destructive?: boolean;
   /**
@@ -73,12 +79,14 @@ export default function ConfirmationDialog({
 
   const handleConfirm = () => {
     if (confirmDisabled) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onConfirm();
+    haptics.tapStrong();
+    Promise.resolve(onConfirm()).catch(() => {
+      haptics.error();
+    });
   };
 
   const handleCancel = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     onCancel();
   };
 
