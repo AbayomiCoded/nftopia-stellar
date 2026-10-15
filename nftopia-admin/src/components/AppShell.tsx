@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../auth/useAuth'
 import { LocaleSwitcher } from './LocaleSwitcher'
+import { canManageDlq } from '../dlq/access'
 
 // ---------------------------------------------------------------------------
 // Icon components (inline SVG, no external icon lib required)
@@ -88,6 +89,25 @@ function FlagIcon() {
   )
 }
 
+function RetryIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m0 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"
+      />
+    </svg>
+  )
+}
+
 function MenuIcon() {
   return (
     <svg
@@ -145,12 +165,15 @@ interface NavItem {
   to: string
   labelKey: string
   icon: ReactNode
+  /** Hides the item unless the signed-in role passes this check. */
+  visibleTo?: (role: string | undefined) => boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', labelKey: 'nav.dashboard', icon: <DashboardIcon /> },
   { to: '/collections', labelKey: 'nav.collections', icon: <CollectionsIcon /> },
   { to: '/content-flags', labelKey: 'nav.contentFlags', icon: <FlagIcon /> },
+  { to: '/transaction-retry', labelKey: 'nav.transactionRetry', icon: <RetryIcon />, visibleTo: canManageDlq },
   { to: '/settings', labelKey: 'nav.settings', icon: <SettingsIcon /> },
 ]
 
@@ -164,6 +187,9 @@ interface SidebarContentProps {
 
 function SidebarContent({ onNavClick }: SidebarContentProps) {
   const { t } = useTranslation()
+  const { state } = useAuth()
+  const role = state.status === 'authenticated' ? state.user.role : undefined
+  const items = NAV_ITEMS.filter((item) => !item.visibleTo || item.visibleTo(role))
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     [
@@ -188,7 +214,7 @@ function SidebarContent({ onNavClick }: SidebarContentProps) {
       {/* Navigation */}
       <nav aria-label="Main navigation" className="flex-1 overflow-y-auto px-2 py-3">
         <ul className="flex flex-col gap-0.5">
-          {NAV_ITEMS.map(({ to, labelKey, icon }) => (
+          {items.map(({ to, labelKey, icon }) => (
             <li key={to}>
               <NavLink to={to} className={navLinkClass} onClick={onNavClick}>
                 {icon}
