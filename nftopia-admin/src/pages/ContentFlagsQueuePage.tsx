@@ -114,6 +114,7 @@ export default function ContentFlagsQueuePage() {
     setLoading(true)
     try {
       const query = new URLSearchParams({ status: statusFilter, limit: String(PAGE_SIZE), offset: String(offset) })
+      if (typeFilter !== 'all') query.set('entityType', typeFilter)
       const response = await api(`${API_BASE_URL}/admin/ai/flags?${query.toString()}`)
       if (!response.ok) {
         throw new Error(String(response.status))
@@ -121,7 +122,6 @@ export default function ContentFlagsQueuePage() {
       const page = unwrap(await response.json())
       setFlags(page.flags)
       setTotal(page.total ?? page.flags.length)
-      setSelected([])
       const details = await Promise.all(page.flags.map(async (flag) => {
         try {
           const endpoint = flag.entityType === 'nft' ? 'nfts'
@@ -144,7 +144,7 @@ export default function ContentFlagsQueuePage() {
     } finally {
       setLoading(false)
     }
-  }, [api, offset, statusFilter, t])
+  }, [api, offset, statusFilter, t, typeFilter])
 
   useEffect(() => {
     void load()
@@ -258,6 +258,7 @@ export default function ContentFlagsQueuePage() {
             value={statusFilter}
             onChange={(event) => {
               setOffset(0)
+              setSelected([])
               setStatusFilter(event.target.value as FlagStatusFilter)
             }}
             className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-white"
@@ -273,6 +274,7 @@ export default function ContentFlagsQueuePage() {
             aria-label={t('contentFlags.filters.type')}
             value={typeFilter}
             onChange={(event) => {
+              setOffset(0)
               setTypeFilter(event.target.value as FlagTypeFilter)
               setSelected([])
             }}
@@ -296,7 +298,7 @@ export default function ContentFlagsQueuePage() {
         <p className="text-xs text-slate-400">{t('contentFlags.results', { count: total })}</p>
       ) : null}
 
-      {loading ? (
+      {loading && flags.length === 0 ? (
         <p className="text-sm text-slate-400">Loading…</p>
       ) : visibleFlags.length === 0 ? (
         <p className="text-sm text-slate-400">{t('contentFlags.empty')}</p>

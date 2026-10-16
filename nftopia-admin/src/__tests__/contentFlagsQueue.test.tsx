@@ -55,7 +55,7 @@ function setupFetch() {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === 'PATCH') return new Response('{}', { status: 200 })
     const url = String(input)
-    if (url.includes('/nfts/') || url.includes('/listings/') || url.includes('/collections/')) {
+    if (/\/(nfts|listings|collections)\/[^/?]+(?:\?|$)/.test(url)) {
       return Response.json({})
     }
     return Response.json({ flags, total: flags.length })
@@ -98,7 +98,11 @@ describe('Content flags moderation queue', () => {
     ))
 
     fireEvent.change(screen.getByLabelText('Content type'), { target: { value: 'listing' } })
-    expect(screen.getByText('Suspicious listing text')).toBeTruthy()
+    await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining('entityType=listing'),
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    ))
+    expect(await screen.findByText('Suspicious listing text')).toBeTruthy()
     expect(screen.queryByText('Possible misleading metadata')).toBeNull()
   })
 
@@ -124,7 +128,11 @@ describe('Content flags moderation queue', () => {
   it('bulk resolves multiple selected pending flags', async () => {
     const fetchMock = setupFetch()
     render(<ContentFlagsQueuePage />)
-    await screen.findByText('Possible misleading metadata')
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select flag-1')).toBeTruthy()
+      expect(screen.getByLabelText('Select flag-2')).toBeTruthy()
+      expect(screen.queryByText('Loading…')).toBeNull()
+    })
 
     fireEvent.click(screen.getByLabelText('Select flag-1'))
     fireEvent.click(screen.getByLabelText('Select flag-2'))

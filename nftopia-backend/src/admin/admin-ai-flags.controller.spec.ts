@@ -27,6 +27,7 @@ describe('AdminAiFlagsController', () => {
 
       expect(contentFlagService.listFlags).toHaveBeenCalledWith({
         status: 'pending',
+        entityType: undefined,
         limit: undefined,
         offset: undefined,
       });
@@ -39,6 +40,19 @@ describe('AdminAiFlagsController', () => {
 
       expect(contentFlagService.listFlags).toHaveBeenCalledWith({
         status: 'reviewed',
+        limit: 10,
+        offset: 20,
+      });
+    });
+
+    it('passes through the entity type filter', async () => {
+      contentFlagService.listFlags.mockResolvedValue({ flags: [], total: 0 });
+
+      await controller.list({ status: 'pending', entityType: 'listing', limit: 10, offset: 20 });
+
+      expect(contentFlagService.listFlags).toHaveBeenCalledWith({
+        status: 'pending',
+        entityType: 'listing',
         limit: 10,
         offset: 20,
       });
@@ -68,6 +82,19 @@ describe('AdminAiFlagsController', () => {
         reviewedBy: 'admin-1',
         ipAddress: '127.0.0.1',
         userAgent: 'jest',
+      });
+    });
+
+    it('passes through the entity type filter', async () => {
+      contentFlagService.listFlags.mockResolvedValue({ flags: [], total: 0 });
+
+      await controller.list({ status: 'pending', entityType: 'listing', limit: 10, offset: 20 });
+
+      expect(contentFlagService.listFlags).toHaveBeenCalledWith({
+        status: 'pending',
+        entityType: 'listing',
+        limit: 10,
+        offset: 20,
       });
     });
 
