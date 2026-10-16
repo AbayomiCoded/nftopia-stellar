@@ -19,6 +19,11 @@ import {
   CREATOR_COPILOT_TOOL_NAMES,
   type CreatorCopilotToolsDeps,
 } from './creator-copilot.tools';
+import {
+  buildTradingTools,
+  TRADING_TOOL_NAMES,
+  type TradingToolsDeps,
+} from './trading.tools';
 
 const registry = new Map<ToolSetName, ToolSetRegistration<any>>();
 
@@ -61,6 +66,12 @@ registerToolSet<CreatorCopilotToolsDeps>(
   'creator-copilot',
   buildCreatorCopilotTools,
   CREATOR_COPILOT_TOOL_NAMES,
+);
+
+registerToolSet<TradingToolsDeps>(
+  'trading',
+  buildTradingTools,
+  TRADING_TOOL_NAMES,
 );
 
 /**
