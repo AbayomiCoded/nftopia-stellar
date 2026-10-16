@@ -115,5 +115,39 @@
       "error": "No se pudo resolver la bandera. Inténtalo de nuevo.",
       "bulkError": "No se pudieron resolver las banderas. Inténtalo de nuevo."
     }
+  },
+  "contentFlags": {
+    "filters": {
+      "status": "Estado",
+      "type": "Tipo de contenido"
+    },
+    "types": {
+      "all": "Todos los tipos",
+      "listing": "Anuncio",
+      "nft": "NFT",
+      "collection": "Colección"
+    },
+    "status": {
+      "pending": "Pendiente",
+      "reviewed": "Revisado",
+      "dismissed": "Descartado"
+    },
+    "severity": {
+      "low": "Gravedad baja",
+      "medium": "Gravedad media",
+      "high": "Gravedad alta",
+      "critical": "Gravedad crítica"
+    },
+    "results": "{{count}} elementos coincidentes (se muestran hasta 50).",
+    "empty": "No hay elementos que coincidan con estos filtros.",
+    "columns": {
+      "status": "Estado"
+    },
+    "pagination": {
+      "label": "Páginas de contenido marcado",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "page": "Página {{page}} de {{pages}}"
+    }
   }
 }
