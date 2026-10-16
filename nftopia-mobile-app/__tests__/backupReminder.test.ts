@@ -1,4 +1,3 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { Wallet } from '@/src/services/stellar/types';
 
 // Mock wallet data for testing
