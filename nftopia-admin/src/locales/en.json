@@ -32,6 +32,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "users": "Users",
     "collections": "Collections",
     "settings": "Settings",
     "contentFlags": "Content Flags"
@@ -135,6 +136,34 @@
     "success": {
       "resolve": "Flag resolved.",
       "bulkResolve": "{{count}} flags resolved."
+    }
+  },
+  "users": {
+    "title": "User Management",
+    "description": "Search, inspect account profiles, examine Stellar wallets, and manage ban status.",
+    "search": "Search by username, email, or wallet address…",
+    "total": "{{count}} Total",
+    "filters": {
+      "all": "All",
+      "active": "Active",
+      "banned": "Banned"
+    },
+    "table": {
+      "user": "User",
+      "wallet": "Stellar Wallet",
+      "role": "Role",
+      "status": "Status",
+      "joined": "Joined",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "banned": "Banned"
+    },
+    "actions": {
+      "details": "Details",
+      "ban": "Ban",
+      "unban": "Unban"
     }
   }
 }

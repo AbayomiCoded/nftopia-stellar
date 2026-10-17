@@ -1,4 +1,13 @@
-import { Controller, Put, Param, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Put,
+  Get,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -6,6 +15,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums/user-role.enum';
 import { RequestUser } from '../common/audit/audit.decorator';
 import type { Request } from 'express';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { BanUserDto } from './dto/ban-user.dto';
 
 interface AuthUser {
   userId: string;
@@ -17,16 +28,30 @@ interface AuthUser {
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
+  @Get('users')
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  async listUsers(@Query() query: ListUsersQueryDto) {
+    return this.adminService.listUsers(query);
+  }
+
+  @Get('users/:id')
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  async getUserDetails(@Param('id') id: string) {
+    return this.adminService.getUserDetails(id);
+  }
+
   @Put('users/:id/ban')
   @Roles(UserRole.ADMIN)
   async banUser(
     @Param('id') id: string,
+    @Body() body: BanUserDto,
     @RequestUser() user: AuthUser,
     @Req() req: Request,
   ) {
     return this.adminService.banUser(
       user.userId,
       id,
+      body?.reason,
       req.ip,
       req.get('user-agent'),
     );

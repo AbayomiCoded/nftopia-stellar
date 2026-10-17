@@ -32,6 +32,7 @@
   },
   "nav": {
     "dashboard": "Panel",
+    "users": "Usuarios",
     "collections": "Colecciones",
     "settings": "Configuración",
     "contentFlags": "Contenido marcado"
@@ -114,6 +115,34 @@
       "bulkSuccess": "{{count}} banderas resueltas correctamente.",
       "error": "No se pudo resolver la bandera. Inténtalo de nuevo.",
       "bulkError": "No se pudieron resolver las banderas. Inténtalo de nuevo."
+    }
+  },
+  "users": {
+    "title": "Gestión de usuarios",
+    "description": "Buscar, inspeccionar perfiles de cuenta, examinar carteras Stellar y gestionar el estado de bloqueo.",
+    "search": "Buscar por nombre de usuario, correo electrónico o dirección de cartera…",
+    "total": "{{count}} Total",
+    "filters": {
+      "all": "Todos",
+      "active": "Activos",
+      "banned": "Bloqueados"
+    },
+    "table": {
+      "user": "Usuario",
+      "wallet": "Cartera Stellar",
+      "role": "Rol",
+      "status": "Estado",
+      "joined": "Fecha de registro",
+      "actions": "Acciones"
+    },
+    "status": {
+      "active": "Activo",
+      "banned": "Bloqueado"
+    },
+    "actions": {
+      "details": "Detalles",
+      "ban": "Bloquear",
+      "unban": "Desbloquear"
     }
   }
 }

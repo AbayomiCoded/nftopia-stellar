@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage'
 // Route-level code splitting — each page is loaded only when navigated to.
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const CollectionsPage = lazy(() => import('./pages/CollectionsPage'))
+const UsersPage = lazy(() => import('./pages/UsersPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const ContentFlagsQueuePage = lazy(() => import('./pages/ContentFlagsQueuePage'))
 
@@ -34,6 +35,7 @@ function App() {
           <Route element={<AppShell />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/users" element={<UsersPage />} />
             <Route path="/collections" element={<CollectionsPage />} />
             <Route path="/content-flags" element={<ContentFlagsQueuePage />} />
             <Route path="/settings" element={<SettingsPage />} />
