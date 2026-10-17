@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { API_BASE_URL } from '../auth/authApi'
 import { createAuthorizedFetch } from '../auth/authorizedFetch'
 import { useAuth } from '../auth/useAuth'
@@ -41,7 +40,6 @@ function unwrapDetail(body: unknown): UserDetailData | null {
 }
 
 export default function UsersPage() {
-  const { t } = useTranslation()
   const { store } = useAuth()
   const api = useMemo(() => createAuthorizedFetch(store), [store])
 

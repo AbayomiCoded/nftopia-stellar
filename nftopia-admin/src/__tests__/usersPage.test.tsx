@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { DataTable, type Column } from '../components/DataTable'
 import { BanUserDialog } from '../components/BanUserDialog'
 import { UserDetailModal, type UserDetailData } from '../components/UserDetailModal'

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { explorerUrl } from '../utils/explorerUrl'
 
 export interface UserWalletItem {
@@ -70,6 +70,17 @@ export interface UserDetailModalProps {
 export function UserDetailModal({
   open,
   userId,
+  ...props
+}: UserDetailModalProps) {
+  if (!open || !userId) {
+    return null
+  }
+
+  return <UserDetailModalContent key={userId} userId={userId} {...props} />
+}
+
+function UserDetailModalContent({
+  userId,
   loading = false,
   error = null,
   detail,
@@ -77,17 +88,9 @@ export function UserDetailModal({
   onBanClick,
   onUnbanClick,
   unbanning = false,
-}: UserDetailModalProps) {
+}: Omit<UserDetailModalProps, 'open'>) {
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState<'profile' | 'wallets' | 'activity' | 'moderation'>('profile')
-
-  useEffect(() => {
-    setActiveTab('profile')
-  }, [userId])
-
-  if (!open || !userId) {
-    return null
-  }
 
   const copyAddress = (address: string) => {
     void navigator.clipboard.writeText(address)
