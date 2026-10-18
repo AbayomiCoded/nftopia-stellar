@@ -68,6 +68,7 @@ jest.mock('@/stores/walletStore', () => ({
 import { Keypair } from 'stellar-sdk';
 import { useAuthStore } from '../authStore';
 import { walletAuthService } from '@/src/services/auth/walletAuth.service';
+import { tokenStorage } from '@/src/services/auth/tokenStorage';
 import { AuthResponse } from '@/src/services/auth/types';
 import { Wallet } from '@/src/services/stellar/types';
 
@@ -170,6 +171,21 @@ describe('useAuthStore (top-level)', () => {
       expect(error).toBeNull();
     });
 
+    it('persists tokens via tokenStorage on successful login', async () => {
+      const wallet = makeWallet();
+      const authResponse = makeAuthResponse(wallet);
+      mockWalletAuthService.walletLogin.mockResolvedValue(authResponse);
+      const saveTokensSpy = jest.spyOn(tokenStorage, 'saveTokens');
+
+      await getStore().loginWithWallet(wallet);
+
+      expect(saveTokensSpy).toHaveBeenCalledWith(
+        authResponse.access_token,
+        authResponse.refresh_token,
+      );
+      saveTokensSpy.mockRestore();
+    });
+
     it('sets error, leaves isAuthenticated false, and rethrows when WalletAuthService rejects', async () => {
       const wallet = makeWallet();
       mockWalletAuthService.walletLogin.mockRejectedValue(new Error('Invalid wallet signature'));
@@ -182,6 +198,17 @@ describe('useAuthStore (top-level)', () => {
       expect(isAuthenticated).toBe(false);
       expect(error).toBe('Invalid wallet signature');
       expect(loading).toBe(false);
+    });
+
+    it('guarantees loading is reset to false in finally block on failure', async () => {
+      const wallet = makeWallet();
+      mockWalletAuthService.walletLogin.mockRejectedValue(new Error('Network failure'));
+
+      await expect(getStore().loginWithWallet(wallet)).rejects.toThrow('Network failure');
+
+      expect(getStore().loading).toBe(false);
+      expect(getStore().isAuthenticated).toBe(false);
+      expect(getStore().error).toBe('Network failure');
     });
   });
 

@@ -185,6 +185,9 @@ export const useAuthStore = createStore<AuthStore>({
       set({ loading: true, error: null });
       try {
         const authResponse = await walletAuthService.walletLogin(wallet);
+        if (authResponse?.access_token && authResponse?.refresh_token) {
+          await tokenStorage.saveTokens(authResponse.access_token, authResponse.refresh_token);
+        }
         const expiry = await tokenStorage.getTokenExpiryTime();
         set({
           user: {
@@ -196,7 +199,6 @@ export const useAuthStore = createStore<AuthStore>({
           wallet,
           isAuthenticated: true,
           isCreator: false,
-          loading: false,
           lastLogin: new Date().toISOString(),
           sessionExpiryTime: expiry,
           isLocked: false,
@@ -206,11 +208,13 @@ export const useAuthStore = createStore<AuthStore>({
       } catch (error) {
         set({
           error: error instanceof Error ? error.message : 'Failed to sign in with wallet',
-          loading: false,
+          isAuthenticated: false,
         });
         // Re-throw so the calling screen (which owns its own submit/loading
         // UI) knows not to proceed past the login step.
         throw error;
+      } finally {
+        set({ loading: false });
       }
     },
 
