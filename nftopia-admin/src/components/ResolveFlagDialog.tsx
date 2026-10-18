@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export type ResolutionOutcome = 'approve' | 'reject' | 'dismiss';
+export type ResolutionOutcome = 'review' | 'dismiss';
 
 export interface ResolveFlagPayload {
   outcome: ResolutionOutcome;
@@ -18,17 +18,15 @@ export interface ResolveFlagDialogProps {
   onSubmit: (payload: ResolveFlagPayload) => void | Promise<void>;
 }
 
-const OUTCOMES: ResolutionOutcome[] = ['approve', 'reject', 'dismiss'];
+const OUTCOMES: ResolutionOutcome[] = ['review', 'dismiss'];
 
 const OUTCOME_LABELS: Record<ResolutionOutcome, string> = {
-  approve: 'Approve',
-  reject: 'Reject',
+  review: 'Mark reviewed',
   dismiss: 'Dismiss',
 };
 
 const OUTCOME_DESCRIPTIONS: Record<ResolutionOutcome, string> = {
-  approve: 'Confirm the flagged content is acceptable and keep it visible.',
-  reject: 'Confirm the flagged content violates policy and remove it.',
+  review: 'Record that a moderator reviewed this flag.',
   dismiss: 'Mark the flag as a false positive without acting on the content.',
 };
 
@@ -55,7 +53,7 @@ export default function ResolveFlagDialog({ open, ...props }: ResolveFlagDialogP
 function ResolveFlagDialogForm({
   flagId,
   flagCount,
-  defaultOutcome = 'approve',
+  defaultOutcome = 'review',
   submitting = false,
   error = null,
   onClose,

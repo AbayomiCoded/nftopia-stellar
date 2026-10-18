@@ -82,7 +82,7 @@
   "contentFlags": {
     "title": "Content Flags",
     "description": "Review and resolve AI-flagged content.",
-    "empty": "No pending flags.",
+    "empty": "No flags match these filters.",
     "error": {
       "load": "Unable to load content flags.",
       "resolve": "Unable to resolve the flag. Please try again.",
@@ -136,6 +136,34 @@
     "success": {
       "resolve": "Flag resolved.",
       "bulkResolve": "{{count}} flags resolved."
+    },
+    "filters": {
+      "status": "Status",
+      "type": "Content type"
+    },
+    "types": {
+      "all": "All types",
+      "listing": "Listing",
+      "nft": "NFT",
+      "collection": "Collection"
+    },
+    "status": {
+      "pending": "Pending",
+      "reviewed": "Reviewed",
+      "dismissed": "Dismissed"
+    },
+    "severity": {
+      "low": "Low severity",
+      "medium": "Medium severity",
+      "high": "High severity",
+      "critical": "Critical severity"
+    },
+    "results": "{{count}} matching flags (showing up to 50).",
+    "pagination": {
+      "label": "Content flag pages",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {{page}} of {{pages}}"
     }
   },
   "dlq": {

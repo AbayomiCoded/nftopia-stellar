@@ -148,6 +148,14 @@ describe('ContentFlagService', () => {
       });
     });
 
+    it('filters by entity type when provided', async () => {
+      await service.listFlags({ entityType: 'listing' });
+
+      expect(qb.andWhere).toHaveBeenCalledWith('flag.entityType = :entityType', {
+        entityType: 'listing',
+      });
+    });
+
     it('returns flags and total count', async () => {
       qb.getCount.mockResolvedValue(3);
       qb.getMany.mockResolvedValue([{ id: 'flag-1' }]);

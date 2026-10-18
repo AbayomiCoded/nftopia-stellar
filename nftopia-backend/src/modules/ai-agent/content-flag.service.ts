@@ -33,6 +33,7 @@ export interface ResolveContentFlagInput {
 
 export interface ListContentFlagsFilter {
   status?: ContentFlagStatus;
+  entityType?: ContentFlagEntityType;
   limit?: number;
   offset?: number;
 }
@@ -97,6 +98,9 @@ export class ContentFlagService {
 
     if (filter.status) {
       qb.andWhere('flag.status = :status', { status: filter.status });
+    }
+    if (filter.entityType) {
+      qb.andWhere('flag.entityType = :entityType', { entityType: filter.entityType });
     }
 
     const total = await qb.getCount();
