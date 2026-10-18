@@ -40,7 +40,7 @@ export class AuthService {
       if (this.isAuthEndpoint(config.url)) return config;
 
       if (await tokenStorage.isTokenExpired()) {
-        await this.getValidAccessToken();
+        if (!await this.getValidAccessToken()) throw new Error("Session expired. Please sign in again.");
       }
 
       const accessToken = await tokenStorage.getAccessToken();
@@ -67,12 +67,7 @@ export class AuthService {
         originalRequest._retry = true;
         const newAccessToken = await this.getValidAccessToken();
         if (!newAccessToken) {
-          // Refresh token is missing or no longer valid — there's no way
-          // to recover this request. Clearing tokens here (rather than
-          // leaving stale ones around) is what lets the app's
-          // isAuthenticated-driven navigation fall back to the login
-          // screen on its next check.
-          await tokenStorage.clearTokens();
+          // refreshSession has already cleared credentials and auth state.
           return Promise.reject(error);
         }
 
@@ -101,14 +96,9 @@ export class AuthService {
   }
 
   private async performRefresh(): Promise<string | null> {
-    const refreshToken = await tokenStorage.getRefreshToken();
-    if (!refreshToken) return null;
-    try {
-      const { tokens } = await this.refreshToken(refreshToken);
-      return tokens.accessToken;
-    } catch {
-      return null;
-    }
+    const { useAuthStore } = await import('../../../stores/authStore');
+    if (!await useAuthStore.getState().refreshSession()) return null;
+    return tokenStorage.getAccessToken();
   }
 
   // Login with email and password

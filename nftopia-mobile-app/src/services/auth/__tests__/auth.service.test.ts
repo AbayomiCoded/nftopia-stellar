@@ -1,3 +1,7 @@
+const mockRefreshSession = jest.fn();
+jest.mock('../../../../stores/authStore', () => ({
+  useAuthStore: { getState: () => ({ refreshSession: mockRefreshSession }) },
+}));
 // TokenStorage falls back to AsyncStorage when SecureStore is unavailable;
 // the real package has an ESM entry point this Jest config doesn't
 // transform, so it must be replaced before `../tokenStorage` is loaded —
@@ -173,6 +177,8 @@ describe("AuthService", () => {
     let requestSpy: jest.SpyInstance;
 
     beforeEach(() => {
+      mockRefreshSession.mockResolvedValue(true);
+      mockedTokenStorage.getAccessToken.mockResolvedValue("access-abc");
       realService = new AuthService();
       postSpy = jest.spyOn(realService.api, "post");
       requestSpy = jest.spyOn(realService.api, "request");
@@ -201,9 +207,7 @@ describe("AuthService", () => {
 
         await requestInterceptor()({ url: "/api/v1/nfts", headers: {} });
 
-        expect(postSpy).toHaveBeenCalledWith("/api/v1/auth/refresh", {
-          refreshToken: "stored-refresh",
-        });
+        expect(mockRefreshSession).toHaveBeenCalledTimes(1);
       });
 
       it("does not check expiry or attach a header for the auth endpoints themselves", async () => {
@@ -249,25 +253,26 @@ describe("AuthService", () => {
       });
 
       it("clears tokens and propagates the error when there is no refresh token to fall back on", async () => {
+        mockRefreshSession.mockResolvedValue(false);
         mockedTokenStorage.getRefreshToken.mockResolvedValue(null);
         mockedTokenStorage.clearTokens.mockResolvedValue(undefined);
 
         const error = make401();
         await expect(responseErrorInterceptor()(error)).rejects.toBe(error);
 
-        expect(mockedTokenStorage.clearTokens).toHaveBeenCalled();
+        expect(mockRefreshSession).toHaveBeenCalled();
         expect(requestSpy).not.toHaveBeenCalled();
       });
 
       it("clears tokens and propagates the error when the refresh call itself fails", async () => {
         mockedTokenStorage.getRefreshToken.mockResolvedValue("stored-refresh");
-        postSpy.mockRejectedValue(new Error("refresh token invalid"));
+        mockRefreshSession.mockResolvedValue(false);
         mockedTokenStorage.clearTokens.mockResolvedValue(undefined);
 
         const error = make401();
         await expect(responseErrorInterceptor()(error)).rejects.toBe(error);
 
-        expect(mockedTokenStorage.clearTokens).toHaveBeenCalled();
+        expect(mockRefreshSession).toHaveBeenCalled();
       });
 
       it("ignores non-401 errors entirely", async () => {
@@ -288,10 +293,7 @@ describe("AuthService", () => {
           responseErrorInterceptor()(make401("/api/v1/listings")),
         ]);
 
-        const refreshCalls = postSpy.mock.calls.filter(
-          ([url]) => url === "/api/v1/auth/refresh",
-        );
-        expect(refreshCalls).toHaveLength(1);
+        expect(mockRefreshSession).toHaveBeenCalledTimes(1);
       });
     });
   });

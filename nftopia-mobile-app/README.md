@@ -145,3 +145,17 @@ findings behind it.
   - `NAVIGATION-README.md`
   - `AUTH-NAVIGATION-SETUP.md`
   - `QUICK-NAV-REFERENCE.md`
+### Session renewal
+
+The auth store owns a single refresh timer, scheduled two minutes before access-token
+expiry. Returning to the foreground checks expiry again because mobile platforms can
+suspend timers. `refreshSession()` and `extendSession()` share one in-flight refresh
+request; the marketplace client and Axios interceptor use the same action on a 401
+and retry the original request at most once. Refresh failure clears the session and
+wallet connection and prompts the user to sign in again, without deleting wallet keys.
+
+Wallet auth uses `EXPO_PUBLIC_API_BASE_URL` (including the API prefix), defaulting to
+`http://localhost:3000/api/v1`. The refresh endpoint is `/auth/refresh`, accepts
+`{ refreshToken }`, and returns `{ data: { success: true, data: { access_token,
+refresh_token, user } } }`. Refresh requests are not retried on network failures:
+the backend rotates refresh tokens, so replaying one can revoke the token family.

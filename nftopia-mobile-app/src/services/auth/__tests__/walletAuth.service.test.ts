@@ -359,7 +359,7 @@ describe('WalletAuthService', () => {
   describe('refreshAccessToken', () => {
     it('exchanges the stored refresh token for a new pair and persists it', async () => {
       (SecureStore.getItemAsync as jest.Mock).mockResolvedValue('stored-refresh-token');
-      mockFetchOk(MOCK_AUTH_RESPONSE);
+      mockFetchOk({ data: { success: true, data: MOCK_AUTH_RESPONSE } });
 
       const result = await service.refreshAccessToken();
 

@@ -29,6 +29,7 @@ describe("TokenStorage", () => {
   beforeEach(() => {
     storage = new TokenStorage();
     jest.clearAllMocks();
+    mockSecureStore.deleteItemAsync.mockResolvedValue(undefined);
   });
 
   it("saves both tokens to secure storage", async () => {
@@ -44,6 +45,30 @@ describe("TokenStorage", () => {
       "nftopia_refresh_token",
       "refresh-xyz",
     );
+  });
+
+  it("removes stale expiry when a replacement token has no valid expiry", async () => {
+    const jwt = `h.${Buffer.from(JSON.stringify({ exp: 2000000000 })).toString('base64url')}.s`;
+    await storage.saveTokens(jwt, 'refresh');
+    expect(await storage.getTokenExpiryTime()).toBe(2000000000);
+    await storage.saveTokens('opaque-token', 'rotated');
+    expect(mockSecureStore.deleteItemAsync).toHaveBeenCalledWith('nftopia_token_expiry');
+  });
+
+  it("finishes pending token writes before clearing on logout", async () => {
+    let release!: () => void;
+    mockSecureStore.setItemAsync.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+    const saving = storage.saveTokens('access', 'refresh');
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    const clearing = storage.clearTokens();
+    release();
+    await Promise.all([saving, clearing]);
+    expect(mockSecureStore.deleteItemAsync).toHaveBeenCalledWith('nftopia_access_token');
+    expect(mockSecureStore.deleteItemAsync).toHaveBeenCalledWith('nftopia_refresh_token');
+    mockSecureStore.getItemAsync.mockResolvedValue(null);
+    expect(await storage.getAccessToken()).toBeNull();
   });
 
   it("reads the access token from storage", async () => {
