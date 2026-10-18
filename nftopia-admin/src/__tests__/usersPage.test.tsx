@@ -1,8 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+// @vitest-environment jsdom
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { cleanup, render, screen, fireEvent } from '@testing-library/react'
 import { DataTable, type Column } from '../components/DataTable'
 import { BanUserDialog } from '../components/BanUserDialog'
 import { UserDetailModal, type UserDetailData } from '../components/UserDetailModal'
+
+afterEach(() => {
+  cleanup()
+})
 
 describe('DataTable Component', () => {
   interface TestRow {
@@ -234,7 +239,9 @@ describe('UserDetailModal Component', () => {
       />,
     )
 
-    expect(screen.getByText('artmaster')).toBeDefined()
+    // Username renders both in the always-visible header and in the
+    // (default-active) Profile tab body, so more than one match is expected.
+    expect(screen.getAllByText('artmaster').length).toBeGreaterThan(0)
     expect(screen.getByText('art@nftopia.io')).toBeDefined()
     expect(screen.getByText('Email Verified')).toBeDefined()
     expect(screen.getByText('2FA Enabled')).toBeDefined()
@@ -254,7 +261,10 @@ describe('UserDetailModal Component', () => {
     )
 
     fireEvent.click(screen.getByText(/Stellar Wallet/i))
-    expect(screen.getByText(sampleDetail.user.walletAddress!)).toBeDefined()
+    // The address renders in both the "Primary Stellar Wallet" card and the
+    // linked-wallets list below it (this fixture's one wallet is the primary),
+    // so more than one match is expected.
+    expect(screen.getAllByText(sampleDetail.user.walletAddress!).length).toBeGreaterThan(0)
     expect(screen.getByText('View on Stellar.expert')).toBeDefined()
   })
 
