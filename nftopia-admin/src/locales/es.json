@@ -32,6 +32,7 @@
   },
   "nav": {
     "dashboard": "Panel",
+    "users": "Usuarios",
     "collections": "Colecciones",
     "settings": "Configuración",
     "contentFlags": "Contenido marcado",
@@ -225,6 +226,34 @@
     "error": {
       "load": "No se pudo cargar la cola de reintentos.",
       "network": "No se pudo contactar con el servidor."
+    }
+  },
+  "users": {
+    "title": "Gestión de usuarios",
+    "description": "Buscar, inspeccionar perfiles de cuenta, examinar carteras Stellar y gestionar el estado de bloqueo.",
+    "search": "Buscar por nombre de usuario, correo electrónico o dirección de cartera…",
+    "total": "{{count}} Total",
+    "filters": {
+      "all": "Todos",
+      "active": "Activos",
+      "banned": "Bloqueados"
+    },
+    "table": {
+      "user": "Usuario",
+      "wallet": "Cartera Stellar",
+      "role": "Rol",
+      "status": "Estado",
+      "joined": "Fecha de registro",
+      "actions": "Acciones"
+    },
+    "status": {
+      "active": "Activo",
+      "banned": "Bloqueado"
+    },
+    "actions": {
+      "details": "Detalles",
+      "ban": "Bloquear",
+      "unban": "Desbloquear"
     }
   }
 }

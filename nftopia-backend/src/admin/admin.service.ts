@@ -9,6 +9,8 @@ import { User } from '../users/user.entity';
 import { Collection } from '../modules/collection/entities/collection.entity';
 import { AuditService, AuditAction } from '../common/audit/audit.service';
 
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -19,9 +21,101 @@ export class AdminService {
     private readonly auditService: AuditService,
   ) {}
 
+  async listUsers(
+    query: ListUsersQueryDto,
+  ): Promise<{ users: Partial<User>[]; total: number }> {
+    const qb = this.userRepository.createQueryBuilder('user');
+
+    if (query.status && query.status !== 'all') {
+      if (query.status === 'banned') {
+        qb.andWhere('user.isBanned = :isBanned', { isBanned: true });
+      } else if (query.status === 'active') {
+        qb.andWhere('user.isBanned = :isBanned', { isBanned: false });
+      }
+    }
+
+    if (query.search && query.search.trim()) {
+      const term = `%${query.search.trim().toLowerCase()}%`;
+      qb.andWhere(
+        '(LOWER(user.username) LIKE :term OR LOWER(user.email) LIKE :term OR LOWER(user.walletAddress) LIKE :term OR LOWER(user.address) LIKE :term)',
+        { term },
+      );
+    }
+
+    qb.orderBy('user.createdAt', 'DESC');
+
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+
+    qb.skip(offset).take(limit);
+
+    const [rawUsers, total] = await qb.getManyAndCount();
+
+    const users = rawUsers.map((user) => {
+      const sanitized = { ...user };
+      delete sanitized.passwordHash;
+      delete sanitized.twoFactorSecret;
+      delete sanitized.twoFactorBackupCodes;
+      return sanitized;
+    });
+
+    return { users, total };
+  }
+
+  async getUserDetails(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['wallets'],
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    const sanitizedUser = { ...user };
+    delete sanitizedUser.passwordHash;
+    delete sanitizedUser.twoFactorSecret;
+    delete sanitizedUser.twoFactorBackupCodes;
+
+    const [collectionsCount, auditLogsResult] = await Promise.all([
+      this.collectionRepository.count({ where: { creatorId: userId } }),
+      this.auditService.findAuditLogs({
+        entityType: 'User',
+        entityId: userId,
+        limit: 50,
+      }),
+    ]);
+
+    let nftsOwned = 0;
+    let nftsCreated = 0;
+    try {
+      const nftRepo = this.userRepository.manager.getRepository('nfts');
+      if (nftRepo) {
+        [nftsOwned, nftsCreated] = await Promise.all([
+          nftRepo.count({ where: { owner_id: userId } }).catch(() => 0),
+          nftRepo.count({ where: { creator_id: userId } }).catch(() => 0),
+        ]);
+      }
+    } catch {
+      // Fallback if table name or relation mapping is not directly resolved
+    }
+
+    return {
+      user: sanitizedUser,
+      wallets: user.wallets ?? [],
+      activitySummary: {
+        collectionsCount,
+        nftsOwned,
+        nftsCreated,
+      },
+      auditTrail: auditLogsResult.logs ?? [],
+    };
+  }
+
   async banUser(
     adminId: string,
     userId: string,
+    reason?: string,
     ipAddress?: string,
     userAgent?: string,
   ): Promise<User> {
@@ -37,7 +131,10 @@ export class AdminService {
 
     const beforeState = { isBanned: user.isBanned };
     user.isBanned = true;
-    const afterState = { isBanned: user.isBanned };
+    const afterState = {
+      isBanned: user.isBanned,
+      ...(reason ? { reason } : {}),
+    };
     const saved = await this.userRepository.save(user);
 
     await this.auditService.logAdminAction(AuditAction.BAN_USER, {
