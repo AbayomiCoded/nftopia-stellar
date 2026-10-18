@@ -11,7 +11,7 @@
 ![Soroban](https://img.shields.io/badge/Soroban-Smart%20Contracts-0f766e)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Data-336791)
 ![Redis](https://img.shields.io/badge/Redis-Cache-d82c20)
-
+///WIP
 NFTopia is a full-stack NFT platform built around Stellar and Soroban. This monorepo contains the public web marketplace, the NestJS API and integration layer, the Expo mobile app, a lightweight admin surface, and a Soroban smart-contract workspace. The goal is to deliver creator tooling, marketplace flows, wallet-based authentication, decentralized asset storage, and on-chain settlement from a single repository.
 
 ## 🌟 Key Features
