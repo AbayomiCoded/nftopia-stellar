@@ -25,6 +25,15 @@ export class TokenStorage {
   // session instead of on every `getAccessToken()` call (which happens on
   // essentially every authenticated API request). Cleared on `clearTokens()`.
   private sessionCache: Map<string, string> = new Map();
+  private writes: Promise<void> = Promise.resolve();
+
+  // Serialize persistence so logout cannot finish clearing while an earlier
+  // refresh is still writing its token pair.
+  private write(operation: () => Promise<void>): Promise<void> {
+    const pending = this.writes.then(operation);
+    this.writes = pending.catch(() => {});
+    return pending;
+  }
 
   // Writes through expo-secure-store; if the platform has no secure store
   // (e.g. web) that throws, so fall back to AsyncStorage rather than losing
@@ -96,14 +105,18 @@ export class TokenStorage {
 
   // save tokens
   async saveTokens(accessToken: string, refreshToken: string): Promise<void> {
-    await this.setItem(ACCESS_TOKEN_KEY, accessToken);
-    await this.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    return this.write(async () => {
+      await this.setItem(ACCESS_TOKEN_KEY, accessToken);
+      await this.setItem(REFRESH_TOKEN_KEY, refreshToken);
 
-    // Extract and store expiry time from JWT
-    const expiry = this.getTokenExpiry(accessToken);
-    if (expiry) {
-      await this.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
-    }
+      // Extract and store expiry time from JWT
+      const expiry = this.getTokenExpiry(accessToken);
+      if (expiry) {
+        await this.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
+      } else {
+        await this.removeItem(TOKEN_EXPIRY_KEY);
+      }
+    });
   }
 
   // get access token
@@ -152,7 +165,7 @@ export class TokenStorage {
       const parts = token.split('.');
       if (parts.length !== 3) return null;
 
-      const payload = parts[1];
+      const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
       const decoded = atob(payload);
       return JSON.parse(decoded) as TokenPayload;
     } catch {
@@ -163,14 +176,16 @@ export class TokenStorage {
   // extract expiry from JWT
   private getTokenExpiry(token: string): number | null {
     const payload = this.decodeToken(token);
-    return payload?.exp || null;
+    return typeof payload?.exp === 'number' && Number.isFinite(payload.exp) ? payload.exp : null;
   }
 
   // clear all tokens
   async clearTokens(): Promise<void> {
-    await this.removeItem(ACCESS_TOKEN_KEY);
-    await this.removeItem(REFRESH_TOKEN_KEY);
-    await this.removeItem(TOKEN_EXPIRY_KEY);
+    return this.write(async () => {
+      await this.removeItem(ACCESS_TOKEN_KEY);
+      await this.removeItem(REFRESH_TOKEN_KEY);
+      await this.removeItem(TOKEN_EXPIRY_KEY);
+    });
   }
 
   // Drops the in-memory session cache without touching stored tokens, so

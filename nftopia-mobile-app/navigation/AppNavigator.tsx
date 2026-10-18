@@ -1,3 +1,4 @@
+import { AppState, Alert } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import * as Linking from 'expo-linking';
@@ -25,6 +26,24 @@ export default function AppNavigator() {
     };
     init();
   }, []);
+
+  // Timers may be suspended in the background; check as soon as we resume.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      const auth = useAuthStore.getState();
+      const remaining = auth.getSessionTimeRemaining();
+      if (state === 'active' && auth.isAuthenticated && remaining !== null && remaining <= 120) {
+        void auth.refreshSession();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => useAuthStore.subscribe((state, previous) => {
+    if (!state.isAuthenticated && state.error === 'Your session could not be refreshed. Please sign in again.' && state.error !== previous.error) {
+      Alert.alert('Session ended', state.error);
+    }
+  }), []);
 
   // Track navigation state changes
   const onStateChange = (state: any) => {

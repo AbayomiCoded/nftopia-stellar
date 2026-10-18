@@ -52,6 +52,7 @@ export interface AuthStore {
   initializeAuth: () => Promise<void>;
   loginWithWallet: (wallet: Wallet) => Promise<void>;
   logout: () => Promise<void>;
+  refreshSession: () => Promise<boolean>;
 
   // Actions - Session timeout / app-lock
   setShowExpiryWarning: (show: boolean) => void;

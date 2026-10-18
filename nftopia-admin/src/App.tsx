@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/useAuth'
 import { AppShell } from './components/AppShell'
+import { canManageDlq } from './dlq/access'
 import LoginPage from './pages/LoginPage'
 
 // Route-level code splitting — each page is loaded only when navigated to.
@@ -10,6 +11,7 @@ const CollectionsPage = lazy(() => import('./pages/CollectionsPage'))
 const UsersPage = lazy(() => import('./pages/UsersPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const ContentFlagsQueuePage = lazy(() => import('./pages/ContentFlagsQueuePage'))
+const TransactionRetryPage = lazy(() => import('./pages/TransactionRetryPage'))
 
 /** Minimal loading indicator shown during lazy-page suspense. */
 function PageSpinner() {
@@ -38,6 +40,10 @@ function App() {
             <Route path="/users" element={<UsersPage />} />
             <Route path="/collections" element={<CollectionsPage />} />
             <Route path="/content-flags" element={<ContentFlagsQueuePage />} />
+            {/* Operationally sensitive: registered only for roles allowed to manage the DLQ */}
+            {canManageDlq(state.user.role) ? (
+              <Route path="/transaction-retry" element={<TransactionRetryPage />} />
+            ) : null}
             <Route path="/settings" element={<SettingsPage />} />
             {/* Catch-all: redirect unknown paths back to dashboard */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

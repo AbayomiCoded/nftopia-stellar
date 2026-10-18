@@ -38,6 +38,7 @@ export class AdminAiFlagsController {
   async list(@Query() query: ListContentFlagsQueryDto) {
     return this.contentFlagService.listFlags({
       status: query.status ?? 'pending',
+      entityType: query.entityType,
       limit: query.limit,
       offset: query.offset,
     });

@@ -26,7 +26,8 @@ At the moment, this app is a clean React + Vite + Tailwind foundation rather tha
 4. [Quick Start](#-quick-start)
 5. [Available Scripts](#-available-scripts)
 6. [Authentication](#-authentication)
-7. [Recommended Next Modules](#-recommended-next-modules)
+7. [Transaction Retries (DLQ)](#-transaction-retries-dlq)
+8. [Recommended Next Modules](#-recommended-next-modules)
 
 ## 🎯 Purpose
 
@@ -100,6 +101,21 @@ The whole app sits behind a login screen. Operators sign in with their NFTopia e
 - **Logout** clears the stored token, the in-memory user and the expiry timer, then returns to the login screen.
 - **Expiry:** a timer fires at the token's `exp`, and the token is re-checked whenever the tab becomes visible again. An expired, malformed or non-admin stored token is discarded, and the login screen shows "Your session has expired".
 - **Invalid tokens:** API calls made through `createAuthorizedFetch` (in `src/auth/authorizedFetch.ts`) attach the bearer token. Any `401` response ends the session the same way.
+
+## 🔁 Transaction Retries (DLQ)
+
+`/transaction-retry` is the operations screen for failed settlements, built on the `transaction-retry` routes in `nftopia-backend/src/modules/transaction/transaction-retry.controller.ts`.
+
+- **Metrics**: counts from `GET metrics` (DLQ size, retries in flight, failure rate). The 7-day trend and recent activity come from the newest 100 entries of `GET dlq`, because the metrics route only returns current counts.
+- **List**: `GET dlq`, 20 per page, newest first, with status, attempts and last error.
+- **Retry**: `POST dlq/:retryId/retry`, with an optional reason. The row stays on screen as `pending` until the next refresh.
+- **Cancel**: `DELETE :retryId`. Offered only for a re-queued (`pending`/`processing`) row; the backend refuses to cancel an entry that is still in the DLQ.
+- **Bulk retry**: `POST dlq/bulk-retry` with a `limit` (1–100). The backend re-queues the newest `limit` entries, not a selection. The operator must type `RETRY <count>` to confirm.
+- **Clean up**: `DELETE cleanup/:days`. The operator must type `CLEANUP <days>` to confirm, and the screen shows the server's reply as-is. At the time of writing, the backend route is a placeholder and does not delete anything yet.
+
+Access: the route and nav item exist only for roles in `DLQ_ROLES` (`src/dlq/access.ts`), currently `ADMIN`. It's kept separate from `ADMIN_ROLES` so that opening the console to more roles never opens this screen. When the auth system gets a narrower ops role, change it there and in the backend `@Roles` together.
+
+Tests: `src/__tests__/transactionRetry.test.ts`.
 
 ## 🧭 Recommended Next Modules
 

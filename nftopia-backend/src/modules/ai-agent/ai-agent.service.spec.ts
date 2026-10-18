@@ -15,7 +15,8 @@ import { AiAgentService } from './ai-agent.service';
 import { PromptInjectionService } from './prompt-injection.service';
 import { registerToolSet, unregisterToolSet } from './tools/tool-set.registry';
 import { MARKETPLACE_TOOL_NAMES } from './tools/marketplace.tools';
-import type { RunnableToolLike } from './tools/tool-set.types';
+import { TRADING_TOOL_NAMES } from './tools/trading.tools';
+import type { RunnableToolLike, ToolSetName } from './tools/tool-set.types';
 import type { NftService } from '../nft/nft.service';
 import type { ListingService } from '../listing/listing.service';
 import type { CollectionService } from '../collection/collection.service';
@@ -331,19 +332,17 @@ describe('AiAgentService', () => {
   });
 
   describe('tool set scoping (#492)', () => {
-    // 'trading' has no real registration (unlike 'creator-copilot', which is
-    // registered for real since #528) — safe to hijack as a throwaway
-    // sandbox name here without deleting the real registration out from
-    // under the draftListing tests below.
+    // Uses a sandbox tool set name so real registrations ('trading', etc.) are preserved (#641).
+    const sandboxToolSet = 'sandbox-toolset' as ToolSetName;
     afterEach(() => {
-      unregisterToolSet('trading');
+      unregisterToolSet(sandboxToolSet);
     });
 
     it('never passes tools from another registered tool set to the Anthropic API', async () => {
       registerToolSet(
-        'trading',
-        () => [{ name: 'propose_trade' } as unknown as RunnableToolLike],
-        ['propose_trade'],
+        sandboxToolSet,
+        () => [{ name: 'custom_sandbox_tool' } as unknown as RunnableToolLike],
+        ['custom_sandbox_tool'],
       );
       const toolRunner = mockToolRunner(makeFinalMessage());
 
@@ -354,16 +353,29 @@ describe('AiAgentService', () => {
       ];
       const requestedToolNames = requestArgs.tools.map((tool) => tool.name);
 
-      expect(requestedToolNames).not.toContain('propose_trade');
+      expect(requestedToolNames).not.toContain('custom_sandbox_tool');
       expect(requestedToolNames.sort()).toEqual(
         [...MARKETPLACE_TOOL_NAMES].sort(),
       );
     });
 
     it('rejects a request for a tool set with no registered builder', async () => {
-      await expect(service.chat('user-1', 'trading', 'hi')).rejects.toThrow(
-        /not registered/,
-      );
+      await expect(
+        service.chat('user-1', sandboxToolSet, 'hi'),
+      ).rejects.toThrow(/not registered/);
+    });
+
+    it('resolves the trading tool set successfully when requested (#641)', async () => {
+      const toolRunner = mockToolRunner(makeFinalMessage());
+
+      await service.chat('user-1', 'trading', 'hi');
+
+      const [requestArgs] = toolRunner.mock.calls[0] as [
+        { tools: RunnableToolLike[] },
+      ];
+      const requestedToolNames = requestArgs.tools.map((tool) => tool.name);
+
+      expect(requestedToolNames.sort()).toEqual([...TRADING_TOOL_NAMES].sort());
     });
   });
 
