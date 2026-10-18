@@ -34,7 +34,8 @@
     "dashboard": "Panel",
     "collections": "Colecciones",
     "settings": "Configuración",
-    "contentFlags": "Contenido marcado"
+    "contentFlags": "Contenido marcado",
+    "transactionRetry": "Reintentos"
   },
   "shell": {
     "openSidebar": "Abrir menú lateral",
@@ -148,6 +149,82 @@
       "previous": "Anterior",
       "next": "Siguiente",
       "page": "Página {{page}} de {{pages}}"
+    }
+  },
+  "dlq": {
+    "title": "Reintentos de transacciones",
+    "description": "Las liquidaciones fallidas que agotaron sus reintentos llegan a la cola de mensajes fallidos (DLQ). Revísalas, reinténtalas o cancela un reintento que se volvió a encolar.",
+    "loading": "Cargando…",
+    "empty": "La cola de mensajes fallidos está vacía.",
+    "forbidden": "No tienes acceso a las operaciones de reintento de transacciones.",
+    "noError": "Sin error registrado",
+    "listTitle": "Cola de mensajes fallidos ({{count}})",
+    "metrics": {
+      "title": "Métricas de reintentos",
+      "dlqSize": "En la DLQ",
+      "inFlight": "Reintentando ahora",
+      "failureRate": "Tasa de fallos",
+      "total": "Todos los reintentos",
+      "trendTitle": "Entradas a la DLQ, últimos 7 días (UTC)",
+      "trendNote": "Basado en las {{count}} entradas más recientes de la DLQ.",
+      "recentTitle": "Actividad reciente de la DLQ",
+      "recentItem": "Transacción #{{tx}} · reintento {{id}}"
+    },
+    "status": {
+      "pending": "Pendiente",
+      "processing": "Procesando",
+      "completed": "Completado",
+      "failed": "Fallido",
+      "cancelled": "Cancelado",
+      "dlq": "En la DLQ"
+    },
+    "columns": {
+      "retry": "Reintento",
+      "transaction": "Transacción",
+      "status": "Estado",
+      "attempts": "Intentos",
+      "lastError": "Último error",
+      "entered": "Entró en la DLQ",
+      "actions": "Acciones"
+    },
+    "actions": {
+      "refresh": "Actualizar",
+      "retry": "Reintentar",
+      "cancel": "Cancelar reintento",
+      "bulkRetry": "Reintento masivo",
+      "cleanup": "Limpiar"
+    },
+    "pagination": {
+      "label": "Páginas de la DLQ",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "status": "Página {{page}} de {{pages}}"
+    },
+    "confirm": {
+      "cancel": "Cancelar",
+      "working": "Procesando…",
+      "typePhrase": "Para confirmar, escribe",
+      "retryTitle": "¿Reintentar esta transacción?",
+      "retryBody": "La transacción #{{tx}} se volverá a encolar y se enviará de nuevo a Stellar, con un nuevo ciclo de intentos.",
+      "reason": "Motivo (opcional, se envía con la solicitud)",
+      "cancelTitle": "¿Cancelar este reintento?",
+      "cancelBody": "El reintento encolado de la transacción #{{tx}} se cancelará y se quitará de la cola. No se volverá a enviar.",
+      "bulkTitle": "¿Reintentar entradas de la DLQ en bloque?",
+      "bulkBody": "Las {{count}} entradas más recientes de {{total}} en la DLQ se volverán a encolar y cada una se enviará de nuevo a Stellar. No se puede deshacer una vez enviadas.",
+      "bulkLimit": "Cuántas entradas (1–{{max}})",
+      "cleanupTitle": "¿Limpiar reintentos antiguos?",
+      "cleanupBody": "Pide al backend que elimine los reintentos completados de más de {{days}} días.",
+      "cleanupDays": "Más antiguos que (días)"
+    },
+    "notice": {
+      "retried": "La transacción #{{tx}} se volvió a encolar para reintento.",
+      "cancelled": "Se canceló el reintento de la transacción #{{tx}}.",
+      "bulk": "Reintento masivo terminado: {{ok}} encolados, {{failed}} fallidos.",
+      "cleanup": "Solicitud de limpieza enviada. Respuesta del servidor: {{message}}"
+    },
+    "error": {
+      "load": "No se pudo cargar la cola de reintentos.",
+      "network": "No se pudo contactar con el servidor."
     }
   }
 }

@@ -1,4 +1,6 @@
 import { config } from '@/src/config';
+import { tokenStorage } from '@/src/services/auth/tokenStorage';
+import { useAuthStore } from '@/stores/authStore';
 import {
   NFT,
   Collection,
@@ -48,16 +50,16 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retried = false
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
+    const accessToken = await tokenStorage.getAccessToken() ?? this.token;
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
@@ -70,6 +72,17 @@ class ApiClient {
       });
 
       clearTimeout(timeoutId);
+
+      if (response.status === 401 && !retried && accessToken) {
+        const currentToken = await tokenStorage.getAccessToken();
+        // A delayed 401 may belong to a token another request already replaced.
+        if ((currentToken && currentToken !== accessToken) ||
+            await useAuthStore.getState().refreshSession()) {
+          this.token = null;
+          return this.request<T>(endpoint, options, true);
+        }
+        this.token = null;
+      }
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: 'Network error' }));

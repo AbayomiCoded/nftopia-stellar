@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist, PersistOptions } from 'zustand/middleware';
+import { persist, createJSONStorage, PersistOptions } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Auction, Bid, AuctionFormData } from '@/types';
 import apiClient from '@/lib/api/sample';
 
@@ -55,6 +56,24 @@ export const useAuctionStore = create<AuctionStore>()(
       createAuction: async (data: AuctionFormData) => {
         set({ loading: true, error: null });
         try {
+          if (!data || !data.nftId || !data.nftId.trim()) {
+            throw new Error('Please select an NFT');
+          }
+          const startPriceNum = Number(data.startPrice);
+          if (!data.startPrice || isNaN(startPriceNum) || startPriceNum <= 0) {
+            throw new Error('Valid start price is required');
+          }
+          if (data.reservePrice) {
+            const reservePriceNum = Number(data.reservePrice);
+            if (isNaN(reservePriceNum) || (reservePriceNum > 0 && reservePriceNum < startPriceNum)) {
+              throw new Error('Reserve must be >= start price');
+            }
+          }
+          const durationNum = Number(data.duration);
+          if (data.duration === undefined || data.duration === null || isNaN(durationNum) || durationNum < 1) {
+            throw new Error('Duration must be at least 1 hour');
+          }
+
           const auction = await apiClient.createAuction(data);
           set((state) => ({ auctions: [auction, ...state.auctions], loading: false }));
           apiClient.trackEvent('auction_created', { nftId: data.nftId, duration: data.duration });
@@ -68,6 +87,24 @@ export const useAuctionStore = create<AuctionStore>()(
       placeBid: async (auctionId: string, amount: string) => {
         set({ error: null });
         try {
+          const numAmount = Number(amount);
+          if (!amount || isNaN(numAmount) || numAmount <= 0) {
+            throw new Error('Valid bid amount is required');
+          }
+
+          const { currentAuction } = get();
+          if (currentAuction && currentAuction.id === auctionId) {
+            const isEnded =
+              currentAuction.status === 'ended' ||
+              (currentAuction.endTime && new Date(currentAuction.endTime).getTime() <= Date.now());
+            if (isEnded) {
+              throw new Error('Cannot bid on a closed auction');
+            }
+            if (currentAuction.currentPrice && numAmount <= Number(currentAuction.currentPrice)) {
+              throw new Error('Bid amount must be higher than current price');
+            }
+          }
+
           const bid = await apiClient.placeBid(auctionId, amount);
           set((state) => ({
             bidHistory: [bid, ...state.bidHistory],
@@ -115,6 +152,7 @@ export const useAuctionStore = create<AuctionStore>()(
     }),
     {
       name: 'auction-storage',
+      storage: createJSONStorage(() => AsyncStorage),
       partialize: (state: AuctionStore) => ({
         watchedAuctions: state.watchedAuctions,
       }),
