@@ -52,13 +52,39 @@ is no default, so a new endpoint-specific method cannot forget to pick one.
 | `marketplace-assistant` | `POST /ai/chat`, `POST /ai/chat/stream`  | Any authenticated user | Read-only    | Implemented (`marketplace.tools.ts`) |
 | `creator-copilot`       | `POST /ai/copilot/draft-listing`         | NFT creator/owner (ownership verified before the model is ever called) | Write-capable (drafts, but never publishes, a listing for the caller's own NFT) | Implemented (`creator-copilot.tools.ts`, #528) |
 | `moderation`            | Not chat-driven — the `ListingCreatedListener` enqueues a job on the `ai-moderation` Bull queue, consumed by `AiModerationProcessor`. Findings surface via `GET /admin/ai/flags` / `PATCH /admin/ai/flags/:id`. | System (queue worker) only | Write-capable (`flag_content` persists to `content_flags`) | Implemented (`moderation.tools.ts` + `ai-moderation.processor.ts`, #527) |
-| `trading`               | *Planned:* trading-proposal endpoints    | Any authenticated user, scoped to their own orders | Write-capable (proposes trades) | Not yet implemented |
+| `trading`               | Trade proposal endpoints & chat trading interactions | Any authenticated user, strictly scoped to their own orders/offers | Write-capable (proposes, accepts, and cancels trade proposals) | Implemented (`trading.tools.ts`, #641) |
 
-`marketplace-assistant`, `moderation`, and `creator-copilot` are the tool
-sets with a registered builder today; requesting `trading` from
-`resolveToolSet` throws until its tools file registers one. When one of
-the planned sets is implemented, add its entry to this table in the same
-PR.
+`marketplace-assistant`, `moderation`, `creator-copilot`, and `trading` are
+all registered tool sets with implemented builders today. Calling
+`resolveToolSet` for any of these tool set names resolves successfully and
+enforces that only tools declared in their respective allowlists are returned.
+
+### `trading` (#641)
+
+The `trading` tool set provides write-capable operations for proposing,
+accepting, and cancelling trade proposals (`propose_trade`, `accept_trade`,
+`cancel_trade`), backed by strict caller and order scoping guards:
+
+- **Strict caller scoping**: The authenticated caller identity (`deps.userId`)
+  is closed over at build time from the JWT or session context. If the model
+  attempts to supply or echo a different `proposerId`, `acceptorId`, or
+  `cancellerId`, the scoping guard rejects the tool call immediately before any
+  business logic runs.
+- **Own orders/offers boundary**: `accept_trade` and `cancel_trade` verify
+  that the action targets the caller's own orders or offers. When `OrderService`
+  is available, ownership is checked via `findOneForUser(userId, id)` so users
+  can never inspect, accept, or cancel another user's trades. Additionally,
+  `allowedOrderIds` can be closed over at build time to restrict the session's
+  actions to a specific subset of orders/offers.
+- **Write-capable actions**:
+  - `propose_trade`: Creates a structured trade proposal between an offered
+    NFT and requested NFT with an optional sweetener amount/currency (XLM/USDC).
+  - `accept_trade`: Accepts an incoming trade proposal, transitioning it to
+    completed status.
+  - `cancel_trade`: Cancels a pending trade proposal with an optional reason.
+- **Audit logging and observability**: All invocations (arguments, outcome
+  summary, execution time, and errors) are monitored and logged via
+  `toolLogger`.
 
 ### `creator-copilot` (#528)
 

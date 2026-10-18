@@ -10,7 +10,7 @@ import type { AiModerationJobData } from './listeners/ai-moderation.types';
 import type { StellarNft } from '../../nft/entities/stellar-nft.entity';
 import type { ContentFlagService } from './content-flag.service';
 import type { PrometheusService } from '../../common/metrics/prometheus';
-import type { RunnableToolLike } from './tools/tool-set.types';
+import type { RunnableToolLike, ToolSetName } from './tools/tool-set.types';
 
 describe('AiModerationProcessor (#527)', () => {
   const LISTING_ID = '123e4567-e89b-12d3-a456-426614174000';
@@ -255,15 +255,16 @@ describe('AiModerationProcessor (#527)', () => {
   });
 
   describe('tool set scoping', () => {
+    const sandboxToolSet = 'sandbox-toolset' as ToolSetName;
     afterEach(() => {
-      unregisterToolSet('trading');
+      unregisterToolSet(sandboxToolSet);
     });
 
     it('never resolves tools outside the moderation tool set', async () => {
       registerToolSet(
-        'trading',
-        () => [{ name: 'propose_trade' } as unknown as RunnableToolLike],
-        ['propose_trade'],
+        sandboxToolSet,
+        () => [{ name: 'sandbox_tool' } as unknown as RunnableToolLike],
+        ['sandbox_tool'],
       );
       mockMessagesCreate(makeCleanResponse());
 
