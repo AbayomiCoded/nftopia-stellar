@@ -34,7 +34,8 @@
     "dashboard": "Dashboard",
     "collections": "Collections",
     "settings": "Settings",
-    "contentFlags": "Content Flags"
+    "contentFlags": "Content Flags",
+    "transactionRetry": "Transaction Retries"
   },
   "shell": {
     "openSidebar": "Open sidebar",
@@ -135,6 +136,82 @@
     "success": {
       "resolve": "Flag resolved.",
       "bulkResolve": "{{count}} flags resolved."
+    }
+  },
+  "dlq": {
+    "title": "Transaction retries",
+    "description": "Failed settlements that exhausted their retries land in the dead-letter queue (DLQ). Inspect them, retry them, or cancel a retry that was re-queued.",
+    "loading": "Loading…",
+    "empty": "The dead-letter queue is empty.",
+    "forbidden": "You don't have access to transaction retry operations.",
+    "noError": "No error recorded",
+    "listTitle": "Dead-letter queue ({{count}})",
+    "metrics": {
+      "title": "Retry metrics",
+      "dlqSize": "In DLQ",
+      "inFlight": "Retrying now",
+      "failureRate": "Failure rate",
+      "total": "All retries",
+      "trendTitle": "Entries into the DLQ, last 7 days (UTC)",
+      "trendNote": "Based on the newest {{count}} DLQ entries.",
+      "recentTitle": "Recent DLQ activity",
+      "recentItem": "Transaction #{{tx}} · retry {{id}}"
+    },
+    "status": {
+      "pending": "Pending",
+      "processing": "Processing",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "dlq": "In DLQ"
+    },
+    "columns": {
+      "retry": "Retry",
+      "transaction": "Transaction",
+      "status": "Status",
+      "attempts": "Attempts",
+      "lastError": "Last error",
+      "entered": "Entered DLQ",
+      "actions": "Actions"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "cancel": "Cancel retry",
+      "bulkRetry": "Bulk retry",
+      "cleanup": "Clean up"
+    },
+    "pagination": {
+      "label": "DLQ pages",
+      "previous": "Previous",
+      "next": "Next",
+      "status": "Page {{page}} of {{pages}}"
+    },
+    "confirm": {
+      "cancel": "Cancel",
+      "working": "Working…",
+      "typePhrase": "To confirm, type",
+      "retryTitle": "Retry this transaction?",
+      "retryBody": "Transaction #{{tx}} will be re-queued and submitted to Stellar again, starting a fresh set of attempts.",
+      "reason": "Reason (optional, sent with the request)",
+      "cancelTitle": "Cancel this retry?",
+      "cancelBody": "The re-queued retry for transaction #{{tx}} will be cancelled and removed from the queue. It will not be submitted again.",
+      "bulkTitle": "Bulk retry DLQ entries?",
+      "bulkBody": "The {{count}} newest of {{total}} DLQ entries will be re-queued and each submitted to Stellar again. This can't be undone once they are submitted.",
+      "bulkLimit": "How many entries (1–{{max}})",
+      "cleanupTitle": "Clean up old retries?",
+      "cleanupBody": "Asks the backend to remove completed retries older than {{days}} days.",
+      "cleanupDays": "Older than (days)"
+    },
+    "notice": {
+      "retried": "Transaction #{{tx}} was re-queued for retry.",
+      "cancelled": "The retry for transaction #{{tx}} was cancelled.",
+      "bulk": "Bulk retry finished: {{ok}} re-queued, {{failed}} failed.",
+      "cleanup": "Cleanup request sent. Server reply: {{message}}"
+    },
+    "error": {
+      "load": "Unable to load the retry queue.",
+      "network": "The server could not be reached."
     }
   }
 }
