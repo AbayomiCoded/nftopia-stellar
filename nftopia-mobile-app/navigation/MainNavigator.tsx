@@ -61,7 +61,7 @@ export type MainStackParamList = {
   Auctions: undefined;
   AuctionDetail: { auctionId: string };
   CreateAuction: undefined;
-  Assistant: undefined;
+  Assistant: { context?: { source: 'home' | 'marketplace'; category?: string; sortBy?: string; hasActiveFilters?: boolean } } | undefined;
   Earnings: undefined;
   Transactions: undefined;
   Notifications: undefined;
