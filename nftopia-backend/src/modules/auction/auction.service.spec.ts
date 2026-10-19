@@ -14,6 +14,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MarketplaceSettlementClient } from '../stellar/marketplace-settlement.client';
+import { User } from '../../users/user.entity';
+import { TransactionService } from '../transaction/transaction.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const mockAuctionRepo = {
   findOne: jest.fn(),
@@ -41,6 +44,10 @@ const mockNftRepo = {
   save: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockUserRepo = {
+  findOne: jest.fn(),
+};
+
 const mockConfigService = {
   get: jest.fn().mockImplementation((key: string) => {
     if (key === 'ENABLE_ONCHAIN_SETTLEMENT') return false;
@@ -51,6 +58,11 @@ const mockConfigService = {
 const mockSettlementClient = {
   createAuction: jest.fn(),
   placeBid: jest.fn(),
+};
+
+const mockTransactionService = {};
+const mockNotificationsService = {
+  broadcastAuctionExtended: jest.fn(),
 };
 
 function createFindAllQbMock(result: unknown[]) {
@@ -79,11 +91,14 @@ describe('AuctionService', () => {
         { provide: getRepositoryToken(Auction), useValue: mockAuctionRepo },
         { provide: getRepositoryToken(Bid), useValue: mockBidRepo },
         { provide: getRepositoryToken(StellarNft), useValue: mockNftRepo },
+        { provide: getRepositoryToken(User), useValue: mockUserRepo },
         { provide: ConfigService, useValue: mockConfigService },
         {
           provide: MarketplaceSettlementClient,
           useValue: mockSettlementClient,
         },
+        { provide: TransactionService, useValue: mockTransactionService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
@@ -241,6 +256,71 @@ describe('AuctionService', () => {
       expect(mockAuctionRepo.save).toHaveBeenCalled();
       // Type assertion: with ENABLE_ONCHAIN_SETTLEMENT=false, result is Bid
       expect((bid as Bid).amount).toBe(2);
+    });
+
+    it('extends the auction and notifies clients for a bid in the extension window', async () => {
+      const originalEndTime = new Date(Date.now() + 60_000);
+      const auction = {
+        id: 'a1',
+        status: AuctionStatus.ACTIVE,
+        endTime: originalEndTime,
+        currentPrice: 1,
+        extensionCount: 0,
+      } as unknown as Auction;
+      mockAuctionRepo.findOne.mockResolvedValueOnce(auction);
+
+      await service.placeBid('a1', 'b1', { amount: 2 });
+
+      expect(auction.endTime).toEqual(
+        new Date(originalEndTime.getTime() + 300_000),
+      );
+      expect(auction.extensionCount).toBe(1);
+      expect(
+        mockNotificationsService.broadcastAuctionExtended,
+      ).toHaveBeenCalledWith('a1', {
+        endTime: auction.endTime.toISOString(),
+        extensionCount: 1,
+      });
+    });
+
+    it('does not extend the auction for a bid outside the extension window', async () => {
+      const originalEndTime = new Date(Date.now() + 600_000);
+      const auction = {
+        id: 'a1',
+        status: AuctionStatus.ACTIVE,
+        endTime: originalEndTime,
+        currentPrice: 1,
+        extensionCount: 0,
+      } as unknown as Auction;
+      mockAuctionRepo.findOne.mockResolvedValueOnce(auction);
+
+      await service.placeBid('a1', 'b1', { amount: 2 });
+
+      expect(auction.endTime).toBe(originalEndTime);
+      expect(auction.extensionCount).toBe(0);
+      expect(
+        mockNotificationsService.broadcastAuctionExtended,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('does not extend the auction after reaching the extension cap', async () => {
+      const originalEndTime = new Date(Date.now() + 60_000);
+      const auction = {
+        id: 'a1',
+        status: AuctionStatus.ACTIVE,
+        endTime: originalEndTime,
+        currentPrice: 1,
+        extensionCount: 3,
+      } as unknown as Auction;
+      mockAuctionRepo.findOne.mockResolvedValueOnce(auction);
+
+      await service.placeBid('a1', 'b1', { amount: 2 });
+
+      expect(auction.endTime).toBe(originalEndTime);
+      expect(auction.extensionCount).toBe(3);
+      expect(
+        mockNotificationsService.broadcastAuctionExtended,
+      ).not.toHaveBeenCalled();
     });
 
     it('should reject bid on non-active auction', async () => {
