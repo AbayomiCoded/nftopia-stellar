@@ -42,6 +42,7 @@ import SettingsScreen from '@/screens/Settings/SettingsScreen';
 import { SendScreen } from '@/screens/Wallet/SendScreen';
 import { QRScannerScreen } from '@/screens/Wallet/QRScannerScreen';
 import { ReceiveScreen } from '@/screens/Wallet/ReceiveScreen';
+import { AddressBookScreen } from '@/screens/Wallet/AddressBookScreen';
 
 // Backup Reminder Screen
 import BackupReminderScreen from '@/screens/BackupReminder/BackupReminderScreen';
@@ -70,6 +71,7 @@ export type MainStackParamList = {
   Send: { prefilledAddress?: string } | undefined;
   QRScanner: undefined;
   Receive: undefined;
+  AddressBook: { onSelect?: (address: string) => void } | undefined;
   Marketplace: { category?: string } | undefined;
   BackupReminder: undefined;
   Favorites: undefined;
@@ -166,6 +168,14 @@ export default function MainNavigator() {
           {(props) => (
             <ScreenErrorBoundary name="ReceiveScreen">
               <ReceiveScreen {...props} />
+            </ScreenErrorBoundary>
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="AddressBook" options={getTransitionConfig('detail')}>
+          {(props) => (
+            <ScreenErrorBoundary name="AddressBookScreen">
+              <AddressBookScreen {...props} />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
