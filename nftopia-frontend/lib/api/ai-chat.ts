@@ -25,6 +25,56 @@ function getAccessToken(): string | null {
   return localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
 }
 
+/**
+ * Thrown when the backend rejects a chat request because the caller's
+ * daily/monthly AI usage cap has already been reached. Mirrors the 403 body
+ * AiUsageService.assertWithinCap throws on the backend: a machine-readable
+ * `code` plus `resetsAt`, not just a prose message, so the UI can show a
+ * specific "quota exhausted" state instead of a generic failure.
+ */
+export class AiQuotaExceededError extends Error {
+  readonly code: string;
+  readonly resetsAt: string;
+
+  constructor(message: string, code: string, resetsAt: string) {
+    super(message);
+    this.name = "AiQuotaExceededError";
+    this.code = code;
+    this.resetsAt = resetsAt;
+  }
+}
+
+type CapExceededBody = {
+  code?: unknown;
+  message?: unknown;
+  resetsAt?: unknown;
+};
+
+/**
+ * Builds the error to throw for a non-ok /ai/chat or /ai/chat/stream
+ * response, distinguishing a cap-exceeded rejection (403 with a
+ * `code`/`resetsAt` body) from any other failure. Falls back to a generic
+ * status-based error whenever the body isn't readable or doesn't match
+ * that shape, so this stays safe to call on any non-ok response.
+ */
+async function buildChatError(response: Response, fallback: string): Promise<Error> {
+  if (response.status === 403) {
+    try {
+      const body = (await response.json()) as CapExceededBody;
+      if (typeof body.code === "string" && typeof body.resetsAt === "string") {
+        return new AiQuotaExceededError(
+          typeof body.message === "string" ? body.message : fallback,
+          body.code,
+          body.resetsAt,
+        );
+      }
+    } catch {
+      // Body wasn't readable/JSON — fall through to the generic error below.
+    }
+  }
+  return new Error(fallback);
+}
+
 function parseEvent(block: string): StreamEvent | null {
   const lines = block.split(/\r?\n/);
   const eventType = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
@@ -95,7 +145,9 @@ export async function streamAiChat(
     signal,
   });
 
-  if (!response.ok) throw new Error(`AI stream failed with status ${response.status}`);
+  if (!response.ok) {
+    throw await buildChatError(response, `AI stream failed with status ${response.status}`);
+  }
   if (!response.body) throw new Error("AI stream has no readable body");
 
   const reader = response.body.getReader();
@@ -141,7 +193,9 @@ export async function sendAiChat(
     signal,
   });
 
-  if (!response.ok) throw new Error(`AI request failed with status ${response.status}`);
+  if (!response.ok) {
+    throw await buildChatError(response, `AI request failed with status ${response.status}`);
+  }
   return response.json() as Promise<AiChatReply>;
 }
 
@@ -168,4 +222,52 @@ export async function checkAiHealth(
   }
 
   return response.json() as Promise<AiHealthResponse>;
+}
+
+/**
+ * One usage window (today, or the current calendar month) as reported by
+ * GET /ai/usage. Field names mirror the backend's UsageWindow
+ * (AiUsageService) exactly, so no mapping is needed on this side.
+ */
+export type AiUsageWindow = {
+  totalTokens: number;
+  estimatedCostUsd: number;
+  /** Token cap currently in effect for this window. */
+  cap: number;
+  remaining: number;
+  /** USD spend cap currently in effect, or null when none is configured. */
+  spendCapUsd: number | null;
+  spendRemaining: number | null;
+  /** 0-100. The higher of the token-cap and (if configured) spend-cap percentage. */
+  percentUsed: number;
+  /** True once usage crosses the warning threshold but before the cap is reached. */
+  approachingCap: boolean;
+  /** ISO timestamp this window's usage resets at. */
+  resetsAt: string;
+};
+
+export type AiUsageSummary = {
+  daily: AiUsageWindow;
+  monthly: AiUsageWindow;
+  /** Whether an admin-granted cap override is currently active for this user. */
+  hasOverride: boolean;
+};
+
+export async function getAiUsage(signal?: AbortSignal): Promise<AiUsageSummary> {
+  const token = getAccessToken();
+  const headers = new Headers({ Accept: "application/json" });
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(`${API_CONFIG.baseUrl}/ai/usage`, {
+    method: "GET",
+    headers,
+    credentials: "include",
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`AI usage request failed with status ${response.status}`);
+  }
+
+  return response.json() as Promise<AiUsageSummary>;
 }
