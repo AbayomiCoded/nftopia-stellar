@@ -82,6 +82,18 @@
         "priceLowToHigh": "Preis: Niedrig zu hoch",
         "priceHighToLow": "Preis: Hoch zu niedrig"
       },
+      "categoriesTitle": "Kategorien durchsuchen",
+      "categories": {
+        "all": "Alle",
+        "art": "Kunst",
+        "music": "Musik",
+        "gaming": "Gaming",
+        "photography": "Fotografie",
+        "collectibles": "Sammlerstücke",
+        "sports": "Sport",
+        "virtualWorlds": "Virtuelle Welten",
+        "utility": "Nützliches"
+      },
       "nft": {
         "buyNow": "Jetzt kaufen",
         "placeBid": "Gebot abgeben",
