@@ -6,6 +6,7 @@ import { TodaysPicks } from "@/components/todays-picks";
 import PopularCollection from "@/components/PopularCollection";
 import { MarketplaceSkeleton } from "@/components/Skeleton/MarketplaceSkeleton";
 import { MarketplaceListings } from "@/components/marketplace/MarketplaceListings";
+import { CategorySelector } from "@/components/marketplace/CategorySelector";
 
 export default function MarketplacePage() {
   return (
@@ -20,6 +21,11 @@ export default function MarketplacePage() {
           <TopSellers />
           <TodaysPicks />
           <PopularCollection />
+
+          {/* Category chips filter the "All listings" section below via
+              ?category=, the same URL-param pattern MarketplaceFilters
+              already uses for search/minPrice/maxPrice/sortBy. */}
+          <CategorySelector />
 
           {/* Cursor-paginated catalogue: infinite scroll plus a "Load more"
               fallback, with the current cursor mirrored into the URL. */}
