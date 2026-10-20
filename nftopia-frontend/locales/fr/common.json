@@ -82,6 +82,18 @@
       "priceLowToHigh": "Prix : Croissant",
       "priceHighToLow": "Prix : Décroissant"
     },
+    "categoriesTitle": "Parcourir les catégories",
+    "categories": {
+      "all": "Tout",
+      "art": "Art",
+      "music": "Musique",
+      "gaming": "Jeux",
+      "photography": "Photographie",
+      "collectibles": "Objets de collection",
+      "sports": "Sport",
+      "virtualWorlds": "Mondes virtuels",
+      "utility": "Utilitaire"
+    },
     "nft": {
       "buyNow": "Acheter maintenant",
       "placeBid": "Placer une enchère",
