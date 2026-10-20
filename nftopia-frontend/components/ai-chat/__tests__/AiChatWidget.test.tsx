@@ -1,17 +1,62 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { checkAiHealth, sendAiChat, streamAiChat } from "@/lib/api/ai-chat";
+import {
+  AiQuotaExceededError,
+  checkAiHealth,
+  getAiUsage,
+  sendAiChat,
+  streamAiChat,
+  type AiUsageSummary,
+} from "@/lib/api/ai-chat";
 import { useAiChatStore } from "@/lib/stores/ai-chat-store";
 import { AiChatWidget } from "@/components/ai-chat/AiChatWidget";
 
-jest.mock("@/lib/api/ai-chat", () => ({
-  sendAiChat: jest.fn(),
-  streamAiChat: jest.fn(),
-  checkAiHealth: jest.fn(),
-}));
+jest.mock("@/lib/api/ai-chat", () => {
+  const actual = jest.requireActual("@/lib/api/ai-chat");
+  return {
+    sendAiChat: jest.fn(),
+    streamAiChat: jest.fn(),
+    checkAiHealth: jest.fn(),
+    getAiUsage: jest.fn(),
+    // The real class, so `instanceof` checks in the store work against
+    // errors these mocks throw/reject with.
+    AiQuotaExceededError: actual.AiQuotaExceededError,
+  };
+});
 
 const mockedStreamAiChat = jest.mocked(streamAiChat);
 const mockedSendAiChat = jest.mocked(sendAiChat);
 const mockedCheckAiHealth = jest.mocked(checkAiHealth);
+const mockedGetAiUsage = jest.mocked(getAiUsage);
+
+function buildUsage(overrides: Partial<AiUsageSummary["daily"]> = {}): AiUsageSummary {
+  const dailyBase = {
+    totalTokens: 1000,
+    estimatedCostUsd: 0.05,
+    cap: 200000,
+    remaining: 199000,
+    spendCapUsd: null,
+    spendRemaining: null,
+    percentUsed: 1,
+    approachingCap: false,
+    resetsAt: "2026-10-21T00:00:00.000Z",
+    ...overrides,
+  };
+  return {
+    daily: dailyBase,
+    monthly: {
+      totalTokens: 50000,
+      estimatedCostUsd: 2.5,
+      cap: 2000000,
+      remaining: 1950000,
+      spendCapUsd: null,
+      spendRemaining: null,
+      percentUsed: 3,
+      approachingCap: false,
+      resetsAt: "2026-11-01T00:00:00.000Z",
+    },
+    hasOverride: false,
+  };
+}
 
 /** Minimal SSE-style stream mock: pushes `onText` then resolves. */
 function mockStreamingReply(reply: string, sessionId: string, text = reply) {
@@ -28,6 +73,7 @@ describe("AiChatWidget", () => {
       status: "up",
       timestamp: "2026-10-19T00:00:00.000Z",
     });
+    mockedGetAiUsage.mockResolvedValue(buildUsage());
     act(() => {
       // The store is module-scoped, so clear both the transcript and the open
       // state between cases.
@@ -338,6 +384,79 @@ describe("AiChatWidget", () => {
     expect(input).not.toBeDisabled();
 
     jest.useRealTimers();
+  });
+
+  it("shows remaining daily/monthly AI usage quota when opened", async () => {
+    mockedGetAiUsage.mockResolvedValue(
+      buildUsage({ remaining: 150000, cap: 200000 }),
+    );
+
+    render(<AiChatWidget />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open AI assistant" }));
+    });
+
+    const indicator = await screen.findByTestId("ai-usage-indicator");
+    expect(indicator).toHaveTextContent("150,000 / 200,000 tokens left");
+    expect(indicator).toHaveTextContent("1,950,000 / 2,000,000 tokens left");
+    expect(screen.queryByTestId("ai-usage-near-limit")).not.toBeInTheDocument();
+  });
+
+  it("visually distinguishes a near-limit quota state", async () => {
+    mockedGetAiUsage.mockResolvedValue(
+      buildUsage({ remaining: 15000, cap: 200000, approachingCap: true }),
+    );
+
+    render(<AiChatWidget />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open AI assistant" }));
+    });
+
+    const indicator = await screen.findByTestId("ai-usage-indicator");
+    expect(indicator.className).toContain("border-amber-500");
+    const nearLimit = screen.getByTestId("ai-usage-near-limit");
+    expect(nearLimit).toHaveTextContent("Approaching your daily limit");
+  });
+
+  it("shows a quota-exhausted message distinct from a generic failure, with no retry action", async () => {
+    mockedStreamAiChat.mockRejectedValue(
+      new AiQuotaExceededError(
+        "Daily AI usage cap reached (200000 tokens). Please try again tomorrow.",
+        "AI_DAILY_TOKEN_CAP_REACHED",
+        "2026-10-21T00:00:00.000Z",
+      ),
+    );
+    mockedSendAiChat.mockRejectedValue(
+      new AiQuotaExceededError(
+        "Daily AI usage cap reached (200000 tokens). Please try again tomorrow.",
+        "AI_DAILY_TOKEN_CAP_REACHED",
+        "2026-10-21T00:00:00.000Z",
+      ),
+    );
+
+    render(<AiChatWidget />);
+    fireEvent.click(screen.getByRole("button", { name: "Open AI assistant" }));
+    fireEvent.change(screen.getByLabelText("Message the AI assistant"), {
+      target: { value: "Hello?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const quotaBanner = await screen.findByTestId("ai-chat-quota-exceeded");
+    expect(quotaBanner).toHaveTextContent("AI usage quota reached");
+    expect(quotaBanner).toHaveTextContent(
+      "Daily AI usage cap reached (200000 tokens). Please try again tomorrow.",
+    );
+    // Distinct from the generic retryable-error banner: no "Try again" button,
+    // and not styled/testable as the generic alert.
+    expect(
+      screen.queryByRole("button", { name: "Try again" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ai-chat-degraded")).not.toBeInTheDocument();
+
+    // The non-streaming fallback should not even be attempted - the cap
+    // rejection comes back before any content streams, and both endpoints
+    // enforce the same cap, so there's nothing a fallback request would gain.
+    expect(mockedSendAiChat).not.toHaveBeenCalled();
   });
 });
 
