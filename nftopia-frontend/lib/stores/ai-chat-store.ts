@@ -1,9 +1,12 @@
 import { create } from "zustand";
 import {
+  AiQuotaExceededError,
   checkAiHealth,
+  getAiUsage,
   sendAiChat,
   streamAiChat,
   type AiChatRequest,
+  type AiUsageSummary,
   type AnthropicHealthStatus,
 } from "@/lib/api/ai-chat";
 
@@ -35,6 +38,12 @@ export type AiChatStore = {
   isDegraded: boolean;
   /** Whether a health check is currently in flight. */
   isCheckingHealth: boolean;
+  /** Latest GET /ai/usage snapshot (daily/monthly quota), or null until loaded. */
+  usage: AiUsageSummary | null;
+  /** Whether a usage fetch is currently in flight. */
+  isLoadingUsage: boolean;
+  /** Set when the most recent send was rejected for being over the daily/monthly cap. */
+  quotaExceeded: { code: string; resetsAt: string } | null;
 
   open: () => void;
   close: () => void;
@@ -48,6 +57,8 @@ export type AiChatStore = {
   reset: () => void;
   /** Checks backend /ai/health and updates degraded state. */
   checkHealth: () => Promise<boolean>;
+  /** Refreshes the daily/monthly usage snapshot from GET /ai/usage. */
+  fetchUsage: () => Promise<void>;
 };
 
 /**
@@ -66,6 +77,15 @@ function createMessageId(role: AiChatRole): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+/**
+ * `instanceof AiQuotaExceededError` guarded against the class being absent —
+ * tests that `jest.mock("@/lib/api/ai-chat")` without re-exporting it would
+ * otherwise make the right-hand side `undefined` and throw.
+ */
+function isQuotaExceededError(error: unknown): error is AiQuotaExceededError {
+  return typeof AiQuotaExceededError === "function" && error instanceof AiQuotaExceededError;
 }
 
 export const selectIsSending = (state: AiChatStore): boolean =>
@@ -87,6 +107,9 @@ export const useAiChatStore = create<AiChatStore>()((set, get) => ({
   healthStatus: null,
   isDegraded: false,
   isCheckingHealth: false,
+  usage: null,
+  isLoadingUsage: false,
+  quotaExceeded: null,
 
   open: () => set({ isOpen: true }),
   close: () => set({ isOpen: false }),
@@ -133,6 +156,20 @@ export const useAiChatStore = create<AiChatStore>()((set, get) => ({
     return activeHealthPromise;
   },
 
+  fetchUsage: async () => {
+    if (typeof getAiUsage !== "function") return;
+
+    set({ isLoadingUsage: true });
+    try {
+      const usage = await getAiUsage();
+      set({ usage, isLoadingUsage: false });
+    } catch {
+      // Usage display is best-effort: a failed fetch just leaves the
+      // previous (or no) snapshot in place rather than surfacing an error.
+      set({ isLoadingUsage: false });
+    }
+  },
+
   cancel: () => {
     activeController?.abort();
     activeController = null;
@@ -151,6 +188,9 @@ export const useAiChatStore = create<AiChatStore>()((set, get) => ({
       healthStatus: null,
       isDegraded: false,
       isCheckingHealth: false,
+      usage: null,
+      isLoadingUsage: false,
+      quotaExceeded: null,
     });
   },
 
@@ -190,6 +230,7 @@ export const useAiChatStore = create<AiChatStore>()((set, get) => ({
     set((state) => ({
       status: "sending",
       error: null,
+      quotaExceeded: null,
       messages: [...state.messages, userMessage, assistantMessage],
     }));
 
@@ -211,9 +252,22 @@ export const useAiChatStore = create<AiChatStore>()((set, get) => ({
 
     const fail = (error: unknown, fallbackMessage: string) => {
       dropEmptyAssistant();
+      if (isQuotaExceededError(error)) {
+        // A cap rejection is not a transient failure - it's a known,
+        // specific state, so it skips the health check (the assistant
+        // itself is fine) and gets its own field for a distinct UI message.
+        set({
+          status: "error",
+          error: error.message,
+          quotaExceeded: { code: error.code, resetsAt: error.resetsAt },
+        });
+        void get().fetchUsage();
+        return;
+      }
       set({
         status: "error",
         error: error instanceof Error ? error.message : fallbackMessage,
+        quotaExceeded: null,
       });
       void get().checkHealth();
     };
@@ -232,10 +286,18 @@ export const useAiChatStore = create<AiChatStore>()((set, get) => ({
       );
       setAssistantContent(completion.reply);
       set({ sessionId: completion.sessionId });
+      void get().fetchUsage();
     } catch (streamError) {
       if (isAbortError(streamError) || controller.signal.aborted) {
         // Stopped by the user: keep the partial reply, drop a bare placeholder.
         dropEmptyAssistant();
+        return;
+      }
+
+      if (isQuotaExceededError(streamError)) {
+        // Thrown before any content streamed (assertWithinCap runs up front) -
+        // no point falling back to POST /ai/chat, it enforces the same cap.
+        fail(streamError, "AI assistant failed");
         return;
       }
 
@@ -246,6 +308,7 @@ export const useAiChatStore = create<AiChatStore>()((set, get) => ({
           const completion = await sendAiChat(request, controller.signal);
           setAssistantContent(completion.reply);
           set({ sessionId: completion.sessionId });
+          void get().fetchUsage();
         } catch (fallbackError) {
           if (!isAbortError(fallbackError) && !controller.signal.aborted) {
             fail(fallbackError, "AI assistant failed");
