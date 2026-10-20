@@ -94,6 +94,10 @@
       "virtualWorlds": "Virtual Worlds",
       "utility": "Utility"
     },
+    "recentlyViewed": {
+      "title": "Recently Viewed",
+      "clear": "Clear"
+    },
     "nft": {
       "buyNow": "Buy Now",
       "placeBid": "Place Bid",
