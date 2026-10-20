@@ -35,10 +35,13 @@ export function ChatPanel({ id = AI_CHAT_PANEL_ID, onClose }: ChatPanelProps) {
     error,
     isDegraded,
     isCheckingHealth,
+    usage,
+    quotaExceeded,
     sendMessage,
     retry,
     cancel,
     checkHealth,
+    fetchUsage,
   } = useAiChat();
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -48,12 +51,16 @@ export function ChatPanel({ id = AI_CHAT_PANEL_ID, onClose }: ChatPanelProps) {
   const inputId = `${id}-input`;
   const lastMessageId = messages[messages.length - 1]?.id;
 
-  // Proactively check assistant health when opened, and periodically while open.
+  // Proactively check assistant health and quota usage when opened, and
+  // periodically while open (usage changes with every turn, including ones
+  // sent from other tabs).
   useEffect(() => {
     void checkHealth();
+    void fetchUsage();
 
     const intervalId = window.setInterval(() => {
       void checkHealth();
+      void fetchUsage();
     }, 30_000);
 
     if (
@@ -68,7 +75,7 @@ export function ChatPanel({ id = AI_CHAT_PANEL_ID, onClose }: ChatPanelProps) {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [checkHealth]);
+  }, [checkHealth, fetchUsage]);
 
   // Focus management: move focus into the panel as soon as it opens (when available).
   useEffect(() => {
@@ -236,6 +243,21 @@ export function ChatPanel({ id = AI_CHAT_PANEL_ID, onClose }: ChatPanelProps) {
             )}
           </Button>
         </div>
+      ) : quotaExceeded ? (
+        <div
+          role="alert"
+          data-testid="ai-chat-quota-exceeded"
+          className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200"
+        >
+          <div className="flex items-center gap-2 font-medium text-amber-300">
+            <AlertCircle aria-hidden className="h-4 w-4 shrink-0 text-amber-400" />
+            <span>AI usage quota reached</span>
+          </div>
+          {/* No retry action here on purpose: assertWithinCap enforces the same
+              cap on every endpoint, so retrying before resetsAt would just fail
+              again — the fix is waiting, not trying again. */}
+          <p className="text-white/80">{error}</p>
+        </div>
       ) : error ? (
         <div
           role="alert"
@@ -253,6 +275,44 @@ export function ChatPanel({ id = AI_CHAT_PANEL_ID, onClose }: ChatPanelProps) {
           </Button>
         </div>
       ) : null}
+
+      {usage ? (
+        <div
+          data-testid="ai-usage-indicator"
+          className={cn(
+            "flex flex-col gap-1 rounded-lg border px-3 py-2 text-xs",
+            usage.daily.approachingCap || usage.monthly.approachingCap
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+              : "border-white/10 bg-white/5 text-white/60",
+          )}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span>Daily quota</span>
+            <span>
+              {usage.daily.remaining.toLocaleString()} / {usage.daily.cap.toLocaleString()} tokens left
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span>Monthly quota</span>
+            <span>
+              {usage.monthly.remaining.toLocaleString()} / {usage.monthly.cap.toLocaleString()} tokens left
+            </span>
+          </div>
+          {usage.daily.approachingCap || usage.monthly.approachingCap ? (
+            <div
+              data-testid="ai-usage-near-limit"
+              className="flex items-center gap-1 pt-0.5 font-medium text-amber-300"
+            >
+              <AlertCircle aria-hidden className="h-3 w-3 shrink-0" />
+              <span>
+                Approaching your{" "}
+                {usage.daily.approachingCap ? "daily" : "monthly"} limit
+              </span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <form onSubmit={submit} className="flex items-end gap-2">
         <label className="sr-only" htmlFor={inputId}>
           Message the AI assistant
