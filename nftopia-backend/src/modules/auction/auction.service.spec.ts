@@ -16,6 +16,7 @@ import { ConfigService } from '@nestjs/config';
 import { MarketplaceSettlementClient } from '../stellar/marketplace-settlement.client';
 import { User } from '../../users/user.entity';
 import { TransactionService } from '../transaction/transaction.service';
+import { TransactionState } from '../transaction/enums/transaction-state.enum';
 import { NotificationsService } from '../notifications/notifications.service';
 
 const mockAuctionRepo = {
@@ -60,7 +61,9 @@ const mockSettlementClient = {
   placeBid: jest.fn(),
 };
 
-const mockTransactionService = {};
+const mockTransactionService = {
+  createAndExecuteAuctionSettlement: jest.fn(),
+};
 const mockNotificationsService = {
   broadcastAuctionExtended: jest.fn(),
 };
@@ -75,6 +78,16 @@ function createFindAllQbMock(result: unknown[]) {
   };
 }
 
+async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+
+  throw new Error('Expected promise to reject');
+}
+
 describe('AuctionService', () => {
   let service: AuctionService;
 
@@ -83,6 +96,10 @@ describe('AuctionService', () => {
     mockConfigService.get.mockImplementation((key: string) => {
       if (key === 'ENABLE_ONCHAIN_SETTLEMENT') return false;
       return undefined;
+    });
+    mockTransactionService.createAndExecuteAuctionSettlement.mockResolvedValue({
+      id: 'tx-1',
+      state: TransactionState.COMPLETED,
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -142,10 +159,11 @@ describe('AuctionService', () => {
         endTime: new Date(Date.now() + 86400000).toISOString(),
       };
 
-      await expect(service.create(dto, 'seller-1')).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.create(dto, 'seller-1')).rejects.toThrow(
+      const rejection = await captureRejection(service.create(dto, 'seller-1'));
+
+      expect(rejection).toBeInstanceOf(BadRequestException);
+      expect(rejection).toHaveProperty(
+        'message',
         'NFT already in active auction',
       );
     });
@@ -239,6 +257,7 @@ describe('AuctionService', () => {
       const auction = {
         id: 'a1',
         status: AuctionStatus.ACTIVE,
+        sellerId: 'seller-1',
         endTime: new Date(Date.now() + 10000),
         currentPrice: 1,
       } as unknown as Auction;
@@ -263,6 +282,7 @@ describe('AuctionService', () => {
       const auction = {
         id: 'a1',
         status: AuctionStatus.ACTIVE,
+        sellerId: 'seller-1',
         endTime: originalEndTime,
         currentPrice: 1,
         extensionCount: 0,
@@ -288,6 +308,7 @@ describe('AuctionService', () => {
       const auction = {
         id: 'a1',
         status: AuctionStatus.ACTIVE,
+        sellerId: 'seller-1',
         endTime: originalEndTime,
         currentPrice: 1,
         extensionCount: 0,
@@ -308,6 +329,7 @@ describe('AuctionService', () => {
       const auction = {
         id: 'a1',
         status: AuctionStatus.ACTIVE,
+        sellerId: 'seller-1',
         endTime: originalEndTime,
         currentPrice: 1,
         extensionCount: 3,
@@ -332,12 +354,11 @@ describe('AuctionService', () => {
       } as unknown as Auction;
       mockAuctionRepo.findOne.mockResolvedValueOnce(auction);
 
-      await expect(service.placeBid('a1', 'b1', { amount: 2 })).rejects.toThrow(
-        BadRequestException,
+      const rejection = await captureRejection(
+        service.placeBid('a1', 'b1', { amount: 2 }),
       );
-      await expect(service.placeBid('a1', 'b1', { amount: 2 })).rejects.toThrow(
-        'Auction is not active',
-      );
+      expect(rejection).toBeInstanceOf(BadRequestException);
+      expect(rejection).toHaveProperty('message', 'Auction is not active');
     });
 
     it('should reject bid on expired auction', async () => {
@@ -349,30 +370,33 @@ describe('AuctionService', () => {
       } as unknown as Auction;
       mockAuctionRepo.findOne.mockResolvedValueOnce(auction);
 
-      await expect(service.placeBid('a1', 'b1', { amount: 2 })).rejects.toThrow(
-        BadRequestException,
+      const rejection = await captureRejection(
+        service.placeBid('a1', 'b1', { amount: 2 }),
       );
-      await expect(service.placeBid('a1', 'b1', { amount: 2 })).rejects.toThrow(
-        'Auction expired',
-      );
+      expect(rejection).toBeInstanceOf(BadRequestException);
+      expect(rejection).toHaveProperty('message', 'Auction expired');
     });
 
     it('should reject bid lower than or equal to current price', async () => {
       const auction = {
         id: 'a1',
         status: AuctionStatus.ACTIVE,
+        sellerId: 'seller-1',
         endTime: new Date(Date.now() + 10000),
         currentPrice: 5,
       } as unknown as Auction;
       mockAuctionRepo.findOne.mockResolvedValueOnce(auction);
 
-      await expect(service.placeBid('a1', 'b1', { amount: 3 })).rejects.toThrow(
-        BadRequestException,
+      const rejection = await captureRejection(
+        service.placeBid('a1', 'b1', { amount: 3 }),
       );
-      await expect(service.placeBid('a1', 'b1', { amount: 3 })).rejects.toThrow(
+      expect(rejection).toBeInstanceOf(BadRequestException);
+      expect(rejection).toHaveProperty(
+        'message',
         'Bid must be greater than current price',
       );
 
+      mockAuctionRepo.findOne.mockResolvedValueOnce(auction);
       await expect(service.placeBid('a1', 'b1', { amount: 5 })).rejects.toThrow(
         BadRequestException,
       );
@@ -439,6 +463,7 @@ describe('AuctionService', () => {
       const auction = {
         id: 'a1',
         status: AuctionStatus.ACTIVE,
+        sellerId: 'seller-1',
         endTime: new Date(Date.now() - 1000),
       } as unknown as Auction;
       mockAuctionRepo.findOne.mockResolvedValueOnce(auction);
@@ -456,6 +481,7 @@ describe('AuctionService', () => {
       const auction = {
         id: 'a1',
         status: AuctionStatus.ACTIVE,
+        sellerId: 'seller-1',
         reservePrice: 10,
         endTime: new Date(Date.now() - 1000),
       } as unknown as Auction;
@@ -474,6 +500,7 @@ describe('AuctionService', () => {
       const auction = {
         id: 'a1',
         status: AuctionStatus.ACTIVE,
+        sellerId: 'seller-1',
         endTime: new Date(Date.now() - 1000),
         nftContractId: 'C',
         nftTokenId: 'T',
@@ -494,7 +521,9 @@ describe('AuctionService', () => {
       expect(result.settled).toBe(true);
       expect(result.winner).toBe('b1');
       expect(result.amount).toBe(20);
-      expect(mockNftRepo.save).toHaveBeenCalled();
+      expect(
+        mockTransactionService.createAndExecuteAuctionSettlement,
+      ).toHaveBeenCalledWith('a1', 'b1', 20);
       expect(mockAuctionRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           status: AuctionStatus.SETTLED,
@@ -549,10 +578,12 @@ describe('AuctionService', () => {
       } as unknown as Auction;
       mockAuctionRepo.findOne.mockResolvedValueOnce(auction);
 
-      await expect(service.settleAuction('a1', 'other')).rejects.toThrow(
-        ForbiddenException,
+      const rejection = await captureRejection(
+        service.settleAuction('a1', 'other'),
       );
-      await expect(service.settleAuction('a1', 'other')).rejects.toThrow(
+      expect(rejection).toBeInstanceOf(ForbiddenException);
+      expect(rejection).toHaveProperty(
+        'message',
         'Only seller or admin can settle before end',
       );
     });
