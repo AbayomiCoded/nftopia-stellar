@@ -34,6 +34,7 @@ import MyNFTsScreen from '@/screens/Creator/MyNFTsScreen';
 import MintNFTScreen from '@/screens/Creator/MintNFTScreen';
 import CreateCollectionScreen from '@/screens/Creator/CreateCollectionScreen';
 import EarningsScreen from '@/screens/Creator/EarningsScreen';
+import CreatorProfileScreen from '@/screens/Profile/CreatorProfileScreen';
 
 // Notification Screens
 import NotificationsScreen from '@/screens/Notifications/NotificationsScreen';
@@ -75,6 +76,7 @@ export type MainStackParamList = {
   Marketplace: { category?: string } | undefined;
   BackupReminder: undefined;
   Favorites: undefined;
+  CreatorProfile: { userId: string };
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -215,6 +217,18 @@ export default function MainNavigator() {
           {() => (
             <ScreenErrorBoundary name="FavoritesScreen">
               <FavoritesScreen />
+            </ScreenErrorBoundary>
+          )}
+        </Stack.Screen>
+
+        {/* Creator Profile - public view of any creator */}
+        <Stack.Screen
+          name="CreatorProfile"
+          options={getTransitionConfig('detail')}
+        >
+          {(props) => (
+            <ScreenErrorBoundary name="CreatorProfileScreen">
+              <CreatorProfileScreen {...props} />
             </ScreenErrorBoundary>
           )}
         </Stack.Screen>
