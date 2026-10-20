@@ -40,6 +40,9 @@ export {
   useNotificationActions,
 } from "./notification-store";
 
+// Recently Viewed NFTs Store
+export { useRecentlyViewedStore } from "./recently-viewed-store";
+
 
 export { useMarketplace } from "../../features/marketplace/store/marketplaceStore";
 export { useNFTs } from "../../features/nft/store/nftStore";

@@ -19,10 +19,14 @@ export function useAiChat() {
   const healthStatus = useAiChatStore((state) => state.healthStatus);
   const isDegraded = useAiChatStore((state) => state.isDegraded);
   const isCheckingHealth = useAiChatStore((state) => state.isCheckingHealth);
+  const usage = useAiChatStore((state) => state.usage);
+  const isLoadingUsage = useAiChatStore((state) => state.isLoadingUsage);
+  const quotaExceeded = useAiChatStore((state) => state.quotaExceeded);
   const sendMessage = useAiChatStore((state) => state.sendMessage);
   const retry = useAiChatStore((state) => state.retry);
   const cancel = useAiChatStore((state) => state.cancel);
   const checkHealth = useAiChatStore((state) => state.checkHealth);
+  const fetchUsage = useAiChatStore((state) => state.fetchUsage);
 
   useEffect(() => () => cancel(), [cancel]);
 
@@ -33,9 +37,13 @@ export function useAiChat() {
     healthStatus,
     isDegraded,
     isCheckingHealth,
+    usage,
+    isLoadingUsage,
+    quotaExceeded,
     sendMessage,
     retry,
     cancel,
     checkHealth,
+    fetchUsage,
   };
 }
