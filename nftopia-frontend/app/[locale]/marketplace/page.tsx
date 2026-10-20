@@ -7,6 +7,7 @@ import PopularCollection from "@/components/PopularCollection";
 import { MarketplaceSkeleton } from "@/components/Skeleton/MarketplaceSkeleton";
 import { MarketplaceListings } from "@/components/marketplace/MarketplaceListings";
 import { CategorySelector } from "@/components/marketplace/CategorySelector";
+import { RecentlyViewedRow } from "@/components/marketplace/RecentlyViewedRow";
 
 export default function MarketplacePage() {
   return (
@@ -21,6 +22,10 @@ export default function MarketplacePage() {
           <TopSellers />
           <TodaysPicks />
           <PopularCollection />
+
+          {/* Client-only: renders nothing until the recently-viewed store has
+              history, backed by localStorage via useRecentlyViewedStore. */}
+          <RecentlyViewedRow />
 
           {/* Category chips filter the "All listings" section below via
               ?category=, the same URL-param pattern MarketplaceFilters
