@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  Coins,
   Link2,
   Link2Off,
   Wallet,
@@ -17,12 +18,18 @@ import {
   linkWalletWithChallenge,
   unlinkWallet,
 } from "@/lib/services/profile";
+import { useDisplayCurrency } from "@/lib/stores/preferences-store";
+import { DISPLAY_CURRENCY_OPTIONS } from "@/lib/currency";
+import type { DisplayCurrency } from "@/lib/stores/types";
 
 export default function SettingsPage() {
   // Sync state cleanly with the global user stores from main branch
   const authUser = useAuthStore((state) => state.user);
   const setAuthUser = useAuthStore((state) => state.setUser);
   const getCurrentUser = useAuthStore((state) => state.getCurrentUser);
+
+  const { currency: displayCurrency, setCurrency: setDisplayCurrency } =
+    useDisplayCurrency();
 
   // Fallback engine check for structural environment context layers
   const context = useAuthContext() || {};
@@ -203,6 +210,40 @@ export default function SettingsPage() {
           <Link2 className="h-4 w-4" />
           {linking ? "Linking..." : "Link Freighter Wallet"}
         </button>
+      </section>
+
+      <section className="mt-6 rounded-xl border border-border bg-card p-6">
+        <div className="mb-5 flex items-center gap-2">
+          <Coins className="h-5 w-5 text-purple-400" />
+          <h2 className="text-xl font-semibold text-card-foreground">
+            Display Preferences
+          </h2>
+        </div>
+
+        <label
+          htmlFor="display-currency-select"
+          className="mb-2 block text-sm font-medium text-card-foreground"
+        >
+          Currency
+        </label>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Choose how prices and balances are displayed across the app.
+        </p>
+        <select
+          id="display-currency-select"
+          data-testid="display-currency-select"
+          value={displayCurrency}
+          onChange={(e) =>
+            setDisplayCurrency(e.target.value as DisplayCurrency)
+          }
+          className="w-full rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500"
+        >
+          {DISPLAY_CURRENCY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </section>
     </div>
   );
