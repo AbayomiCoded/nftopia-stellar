@@ -28,6 +28,7 @@ import type { ChatSessionService } from './chat-session.service';
 import type { Repository } from 'typeorm';
 import type { AiToolCallLog } from './entities/ai-tool-call-log.entity';
 import type { AiAgentHealthService } from './ai-agent-health.service';
+import type { AiChatStreamRegistryService } from './ai-chat-stream-registry.service';
 
 describe('AiAgentService', () => {
   let service: AiAgentService;
@@ -72,6 +73,7 @@ describe('AiAgentService', () => {
       } as unknown as Repository<AiToolCallLog>,
       new PromptInjectionService(),
       aiAgentHealthService as unknown as AiAgentHealthService,
+      {} as unknown as AiChatStreamRegistryService, // unused by chat()/draftListing() — see ai-agent.service.stream.spec.ts for chatStream()
     );
   });
 
@@ -609,6 +611,7 @@ describe('AiAgentService', () => {
         } as unknown as Repository<AiToolCallLog>,
         new PromptInjectionService(),
         aiAgentHealthService as unknown as AiAgentHealthService,
+        {} as unknown as AiChatStreamRegistryService, // unused by draftListing()
       );
     });
 
