@@ -1,4 +1,7 @@
-import { ForbiddenException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import type { MessageEvent } from '@nestjs/common';
 import type { Observable } from 'rxjs';
 import { AiAgentService } from './ai-agent.service';
@@ -12,6 +15,7 @@ import type { AiUsageService } from './ai-usage.service';
 import type { ChatSessionService } from './chat-session.service';
 import type { Repository } from 'typeorm';
 import type { AiToolCallLog } from './entities/ai-tool-call-log.entity';
+import type { AiAgentHealthService } from './ai-agent-health.service';
 
 // Anthropic() reads ANTHROPIC_API_KEY at construction time — see
 // ai-agent.service.spec.ts for why this must be set before import.
@@ -109,6 +113,10 @@ describe('AiAgentService.chatStream', () => {
     appendExchange: jest.fn(),
   };
 
+  const aiAgentHealthService = {
+    checkAnthropic: jest.fn(),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     aiUsageService.assertWithinCap.mockResolvedValue(undefined);
@@ -118,6 +126,7 @@ describe('AiAgentService.chatStream', () => {
       history: [],
     });
     chatSessionService.appendExchange.mockResolvedValue(undefined);
+    aiAgentHealthService.checkAnthropic.mockResolvedValue('up');
 
     service = new AiAgentService(
       {} as NftService,
@@ -132,6 +141,7 @@ describe('AiAgentService.chatStream', () => {
         createQueryBuilder: jest.fn(),
       } as unknown as Repository<AiToolCallLog>,
       new PromptInjectionService(),
+      aiAgentHealthService as unknown as AiAgentHealthService,
     );
   });
 
@@ -431,6 +441,32 @@ describe('AiAgentService.chatStream', () => {
         sessionId: 'session-1',
       });
     });
+  });
+
+  describe('model fallback when Anthropic is degraded (#643)', () => {
+    it.each(['down', 'unconfigured'] as const)(
+      'emits a distinct AI_ASSISTANT_UNAVAILABLE error when health is %s, without calling the cap check or the Anthropic API',
+      async (status) => {
+        aiAgentHealthService.checkAnthropic.mockResolvedValue(status);
+        const toolRunner = mockToolRunner(makeFakeStreamingRunner([]));
+
+        const { events, error } = await collect(
+          service.chatStream('user-1', 'marketplace-assistant', 'hi'),
+        );
+
+        expect(events).toHaveLength(0);
+        expect(error).toBeInstanceOf(ServiceUnavailableException);
+        const response = (error as ServiceUnavailableException).getResponse();
+        expect(response).toMatchObject({
+          statusCode: 503,
+          code: 'AI_ASSISTANT_UNAVAILABLE',
+          anthropicStatus: status,
+        });
+
+        expect(aiUsageService.assertWithinCap).not.toHaveBeenCalled();
+        expect(toolRunner).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('errors', () => {
