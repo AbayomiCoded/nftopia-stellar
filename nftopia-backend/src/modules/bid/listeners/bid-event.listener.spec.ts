@@ -115,12 +115,12 @@ describe('BidEventListener', () => {
 
     expect(pushNotificationService.sendToUser).toHaveBeenCalledWith(
       payload.sellerId,
-      expect.objectContaining({
-        title: 'New Bid',
-        body: expect.stringContaining(payload.amountXlm),
-        url: expect.stringContaining(payload.auctionId),
-      }),
+      expect.objectContaining({ title: 'New Bid' }),
     );
+    const [, pushPayload] = pushNotificationService.sendToUser.mock
+      .calls[0] as [string, { body: string; url: string }];
+    expect(pushPayload.body).toContain(payload.amountXlm);
+    expect(pushPayload.url).toContain(payload.auctionId);
   });
 
   it('skips the seller email when the seller has no email on file', async () => {

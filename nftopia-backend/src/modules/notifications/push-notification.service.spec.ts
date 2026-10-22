@@ -68,7 +68,10 @@ describe('PushNotificationService (#661)', () => {
     });
 
     it('does not configure web-push when VAPID keys are missing', async () => {
-      await buildService({ VAPID_PUBLIC_KEY: undefined, VAPID_PRIVATE_KEY: undefined });
+      await buildService({
+        VAPID_PUBLIC_KEY: undefined,
+        VAPID_PRIVATE_KEY: undefined,
+      });
       expect(webpush.setVapidDetails).not.toHaveBeenCalled();
     });
   });
@@ -134,7 +137,10 @@ describe('PushNotificationService (#661)', () => {
 
   describe('sendToUser', () => {
     it('does nothing when VAPID is not configured', async () => {
-      service = await buildService({ VAPID_PUBLIC_KEY: undefined, VAPID_PRIVATE_KEY: undefined });
+      service = await buildService({
+        VAPID_PUBLIC_KEY: undefined,
+        VAPID_PRIVATE_KEY: undefined,
+      });
 
       await service.sendToUser('user-1', { title: 'Hi', body: 'There' });
 
@@ -155,11 +161,16 @@ describe('PushNotificationService (#661)', () => {
         body: 'A bid of 10 XLM was placed.',
       });
 
-      expect(mockRepo.find).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
+      expect(mockRepo.find).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+      });
       expect(webpush.sendNotification).toHaveBeenCalledTimes(2);
       expect(webpush.sendNotification).toHaveBeenCalledWith(
         { endpoint: 'ep-1', keys: { p256dh: 'p1', auth: 'a1' } },
-        JSON.stringify({ title: 'New Bid', body: 'A bid of 10 XLM was placed.' }),
+        JSON.stringify({
+          title: 'New Bid',
+          body: 'A bid of 10 XLM was placed.',
+        }),
       );
     });
 
@@ -168,7 +179,9 @@ describe('PushNotificationService (#661)', () => {
       mockRepo.find.mockResolvedValue([
         { id: 'sub-1', endpoint: 'ep-1', p256dh: 'p1', auth: 'a1' },
       ]);
-      (webpush.sendNotification as jest.Mock).mockRejectedValue({ statusCode: 410 });
+      (webpush.sendNotification as jest.Mock).mockRejectedValue({
+        statusCode: 410,
+      });
 
       await service.sendToUser('user-1', { title: 'Hi', body: 'There' });
 
