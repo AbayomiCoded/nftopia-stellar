@@ -7,15 +7,33 @@ import {
   Query,
   ResolveField,
   Resolver,
+  Subscription,
 } from '@nestjs/graphql';
 import {
   BadRequestException,
+  Inject,
   NotFoundException,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import type { PubSub } from 'graphql-subscriptions';
 import { AuctionService } from '../../modules/auction/auction.service';
 import { BidService } from '../../modules/bid/bid.service';
+import { PUB_SUB } from '../pubsub/pubsub.provider';
+import { AUCTION_BID_PLACED_TOPIC } from '../pubsub/topics';
+import type { AuctionBidPlacedPayload } from '../pubsub/auction-bid.publisher';
+
+/**
+ * Scopes `auctionBidPlaced` per auction (#650) — not a global firehose.
+ * Exported standalone (rather than inlined in the decorator) so it has its
+ * own direct test coverage; see docs/graphql-subscriptions.md.
+ */
+export function auctionBidPlacedFilter(
+  payload: AuctionBidPlacedPayload,
+  variables: { auctionId: string },
+): boolean {
+  return payload.auctionBidPlaced.auctionId === variables.auctionId;
+}
 import {
   GraphqlAuction,
   GraphqlBid,
@@ -47,6 +65,7 @@ export class AuctionResolver {
   constructor(
     private readonly auctionService: AuctionService,
     private readonly bidService: BidService,
+    @Inject(PUB_SUB) private readonly pubSub: PubSub,
   ) {}
 
   // === QUERIES ===
@@ -325,6 +344,32 @@ export class AuctionResolver {
           error instanceof Error ? error.message : 'Failed to settle auction',
       };
     }
+  }
+
+  // === SUBSCRIPTIONS ===
+
+  /**
+   * Real-time bid updates for a single auction (#650). Scoped per auction —
+   * not a global firehose — via the `filter` option: every connected
+   * client's subscription receives every publish on the shared topic, but
+   * `filter` drops any payload whose `auctionId` doesn't match the
+   * `auctionId` this particular client subscribed with, before it ever
+   * reaches that client's resolver/response. See
+   * docs/graphql-subscriptions.md for the full contract.
+   */
+  @Subscription(() => GraphqlBid, {
+    name: 'auctionBidPlaced',
+    description: 'Subscribe to new bids placed on a specific auction',
+    filter: auctionBidPlacedFilter,
+  })
+  auctionBidPlaced(
+    // Unused in the body: NestJS needs this parameter declared to build the
+    // `auctionId` schema argument, but the actual per-client filtering
+    // happens in the `filter` option above via `variables`, not here.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    @Args('auctionId', { type: () => ID }) auctionId: string,
+  ) {
+    return this.pubSub.asyncIterableIterator(AUCTION_BID_PLACED_TOPIC);
   }
 
   // === RESOLVE FIELDS ===
