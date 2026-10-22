@@ -14,6 +14,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { ClientBody } from "@/components/layout/ClientBody";
 import { AiChatWidget } from "@/components/ai-chat/AiChatWidget";
 import { TransactionToastCenter } from "@/components/wallet/TransactionToastCenter";
+import { PushOptInPrompt } from "@/components/notifications/PushOptInPrompt";
 
 const inter = localFont({
   src: "../../public/fonts/inter-var.woff2",
@@ -118,6 +119,7 @@ export default function LocaleLayout({ children, params }: LocaleLayoutProps) {
             )}
             <AiChatWidget />
             <TransactionToastCenter />
+            <PushOptInPrompt />
             <Toast />
           </StellarWalletProvider>
         </StoreProvider>
