@@ -27,6 +27,10 @@ import { AiUsageService } from './ai-usage.service';
 import { ChatSessionService } from './chat-session.service';
 import { AiToolCallLog } from './entities/ai-tool-call-log.entity';
 import { PromptInjectionService } from './prompt-injection.service';
+import {
+  AiAgentHealthService,
+  type AnthropicHealthStatus,
+} from './ai-agent-health.service';
 
 const SYSTEM_PROMPT = `You are the NFTopia marketplace assistant. You help users find NFTs, \
 listings, and collections on the NFTopia Stellar marketplace, answer questions about the \
@@ -61,7 +65,45 @@ export class AiAgentService {
     @InjectRepository(AiToolCallLog)
     private readonly toolCallLogRepo: Repository<AiToolCallLog>,
     private readonly promptInjectionService: PromptInjectionService,
+    private readonly aiAgentHealthService: AiAgentHealthService,
   ) {}
+
+  /**
+   * Short-circuits chat()/chatStream() while Anthropic is known to be
+   * down/unconfigured (#643), instead of letting every request pay for its
+   * own doomed attempt (and, for an auth failure, an avoidable billed call).
+   * checkAnthropic() is itself cache-backed (AiAgentHealthService), so this
+   * doesn't add a reachability round-trip to every chat message.
+   *
+   * Thrown outside of chat()'s/chatStream()'s try/catch around the Anthropic
+   * call, so it reaches the caller as-is rather than through
+   * mapAnthropicError's generic fallback — see that method's explicit
+   * ServiceUnavailableException passthrough.
+   */
+  private async assertAnthropicAvailable(): Promise<void> {
+    const status = await this.aiAgentHealthService.checkAnthropic();
+    if (status === 'up') return;
+
+    throw this.assistantUnavailableError(status);
+  }
+
+  /**
+   * The 'assistant temporarily unavailable' response (#643): a distinct,
+   * machine-readable `code` (mirroring AiUsageService's cap-exceeded shape)
+   * so a client can render this differently from a generic failure, rather
+   * than just a prose message.
+   */
+  private assistantUnavailableError(
+    status: AnthropicHealthStatus,
+  ): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      statusCode: 503,
+      code: 'AI_ASSISTANT_UNAVAILABLE',
+      message:
+        'The AI assistant is temporarily unavailable. Please try again shortly.',
+      anthropicStatus: status,
+    });
+  }
 
   private getToolLogger(userId: string, sessionId: string) {
     return (
@@ -96,12 +138,21 @@ export class AiAgentService {
     };
   }
 
+  /**
+   * A queued-retry for a degraded Anthropic API (so a chat sent while down
+   * could be delivered automatically once it recovers, rather than the
+   * caller having to resend) is explicitly deferred — out of scope for
+   * #643, which is about fail-safe degradation (a clear, fast, distinct
+   * "unavailable" response) rather than delivery guarantees. Worth
+   * revisiting as a follow-up if that gap matters in practice.
+   */
   async chat(
     userId: string,
     toolSet: ToolSetName,
     message: string,
     sessionId?: string,
   ): Promise<{ reply: string; sessionId: string }> {
+    await this.assertAnthropicAvailable();
     await this.aiUsageService.assertWithinCap(userId);
 
     // Screen the message for prompt-injection / jailbreak attempts before
@@ -203,6 +254,7 @@ export class AiAgentService {
 
       void (async () => {
         try {
+          await this.assertAnthropicAvailable();
           await this.aiUsageService.assertWithinCap(userId);
 
           // Screen for injection/jailbreak before opening the session or
@@ -423,6 +475,12 @@ export class AiAgentService {
   private mapAnthropicError(error: unknown): Error {
     if (error instanceof ForbiddenException) {
       // Cap-exceeded, already a clear typed/user-facing error — pass through.
+      return error;
+    }
+    if (error instanceof ServiceUnavailableException) {
+      // Already a clear typed/user-facing error (e.g. assertAnthropicAvailable's
+      // AI_ASSISTANT_UNAVAILABLE, thrown from inside chatStream()'s try block) —
+      // pass through rather than falling into the generic mapping below.
       return error;
     }
     if (error instanceof Anthropic.RateLimitError) {
