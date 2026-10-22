@@ -22,7 +22,7 @@ import { Logger as NestLogger, ValidationPipe } from '@nestjs/common';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
-import { GraphQLSchemaFactory } from '@nestjs/graphql';
+import { GraphQLSchemaFactory, GqlSubscriptionService } from '@nestjs/graphql';
 import { json, raw, urlencoded } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { GraphqlGatewayModule } from './graphql/graphql.module';
@@ -343,6 +343,21 @@ async function bootstrapGraphqlGateway() {
   httpAdapter.use(graphqlConfig.path, json(), graphqlMiddleware);
 
   await graphqlApp.listen(graphqlConfig.port);
+
+  // Subscriptions (#650) need a WebSocket transport — Apollo Server's own
+  // HTTP middleware above only serves queries/mutations. GqlSubscriptionService
+  // attaches a graphql-ws server to the same underlying HTTP server's
+  // 'upgrade' event, at the same /graphql path.
+  new GqlSubscriptionService(
+    {
+      schema,
+      path: graphqlConfig.path,
+      'graphql-ws': true,
+      context: async (ctx) =>
+        contextFactory.createForSubscription(ctx.connectionParams),
+    },
+    graphqlApp.getHttpServer(),
+  );
 
   const logger = new NestLogger('GraphqlGateway');
   logger.log(
