@@ -1145,14 +1145,39 @@ pub struct EscrowManager;
 
 impl EscrowManager {
     /// Check escrow balance for a transaction
+    ///
+    /// Sums `asset` across both the seller's and buyer's escrow holdings for this
+    /// transaction. A holding only counts once `is_deposited` is true and
+    /// `released_at` is still `None`: `initialize_swap` pre-populates holdings with
+    /// their eventual amount before any transfer happens (see `EscrowHolding`'s own
+    /// doc comment on `is_deposited`), so without that gate this would report funds
+    /// that were only ever reserved, not actually escrowed.
+    ///
+    /// A transaction with no recorded swap at all has nothing escrowed, so this
+    /// returns `Ok(0)` rather than an error — same as an existing swap whose
+    /// matching asset simply hasn't been deposited yet.
     pub fn check_escrow_balance(
-        _env: &Env,
-        _transaction_id: u64,
-        _asset: &Asset,
+        env: &Env,
+        transaction_id: u64,
+        asset: &Asset,
     ) -> Result<i128, SettlementError> {
-        // This would query the escrow holdings
-        // For now, return a placeholder
-        Ok(0)
+        let swap = match AtomicSwapEngine::get_swap_by_transaction(env, transaction_id) {
+            Ok(swap) => swap,
+            Err(SettlementError::NotFound) => return Ok(0),
+            Err(err) => return Err(err),
+        };
+
+        let held = |holdings: &Vec<EscrowHolding>| -> i128 {
+            holdings
+                .iter()
+                .filter(|holding| {
+                    holding.asset == *asset && holding.is_deposited && holding.released_at.is_none()
+                })
+                .map(|holding| holding.amount)
+                .sum()
+        };
+
+        Ok(held(&swap.seller_escrow) + held(&swap.buyer_escrow))
     }
 
     /// Release escrow to specific address

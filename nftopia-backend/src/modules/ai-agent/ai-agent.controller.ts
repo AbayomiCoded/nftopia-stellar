@@ -119,6 +119,32 @@ export class AiAgentController {
     );
   }
 
+  // No rate-limit guard: resuming replays an already-paid-for generation
+  // rather than starting a new one, so it shouldn't draw on the chat spend
+  // bucket. See docs/ai-chat-streaming-reconnect.md for the full contract.
+  @UseGuards(JwtAuthGuard)
+  @Sse('chat/stream/:streamId/resume')
+  @ApiOperation({
+    summary:
+      'Resume an in-flight or recently-completed chat stream (#644) after ' +
+      'a dropped connection, from the event sequence number last received.',
+  })
+  resumeChatStream(
+    @Req() req: RequestWithUser,
+    @Param('streamId') streamId: string,
+    @Query('afterSeq') afterSeq?: string,
+  ): Observable<MessageEvent> {
+    if (!req.user?.userId) {
+      throw new UnauthorizedException('Invalid JWT payload');
+    }
+    const parsedAfterSeq = afterSeq ? parseInt(afterSeq, 10) : -1;
+    return this.aiAgentService.resumeChatStream(
+      req.user.userId,
+      streamId,
+      Number.isFinite(parsedAfterSeq) ? parsedAfterSeq : -1,
+    );
+  }
+
   // Dedicated rate limit bucket (#528) — separate from /ai/chat's, so a
   // creator drafting listings can't be starved by (or starve) chat usage.
   // Ownership of the NFT is verified inside AiAgentService.draftListing,
