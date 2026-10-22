@@ -44,6 +44,7 @@ import { MarketplaceSettlementClient } from '../stellar/marketplace-settlement.c
 import { PlaceBidDto } from './dto/place-bid.dto';
 import { BID_PLACED_EVENT, BID_CACHE_PREFIX } from './interfaces/bid.interface';
 import { SorobanService } from '../stellar/soroban.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,7 @@ function makeAuction(overrides: Partial<Auction> = {}): Auction {
     startTime: new Date(Date.now() - 60_000),
     endTime: new Date(Date.now() + 3_600_000),
     status: AuctionStatus.ACTIVE,
+    extensionCount: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -108,6 +110,7 @@ describe('BidService', () => {
   const mockAuctionRepo = {
     findOne: jest.fn(),
     save: jest.fn(),
+    update: jest.fn(),
   };
 
   const mockUserRepo = {
@@ -135,8 +138,21 @@ describe('BidService', () => {
     }),
   };
 
+  const mockNotificationsService = {
+    broadcastAuctionExtended: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockConfig.get.mockImplementation((key: string) => {
+      const cfg: Record<string, string | boolean | undefined> = {
+        ENABLE_ONCHAIN_SETTLEMENT: false,
+        AUCTION_CONTRACT_ID: undefined,
+        SOROBAN_RPC_URL: undefined,
+        STELLAR_HORIZON_URL: undefined,
+      };
+      return cfg[key];
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -148,6 +164,10 @@ describe('BidService', () => {
         { provide: CACHE_MANAGER, useValue: mockCache },
         { provide: EventEmitter2, useValue: mockEventEmitter },
         { provide: ConfigService, useValue: mockConfig },
+        {
+          provide: NotificationsService,
+          useValue: mockNotificationsService,
+        },
         {
           provide: SorobanService,
           useValue: { invokeContract: jest.fn() },
@@ -163,6 +183,80 @@ describe('BidService', () => {
     }).compile();
 
     service = module.get(BidService);
+  });
+
+  // ── create ──────────────────────────────────────────────────────────────────
+
+  describe('create', () => {
+    it('extends a closing auction for GraphQL bids', async () => {
+      const originalEndTime = new Date(Date.now() + 60_000);
+      const auction = makeAuction({ endTime: originalEndTime });
+      const persisted = makeBid({ amount: 15 });
+
+      mockAuctionRepo.findOne.mockResolvedValue(auction);
+      mockAuctionRepo.save.mockResolvedValue(auction);
+      mockBidRepo.create.mockReturnValue(persisted);
+      mockBidRepo.save.mockResolvedValue(persisted);
+
+      await service.create({
+        auctionId: auction.id,
+        bidderId: 'bidder-uuid',
+        amount: 15,
+      });
+
+      expect(auction.endTime.getTime()).toBeGreaterThan(
+        originalEndTime.getTime(),
+      );
+      expect(auction.extensionCount).toBe(1);
+      expect(
+        mockNotificationsService.broadcastAuctionExtended,
+      ).toHaveBeenCalledWith(auction.id, {
+        endTime: auction.endTime.toISOString(),
+        extensionCount: 1,
+      });
+    });
+
+    it('emits BID_PLACED_EVENT so the GraphQL mutation path feeds the same cache/notification/subscription pipeline as placeBid (#650)', async () => {
+      const auction = makeAuction();
+      const persisted = makeBid({ amount: 15, amountXlm: '15.0000000' });
+
+      mockAuctionRepo.findOne.mockResolvedValue(auction);
+      mockAuctionRepo.save.mockResolvedValue(auction);
+      mockBidRepo.create.mockReturnValue(persisted);
+      mockBidRepo.save.mockResolvedValue(persisted);
+
+      await service.create({
+        auctionId: auction.id,
+        bidderId: 'bidder-uuid',
+        amount: 15,
+      });
+
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        BID_PLACED_EVENT,
+        expect.objectContaining({
+          bidId: persisted.id,
+          auctionId: auction.id,
+          sellerId: auction.sellerId,
+          bidderId: 'bidder-uuid',
+          amount: 15,
+          amountXlm: '15.0000000',
+        }),
+      );
+    });
+
+    it('throws BadRequestException when the auction has no seller', async () => {
+      const auction = makeAuction({ sellerId: null });
+      mockAuctionRepo.findOne.mockResolvedValue(auction);
+
+      await expect(
+        service.create({
+          auctionId: auction.id,
+          bidderId: 'bidder-uuid',
+          amount: 15,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+    });
   });
 
   // ── placeBid ────────────────────────────────────────────────────────────────
@@ -203,6 +297,33 @@ describe('BidService', () => {
         BID_PLACED_EVENT,
         expect.objectContaining({ auctionId, amount: 15 }),
       );
+    });
+
+    it('extends a closing auction and notifies subscribed clients', async () => {
+      const originalEndTime = new Date(Date.now() + 60_000);
+      const auction = makeAuction({ endTime: originalEndTime });
+      const persisted = makeBid({ amount: 15, amountXlm: amount });
+
+      mockCache.get.mockResolvedValue(null);
+      mockAuctionRepo.findOne.mockResolvedValue(auction);
+      mockBidRepo.findOne.mockResolvedValueOnce(null);
+      mockBidRepo.create.mockReturnValue(persisted);
+      mockBidRepo.save.mockResolvedValue(persisted);
+      mockAuctionRepo.save.mockResolvedValue(auction);
+      mockCache.del.mockResolvedValue(undefined);
+
+      await service.placeBid(auctionId, bidderId, makeDto());
+
+      expect(auction.endTime.getTime()).toBeGreaterThan(
+        originalEndTime.getTime(),
+      );
+      expect(auction.extensionCount).toBe(1);
+      expect(
+        mockNotificationsService.broadcastAuctionExtended,
+      ).toHaveBeenCalledWith(auctionId, {
+        endTime: auction.endTime.toISOString(),
+        extensionCount: 1,
+      });
     });
 
     it('throws ForbiddenException when seller bids on own auction', async () => {
