@@ -36,6 +36,7 @@ import { GraphqlLoggingMiddleware } from './graphql/middleware/logging.middlewar
 import type { GraphqlContext } from './graphql/context/context.interface';
 import {
   createGraphqlLandingPagePlugin,
+  createGraphqlValidationRules,
   formatGraphqlError,
   getGraphqlConfig,
 } from './config/graphql.config';
@@ -319,6 +320,7 @@ async function bootstrapGraphqlGateway() {
     },
     introspection: graphqlConfig.introspectionEnabled,
     formatError: formatGraphqlError,
+    validationRules: createGraphqlValidationRules(graphqlConfig),
     plugins: [
       loggingMiddleware.createPlugin(),
       ...(landingPagePlugin ? [landingPagePlugin] : []),
