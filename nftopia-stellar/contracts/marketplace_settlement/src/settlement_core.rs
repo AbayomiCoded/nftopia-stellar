@@ -911,10 +911,21 @@ impl MarketplaceSettlement {
         PauseManager::check_module_not_paused(&env, ModuleType::Disputes)?;
 
         ReentrancyGuard::execute(&env, &initiator, "initiate_dispute", || {
+            // `transaction_id` is the generic settlement-wide id shared by every
+            // transaction kind (sale, auction, trade, bundle); for an
+            // auction-originated transaction, that auction's own id is the same
+            // value (see AuctionTransaction::auction_id). Looking it up here is
+            // what lets an auction dispute be traced back to its auction instead
+            // of always recording None - for a sale/trade/bundle transaction, the
+            // lookup correctly fails and auction_id stays None.
+            let auction_id = AuctionStore::get(&env, transaction_id)
+                .ok()
+                .map(|_| transaction_id);
+
             DisputeResolutionManager::initiate_dispute(
                 &env,
                 transaction_id,
-                None, // No auction ID for now
+                auction_id,
                 &initiator,
                 &reason,
                 evidence_uri,
