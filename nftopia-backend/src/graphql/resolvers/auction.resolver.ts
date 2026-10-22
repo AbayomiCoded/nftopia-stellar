@@ -36,6 +36,11 @@ import {
 } from '../inputs/auction.inputs';
 import { GqlAuthGuard } from '../../common/guards/gql-auth.guard';
 import { AuctionStatus as AuctionStatusEnum } from '../../modules/auction/interfaces/auction.interface';
+import {
+  DATALOADER_LIST_RELATION_COMPLEXITY,
+  DATALOADER_RELATION_COMPLEXITY,
+  paginatedComplexity,
+} from '../complexity';
 
 @Resolver(() => GraphqlAuction)
 export class AuctionResolver {
@@ -63,6 +68,7 @@ export class AuctionResolver {
   @Query(() => AuctionConnection, {
     name: 'activeAuctions',
     description: 'Fetch active (non-expired) auctions with pagination',
+    complexity: paginatedComplexity(),
   })
   async activeAuctions(
     @Args('pagination', { type: () => AuctionPaginationInput, nullable: true })
@@ -90,6 +96,7 @@ export class AuctionResolver {
   @Query(() => [GraphqlBid], {
     name: 'auctionBids',
     description: 'Fetch all bids for an auction',
+    complexity: DATALOADER_LIST_RELATION_COMPLEXITY,
   })
   async auctionBids(
     @Args('auctionId', { type: () => ID }) auctionId: string,
@@ -325,6 +332,7 @@ export class AuctionResolver {
   @ResolveField(() => [GraphqlBid], {
     name: 'bids',
     description: 'Resolve auction bids using request-scoped DataLoader',
+    complexity: DATALOADER_LIST_RELATION_COMPLEXITY,
   })
   async bids(
     @Parent() auction: GraphqlAuction,
@@ -338,6 +346,7 @@ export class AuctionResolver {
     name: 'nft',
     nullable: true,
     description: 'Resolve auction NFT using request-scoped DataLoader',
+    complexity: DATALOADER_RELATION_COMPLEXITY,
   })
   async nft(
     @Parent() auction: GraphqlAuction,
@@ -354,6 +363,7 @@ export class AuctionResolver {
     name: 'seller',
     nullable: true,
     description: 'Resolve auction seller using request-scoped DataLoader',
+    complexity: DATALOADER_RELATION_COMPLEXITY,
   })
   async seller(
     @Parent() auction: GraphqlAuction,
@@ -371,6 +381,7 @@ export class AuctionResolver {
     name: 'highestBid',
     nullable: true,
     description: 'Resolve highest bid from auction bids',
+    complexity: DATALOADER_LIST_RELATION_COMPLEXITY,
   })
   async highestBid(
     @Parent() auction: GraphqlAuction,
@@ -398,6 +409,7 @@ export class AuctionResolver {
     name: 'winner',
     nullable: true,
     description: 'Resolve auction winner using request-scoped DataLoader',
+    complexity: DATALOADER_RELATION_COMPLEXITY,
   })
   async winner(
     @Parent() auction: GraphqlAuction,
