@@ -5,6 +5,7 @@ import { BidEventListener } from './bid-event.listener';
 import { Bid, BidSorobanStatus } from '../../auction/entities/bid.entity';
 import { User } from '../../../users/user.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { PushNotificationService } from '../../notifications/push-notification.service';
 import { BID_CACHE_PREFIX } from '../interfaces/bid.interface';
 
 describe('BidEventListener', () => {
@@ -27,6 +28,10 @@ describe('BidEventListener', () => {
     notifyUser: jest.fn(),
     broadcastBidUpdate: jest.fn(),
     notifyBidReceivedByEmail: jest.fn(),
+  };
+
+  const pushNotificationService = {
+    sendToUser: jest.fn(),
   };
 
   const payload = {
@@ -59,6 +64,10 @@ describe('BidEventListener', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: CACHE_MANAGER, useValue: cacheManager },
         { provide: NotificationsService, useValue: notificationsService },
+        {
+          provide: PushNotificationService,
+          useValue: pushNotificationService,
+        },
       ],
     }).compile();
 
@@ -102,6 +111,15 @@ describe('BidEventListener', () => {
       payload.auctionId,
       payload.amount,
       'seller1',
+    );
+
+    expect(pushNotificationService.sendToUser).toHaveBeenCalledWith(
+      payload.sellerId,
+      expect.objectContaining({
+        title: 'New Bid',
+        body: expect.stringContaining(payload.amountXlm),
+        url: expect.stringContaining(payload.auctionId),
+      }),
     );
   });
 
