@@ -82,6 +82,22 @@
       "priceLowToHigh": "Price: Low to High",
       "priceHighToLow": "Price: High to Low"
     },
+    "categoriesTitle": "Browse Categories",
+    "categories": {
+      "all": "All",
+      "art": "Art",
+      "music": "Music",
+      "gaming": "Gaming",
+      "photography": "Photography",
+      "collectibles": "Collectibles",
+      "sports": "Sports",
+      "virtualWorlds": "Virtual Worlds",
+      "utility": "Utility"
+    },
+    "recentlyViewed": {
+      "title": "Recently Viewed",
+      "clear": "Clear"
+    },
     "nft": {
       "buyNow": "Buy Now",
       "placeBid": "Place Bid",
