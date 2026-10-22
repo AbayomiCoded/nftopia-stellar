@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::{
-    atomic_swap::{AtomicSwapEngine, SwapState},
+    atomic_swap::{AtomicSwapEngine, EscrowManager, SwapState},
     error::{SettlementError, SwapTimeoutError},
     royalty_distributor::RoyaltyDistributor,
     settlement_core::{MarketplaceSettlement, MarketplaceSettlementClient},
@@ -951,6 +951,56 @@ fn confirm_expiry(env: &Env, expires_at: u64, expires_at_ledger: u32, cfg: &Swap
         .set_timestamp(expires_at + cfg.grace_period_seconds + 1);
     env.ledger()
         .set_sequence_number(expires_at_ledger + cfg.ledger_tolerance_blocks);
+}
+
+#[test]
+fn test_check_escrow_balance_returns_deposited_amount() {
+    let (env, cid, _client, seller, nft, currency, txid) = new_swap_env();
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+
+    let balance = env
+        .as_contract(&cid, || {
+            EscrowManager::check_escrow_balance(&env, txid, &currency)
+        })
+        .unwrap();
+    assert_eq!(balance, SALE_PRICE);
+
+    let nft_asset = Asset::Token(TokenAsset {
+        contract: nft.clone(),
+        symbol: Symbol::new(&env, "NFT"),
+    });
+    let nft_balance = env
+        .as_contract(&cid, || {
+            EscrowManager::check_escrow_balance(&env, txid, &nft_asset)
+        })
+        .unwrap();
+    assert_eq!(nft_balance, 1);
+}
+
+#[test]
+fn test_check_escrow_balance_zero_before_deposit() {
+    // new_swap_env() initializes the swap (reserving amounts in each holding) but
+    // never deposits - is_deposited stays false, so nothing is actually escrowed yet.
+    let (env, cid, _client, _seller, _nft, currency, txid) = new_swap_env();
+
+    let balance = env
+        .as_contract(&cid, || {
+            EscrowManager::check_escrow_balance(&env, txid, &currency)
+        })
+        .unwrap();
+    assert_eq!(balance, 0);
+}
+
+#[test]
+fn test_check_escrow_balance_zero_for_unknown_transaction() {
+    let (env, cid, _client, _seller, _nft, currency, _txid) = new_swap_env();
+
+    let balance = env
+        .as_contract(&cid, || {
+            EscrowManager::check_escrow_balance(&env, 999_999, &currency)
+        })
+        .unwrap();
+    assert_eq!(balance, 0);
 }
 
 #[test]
