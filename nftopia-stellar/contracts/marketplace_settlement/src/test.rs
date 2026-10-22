@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::{
-    atomic_swap::{AtomicSwapEngine, SwapState},
+    atomic_swap::{AtomicSwapEngine, EscrowManager, SwapState},
     error::{SettlementError, SwapTimeoutError},
     royalty_distributor::RoyaltyDistributor,
     settlement_core::{MarketplaceSettlement, MarketplaceSettlementClient},
@@ -951,6 +951,56 @@ fn confirm_expiry(env: &Env, expires_at: u64, expires_at_ledger: u32, cfg: &Swap
         .set_timestamp(expires_at + cfg.grace_period_seconds + 1);
     env.ledger()
         .set_sequence_number(expires_at_ledger + cfg.ledger_tolerance_blocks);
+}
+
+#[test]
+fn test_check_escrow_balance_returns_deposited_amount() {
+    let (env, cid, _client, seller, nft, currency, txid) = new_swap_env();
+    fund_swap(&env, &cid, &seller, &nft, &currency, txid);
+
+    let balance = env
+        .as_contract(&cid, || {
+            EscrowManager::check_escrow_balance(&env, txid, &currency)
+        })
+        .unwrap();
+    assert_eq!(balance, SALE_PRICE);
+
+    let nft_asset = Asset::Token(TokenAsset {
+        contract: nft.clone(),
+        symbol: Symbol::new(&env, "NFT"),
+    });
+    let nft_balance = env
+        .as_contract(&cid, || {
+            EscrowManager::check_escrow_balance(&env, txid, &nft_asset)
+        })
+        .unwrap();
+    assert_eq!(nft_balance, 1);
+}
+
+#[test]
+fn test_check_escrow_balance_zero_before_deposit() {
+    // new_swap_env() initializes the swap (reserving amounts in each holding) but
+    // never deposits - is_deposited stays false, so nothing is actually escrowed yet.
+    let (env, cid, _client, _seller, _nft, currency, txid) = new_swap_env();
+
+    let balance = env
+        .as_contract(&cid, || {
+            EscrowManager::check_escrow_balance(&env, txid, &currency)
+        })
+        .unwrap();
+    assert_eq!(balance, 0);
+}
+
+#[test]
+fn test_check_escrow_balance_zero_for_unknown_transaction() {
+    let (env, cid, _client, _seller, _nft, currency, _txid) = new_swap_env();
+
+    let balance = env
+        .as_contract(&cid, || {
+            EscrowManager::check_escrow_balance(&env, 999_999, &currency)
+        })
+        .unwrap();
+    assert_eq!(balance, 0);
 }
 
 #[test]
@@ -2410,6 +2460,60 @@ fn test_xlm_payment_failed_error() {
     assert_eq!(err as u32, 304);
     let err2 = SettlementError::NativeAssetBalanceFailed;
     assert_eq!(err2 as u32, 305);
+}
+
+// ---------------------------------------------------------------------------
+// Dispute initiation records the real auction id (issue #553)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_initiate_dispute_from_auction_records_auction_id() {
+    let (env, cid, client, admin) = new_env();
+    let asset = mk_asset(&env);
+    let seller = Address::generate(&env);
+    let nft = env.register(MockNft, ());
+    let creator = Address::generate(&env);
+    reg(&env, &cid, &nft, &creator, &admin, &asset);
+    MockNftClient::new(&env, &nft).set_owner(&seller);
+
+    let auction_id = client.create_auction(
+        &seller,
+        &nft,
+        &1u64,
+        &100_000i128,
+        &80_000i128,
+        &3600u64,
+        &1_000i128,
+        &AuctionType::English,
+        &asset,
+    );
+
+    let arbitrator = Address::generate(&env);
+    client.register_arbitrator(&arbitrator, &100u64);
+
+    let initiator = Address::generate(&env);
+    let reason = Bytes::from_slice(&env, b"item never shipped");
+    let dispute_id = client.initiate_dispute(&auction_id, &reason, &None, &initiator);
+
+    let dispute = client.get_dispute(&dispute_id);
+    assert_eq!(dispute.transaction_id, auction_id);
+    assert_eq!(dispute.auction_id, Some(auction_id));
+}
+
+#[test]
+fn test_initiate_dispute_from_sale_leaves_auction_id_none() {
+    let (env, _cid, client, _seller, _nft, _currency, txid) = new_swap_env();
+
+    let arbitrator = Address::generate(&env);
+    client.register_arbitrator(&arbitrator, &100u64);
+
+    let initiator = Address::generate(&env);
+    let reason = Bytes::from_slice(&env, b"item not as described");
+    let dispute_id = client.initiate_dispute(&txid, &reason, &None, &initiator);
+
+    let dispute = client.get_dispute(&dispute_id);
+    assert_eq!(dispute.transaction_id, txid);
+    assert_eq!(dispute.auction_id, None);
 }
 
 // ---------------------------------------------------------------------------
