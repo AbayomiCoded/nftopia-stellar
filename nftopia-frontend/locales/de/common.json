@@ -134,6 +134,7 @@
     "creatorProfile": {
       "verified": "Verifiziert",
       "followers": "Follower",
+      "following": "Folge ich",
       "nftsCreated": "NFTs",
       "volume": "Volumen",
       "tabNfts": "NFTs",

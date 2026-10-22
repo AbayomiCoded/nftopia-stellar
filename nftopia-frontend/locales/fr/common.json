@@ -134,6 +134,7 @@
   "creatorProfile": {
     "verified": "Vérifié",
     "followers": "abonnés",
+    "following": "abonnements",
     "nftsCreated": "NFTs",
     "volume": "volume",
     "tabNfts": "NFTs",
