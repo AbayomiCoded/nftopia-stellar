@@ -34,6 +34,7 @@ import type { ToolSetName } from './tools/tool-set.types';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { ToolSet } from '../../common/decorators/tool-set.decorator';
 
 type RequestWithUser = Request & {
   user?: { userId: string; role?: string };
@@ -81,8 +82,12 @@ export class AiAgentController {
   }
 
   // Guards run left to right: JwtAuthGuard first, so req.user.userId is
-  // populated by the time AiChatRateLimitGuard keys the per-user limiter.
+  // populated by the time AiChatRateLimitGuard keys the per-user,
+  // per-tool-set limiter (#645). @ToolSet is explicit here even though it
+  // matches AiChatRateLimitGuard's default, so this stays correct if a
+  // tool set other than TOOL_SET is ever requested from this route.
   @UseGuards(JwtAuthGuard, AiChatRateLimitGuard)
+  @ToolSet(TOOL_SET)
   @Post('chat')
   async chat(
     @Req() req: RequestWithUser,
@@ -103,6 +108,7 @@ export class AiAgentController {
   // request body (message + history) can be sent the same way as /ai/chat.
   // Same rate-limit bucket as /ai/chat — both hit the same Anthropic spend.
   @UseGuards(JwtAuthGuard, AiChatRateLimitGuard)
+  @ToolSet(TOOL_SET)
   @Sse('chat/stream', { [METHOD_METADATA]: RequestMethod.POST })
   chatStream(
     @Req() req: RequestWithUser,
