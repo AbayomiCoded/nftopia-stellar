@@ -30,6 +30,7 @@ describe('BidEventListener', () => {
   };
 
   const payload = {
+    bidId: 'bid-1',
     auctionId: 'auction-1',
     sellerId: 'seller-1',
     bidderId: 'bidder-1',
