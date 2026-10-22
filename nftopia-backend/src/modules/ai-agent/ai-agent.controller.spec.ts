@@ -23,6 +23,7 @@ describe('AiAgentController', () => {
   const aiAgentService = {
     chat: jest.fn(),
     chatStream: jest.fn(),
+    resumeChatStream: jest.fn(),
     getToolLogs: jest.fn(),
     draftListing: jest.fn(),
   };
@@ -235,6 +236,80 @@ describe('AiAgentController', () => {
         controller.chatStream(makeRequest(undefined), { message: 'hi' }),
       ).toThrow(UnauthorizedException);
       expect(aiAgentService.chatStream).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resumeChatStream (#644)', () => {
+    it('is registered as an SSE route under the chat stream resource', () => {
+      expect(
+        Reflect.getMetadata(SSE_METADATA, controller.resumeChatStream),
+      ).toBe(true);
+      expect(
+        Reflect.getMetadata(PATH_METADATA, controller.resumeChatStream),
+      ).toBe('chat/stream/:streamId/resume');
+    });
+
+    it('applies JwtAuthGuard but not AiChatRateLimitGuard (resuming does not spend new cap)', () => {
+      const guards = Reflect.getMetadata(
+        GUARDS_METADATA,
+        controller.resumeChatStream,
+      ) as unknown[] | undefined;
+
+      expect(guards).toContain(JwtAuthGuard);
+      expect(guards).not.toContain(AiChatRateLimitGuard);
+    });
+
+    it('delegates to AiAgentService.resumeChatStream with the authenticated user id, streamId, and parsed afterSeq', () => {
+      const observable = of();
+      aiAgentService.resumeChatStream.mockReturnValue(observable);
+
+      const result = controller.resumeChatStream(
+        makeRequest('user-1'),
+        'stream-abc',
+        '5',
+      );
+
+      expect(aiAgentService.resumeChatStream).toHaveBeenCalledWith(
+        'user-1',
+        'stream-abc',
+        5,
+      );
+      expect(result).toBe(observable);
+    });
+
+    it('defaults afterSeq to -1 (resume from the start) when omitted', () => {
+      aiAgentService.resumeChatStream.mockReturnValue(of());
+
+      controller.resumeChatStream(makeRequest('user-1'), 'stream-abc');
+
+      expect(aiAgentService.resumeChatStream).toHaveBeenCalledWith(
+        'user-1',
+        'stream-abc',
+        -1,
+      );
+    });
+
+    it('falls back to -1 for a non-numeric afterSeq rather than forwarding NaN', () => {
+      aiAgentService.resumeChatStream.mockReturnValue(of());
+
+      controller.resumeChatStream(
+        makeRequest('user-1'),
+        'stream-abc',
+        'not-a-number',
+      );
+
+      expect(aiAgentService.resumeChatStream).toHaveBeenCalledWith(
+        'user-1',
+        'stream-abc',
+        -1,
+      );
+    });
+
+    it('throws UnauthorizedException when no authenticated user is present', () => {
+      expect(() =>
+        controller.resumeChatStream(makeRequest(undefined), 'stream-abc'),
+      ).toThrow(UnauthorizedException);
+      expect(aiAgentService.resumeChatStream).not.toHaveBeenCalled();
     });
   });
 
