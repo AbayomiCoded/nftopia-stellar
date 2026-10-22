@@ -15,6 +15,7 @@ import { ClientBody } from "@/components/layout/ClientBody";
 import { AiChatWidget } from "@/components/ai-chat/AiChatWidget";
 import { TransactionToastCenter } from "@/components/wallet/TransactionToastCenter";
 import { PushOptInPrompt } from "@/components/notifications/PushOptInPrompt";
+import { useFunnelStageTracking } from "@/hooks/useFunnelStageTracking";
 
 const inter = localFont({
   src: "../../public/fonts/inter-var.woff2",
@@ -33,6 +34,7 @@ interface LocaleLayoutProps {
 export default function LocaleLayout({ children, params }: LocaleLayoutProps) {
   const pathname = usePathname();
   const { t, locales } = useTranslation();
+  useFunnelStageTracking();
   const isAuthPage = pathname?.includes("/auth/");
   const isCreatorDashboard = pathname?.includes("/creator-dashboard");
   const isNftDetailPage = pathname ? /^\/[a-z]{2}\/marketplace\/(?!auction$|auctions$|auction\/|auctions\/)[^/]+$/.test(pathname) : false;
