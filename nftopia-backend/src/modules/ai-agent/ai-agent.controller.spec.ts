@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { AiChatRateLimitGuard } from '../../common/guards/ai-chat-rate-limit.guard';
 import { CopilotRateLimitGuard } from '../../common/guards/copilot-rate-limit.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { TOOL_SET_KEY } from '../../common/decorators/tool-set.decorator';
 
 describe('AiAgentController', () => {
   const aiAgentService = {
@@ -66,6 +67,12 @@ describe('AiAgentController', () => {
 
     expect(guards).toContain(JwtAuthGuard);
     expect(guards).toContain(AiChatRateLimitGuard);
+  });
+
+  it('tags the chat route as the marketplace-assistant tool set for rate limiting (#645)', () => {
+    expect(Reflect.getMetadata(TOOL_SET_KEY, controller.chat)).toBe(
+      'marketplace-assistant',
+    );
   });
 
   it('applies JwtAuthGuard to the usage route', () => {
@@ -179,6 +186,12 @@ describe('AiAgentController', () => {
 
       expect(guards).toContain(JwtAuthGuard);
       expect(guards).toContain(AiChatRateLimitGuard);
+    });
+
+    it('tags the stream route as the marketplace-assistant tool set for rate limiting (#645)', () => {
+      expect(Reflect.getMetadata(TOOL_SET_KEY, controller.chatStream)).toBe(
+        'marketplace-assistant',
+      );
     });
 
     it('delegates to AiAgentService.chatStream with the authenticated user id', () => {
